@@ -28,6 +28,32 @@ pub fn resolve(c: &Connection, m: &ModelRef) -> ApiResult<ProviderConn> {
     Ok(conn(&p))
 }
 
+/// The model that answers a chat: the first usable candidate (per-message choice, the chat's
+/// own choice, the default), else a downloaded built-in model. Candidates whose provider was
+/// disabled or removed are skipped instead of failing the chat.
+pub fn pick_chat_model(st: &AppState, c: &Connection, candidates: &[Option<&ModelRef>]) -> ApiResult<(ModelRef, ProviderConn)> {
+    for m in candidates.iter().flatten() {
+        if let Ok(conn) = resolve(c, m) {
+            return Ok(((*m).clone(), conn));
+        }
+    }
+    let builtin = repo::providers(c)?.into_iter().find(|p| p.kind == ProviderKind::Builtin && p.enabled);
+    let downloaded = st
+        .library
+        .status()
+        .into_iter()
+        .filter(|m| m.spec.kind == rad_local::ModelKind::Chat && m.path.is_some())
+        .max_by_key(|m| m.spec.recommended);
+    if let (Some(p), Some(m)) = (builtin, downloaded) {
+        return Ok((ModelRef { provider_id: p.id, model: m.spec.id.into() }, conn(&p)));
+    }
+    Err(ApiErr::bad_request(if candidates.iter().any(Option::is_some) {
+        "the chosen chat model isn't available (its provider is disabled or removed) — pick another in Settings → Models"
+    } else {
+        "choose a chat model in Settings → Models first"
+    }))
+}
+
 pub fn model_key(m: &ModelRef) -> String {
     format!("{}:{}", m.provider_id, m.model)
 }

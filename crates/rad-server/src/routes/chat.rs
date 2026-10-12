@@ -152,13 +152,14 @@ pub async fn send(
         let history: Vec<Message> = msgs.into_iter().filter(|m| m.role == "user" || m.role == "assistant").collect();
         let (summary, _) = rad_vault::recall::summary(c, chat_id)?;
 
-        let model = req
-            .model
-            .clone()
-            .or_else(|| chat.model.clone())
-            .or_else(|| settings.chat_model.clone())
-            .ok_or_else(|| ApiErr::bad_request("choose a chat model in Settings → Models first"))?;
-        let conn = models::resolve(c, &model)?;
+        let (model, conn) = models::pick_chat_model(st, c, &[req.model.as_ref(), chat.model.as_ref(), settings.chat_model.as_ref()])?;
+        // The chat's own model choice points at a disabled or removed provider: forget it, so
+        // the chat follows the default from now on and the picker shows what really answers.
+        let mut chat = chat;
+        if chat.model.as_ref().is_some_and(|m| models::resolve(c, m).is_err()) {
+            chat = repo::update_chat(c, chat_id, &ChatInput { model: Some(None), ..Default::default() })?;
+            st.changed(c, "chat", chat_id, "update");
+        }
         let rewrite = settings.rewrite_model.as_ref().and_then(|m| models::resolve(c, m).ok().map(|p| (m.clone(), p)));
 
         // Attachments: images go to the model as images; other documents as text.

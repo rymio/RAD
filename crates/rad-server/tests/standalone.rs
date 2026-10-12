@@ -144,6 +144,22 @@ async fn standalone_vault_roundtrip() {
         assert!(answer.contains("May") || answer.contains("frost"), "{answer}");
         assert!(!done["message"]["citations"].as_array().unwrap().is_empty());
 
+        // A disabled provider still chosen as the chat's model and as the default: the chat
+        // falls back to the built-in model instead of failing, and forgets the stale choice.
+        let off = c.post("/v1/providers", json!({ "kind": "openai", "name": "LM Studio", "base_url": "http://localhost:1234/v1" })).await;
+        let (code, _) = c.req(reqwest::Method::PATCH, &format!("/v1/providers/{}", off["id"]), Some(json!({ "enabled": false }))).await;
+        assert_eq!(code, 200);
+        let stale = json!({ "provider_id": off["id"], "model": "google/gemma-4-e4b" });
+        c.req(reqwest::Method::PUT, "/v1/settings", Some(json!({ "chat_model": stale, "embedding_model": settings["embedding_model"] }))).await;
+        let pinned = c.post("/v1/chats", json!({ "model": stale })).await;
+        let done = ask(&c, &pinned, "When should I plant the tomatoes?").await;
+        assert_eq!(done["message"]["model"], m["id"], "answered by the built-in model: {done}");
+        assert!(done["message"]["error"].is_null(), "{done}");
+        let chats = c.get("/v1/chats").await;
+        let after = chats.as_array().unwrap().iter().find(|ch| ch["id"] == pinned["id"]).unwrap();
+        assert!(after["model"].is_null(), "stale per-chat model cleared: {after}");
+        c.req(reqwest::Method::PUT, "/v1/settings", Some(json!({ "chat_model": { "provider_id": builtin["id"], "model": m["id"] }, "embedding_model": settings["embedding_model"] }))).await;
+
         // Chat recall: a decision made in one chat is found — and cited — from another.
         let decided = c.post("/v1/chats", json!({})).await;
         ask(&c, &decided, "I decided to renew the car insurance with Allianz for 820 EUR per year. Acknowledge in one sentence.").await;

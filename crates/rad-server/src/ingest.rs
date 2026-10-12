@@ -556,11 +556,13 @@ async fn summarize_chat(state: &Shared, vault: &Arc<Vault>, chat_id: Id) -> JRes
         return Ok(());
     }
     let boundary = history[start - 1].id;
-    let Some(model) = settings.rewrite_model.clone().or(chat.model.clone()).or(settings.chat_model.clone()) else {
-        return Ok(());
-    };
-    let m2 = model.clone();
-    let conn = blocking(vault, move |c| Ok(models::resolve(c, &m2))).await?.map_err(JobError::from)?;
+    let st = state.clone();
+    let picked = blocking(vault, move |c| {
+        Ok(models::pick_chat_model(&st, c, &[settings.rewrite_model.as_ref(), chat.model.as_ref(), settings.chat_model.as_ref()]).ok())
+    })
+    .await?;
+    // No usable chat model at all: nothing to summarise with (chats can't be answered either).
+    let Some((model, conn)) = picked else { return Ok(()) };
 
     let mut convo = String::new();
     for m in history[..start].iter().filter(|m| m.id > upto) {

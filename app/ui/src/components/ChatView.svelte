@@ -197,7 +197,7 @@
           {#if noModel}
             <button class="setup card" onclick={() => store.navigate({ kind: 'settings', tab: 'models' })}>
               <Sparkles size={18} />
-              <div><strong>Connect a model to start chatting</strong><span>Add Ollama, LM Studio, OpenAI, Anthropic or any OpenAI-compatible provider.</span></div>
+              <div><strong>Choose a model to start chatting</strong><span>Download a built-in model that runs offline, or add Ollama, LM Studio, OpenAI, Anthropic or any OpenAI-compatible provider.</span></div>
             </button>
           {/if}
           <div class="composer-wrap">
