@@ -4,3 +4,4 @@ node_modules
 *.radvault
 *.radvault-*
 .DS_Store
+/models

@@ -41,6 +41,7 @@ pub struct AppState {
     pairing: Mutex<Option<(String, i64)>>,
     pub events: broadcast::Sender<Event>,
     pub llm: rad_llm::Llm,
+    pub library: Arc<rad_local::Library>,
     pub jobs_wake: Notify,
     pub limiter: Mutex<UnlockLimiter>,
     pub health: RwLock<Vec<ProviderHealth>>,
@@ -55,7 +56,7 @@ pub struct AppState {
 pub type Shared = Arc<AppState>;
 
 impl AppState {
-    pub fn new(cfg: Config, devices: DeviceStore) -> Shared {
+    pub fn new(cfg: Config, devices: DeviceStore, library: Arc<rad_local::Library>) -> Shared {
         let (events, _) = broadcast::channel(512);
         Arc::new(AppState {
             cfg,
@@ -64,7 +65,8 @@ impl AppState {
             sessions: Mutex::new(HashMap::new()),
             pairing: Mutex::new(None),
             events,
-            llm: rad_llm::Llm::new(),
+            llm: rad_llm::Llm::new().with_local(library.clone()),
+            library,
             jobs_wake: Notify::new(),
             limiter: Mutex::new(UnlockLimiter { failures: 0, not_before: 0 }),
             health: RwLock::new(Vec::new()),
@@ -93,6 +95,12 @@ impl AppState {
         if let Ok(c) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| v.conn())) {
             if let Err(e) = rad_vault::repo::requeue_running_jobs(&c) {
                 tracing::warn!("requeue jobs: {e}");
+            }
+            if let Err(e) = crate::models::ensure_builtin(self, &c) {
+                tracing::warn!("built-in provider: {e}");
+            }
+            if let Err(e) = crate::ingest::backfill_chats(self, &c) {
+                tracing::warn!("chat recall backfill: {e}");
             }
         }
         *self.vault.write().unwrap() = Some(v);

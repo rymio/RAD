@@ -16,7 +16,9 @@ pub struct Embedded {
 }
 
 impl Embedded {
-    pub async fn start(vault: PathBuf, name: &str, ffmpeg: Option<String>) -> anyhow::Result<Embedded> {
+    /// `models_dir` is where downloaded models go; `bundled_models` are read-only folders
+    /// (e.g. the app's resources) checked first.
+    pub async fn start(vault: PathBuf, name: &str, ffmpeg: Option<String>, models_dir: PathBuf, bundled_models: Vec<PathBuf>) -> anyhow::Result<Embedded> {
         let opts = ServerOptions {
             vault,
             name: name.to_string(),
@@ -24,6 +26,8 @@ impl Embedded {
             backup_dir: None,
             ffmpeg: ffmpeg.unwrap_or_else(default_ffmpeg),
             max_upload_mb: 16 * 1024,
+            models_dir: Some(models_dir),
+            bundled_models,
         };
         let inst = std::sync::Arc::new(Instance::start(&opts).await?);
         let (_device, device_token) = inst.state.devices.add("This computer", std::env::consts::OS)?;
@@ -50,7 +54,18 @@ impl Embedded {
 
     /// Locks the vault and stops the server. Waits briefly so the vault file is checkpointed.
     pub async fn stop(mut self) {
+        let vault = self.inst.state.current_vault();
         self.inst.stop();
+        // Background jobs (indexing, chat summaries) hold the vault until they finish; give them
+        // a moment so the file is closed — and checkpointed into one file — before we return.
+        if let Some(v) = vault {
+            for _ in 0..50 {
+                if std::sync::Arc::strong_count(&v) == 1 {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        }
         if let Some(tx) = self.shutdown.take() {
             let _ = tx.send(());
         }

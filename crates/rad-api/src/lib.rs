@@ -393,6 +393,9 @@ pub struct Citation {
     pub anchor: Anchor,
     pub snippet: String,
     pub score: f32,
+    /// Set when the source is an earlier conversation rather than a document.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_id: Option<Id>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -437,6 +440,8 @@ pub enum ProviderKind {
     /// Any OpenAI-compatible API (OpenAI, OpenRouter, Groq, Mistral, LM Studio, vLLM, Gemini's OpenAI endpoint…)
     Openai,
     Anthropic,
+    /// RAD's own llama.cpp engine running GGUF models from the local `models` folder (embeddings).
+    Builtin,
 }
 
 impl ProviderKind {
@@ -445,6 +450,7 @@ impl ProviderKind {
             ProviderKind::Ollama => "ollama",
             ProviderKind::Openai => "openai",
             ProviderKind::Anthropic => "anthropic",
+            ProviderKind::Builtin => "builtin",
         }
     }
     pub fn parse(s: &str) -> Option<Self> {
@@ -452,6 +458,7 @@ impl ProviderKind {
             "ollama" => ProviderKind::Ollama,
             "openai" => ProviderKind::Openai,
             "anthropic" => ProviderKind::Anthropic,
+            "builtin" => ProviderKind::Builtin,
             _ => return None,
         })
     }
@@ -499,6 +506,42 @@ pub struct ProviderHealth {
     pub checked_at: Ts,
 }
 
+/// A model of the built-in engine (`GET /v1/local-models`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalModel {
+    /// Use as `ModelRef.model` with the built-in provider.
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    /// chat | embedding
+    pub kind: String,
+    pub file: String,
+    pub bytes: u64,
+    pub parameters: String,
+    pub license: String,
+    pub recommended: bool,
+    pub installed: bool,
+    /// Shipped with RAD; can't be deleted.
+    pub bundled: bool,
+    /// Bytes downloaded so far while a download is running.
+    pub downloaded: Option<u64>,
+    pub error: Option<String>,
+    /// Memory needed when loaded (weights + context).
+    pub memory_needed: u64,
+    /// ok | tight | too_big for this machine.
+    pub fit: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalModels {
+    /// The built-in provider's id in this vault.
+    pub provider_id: Option<Id>,
+    /// Folder downloads go to (on the server in server mode).
+    pub dir: String,
+    pub total_memory: u64,
+    pub models: Vec<LocalModel>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PullRequest {
     pub model: String,
@@ -522,6 +565,8 @@ pub struct Settings {
     pub chunk_chars: u32,
     pub chunk_overlap: u32,
     pub query_rewrite: bool,
+    /// Search earlier conversations too, and cite them like documents.
+    pub chat_recall: bool,
     pub max_output_tokens: u32,
     pub temperature: f32,
     /// Lock the server vault after this many idle minutes (0 = never).
@@ -546,6 +591,7 @@ impl Default for Settings {
             chunk_chars: 1_800,
             chunk_overlap: 200,
             query_rewrite: true,
+            chat_recall: true,
             max_output_tokens: 4096,
             temperature: 0.3,
             server_auto_lock_minutes: 0,

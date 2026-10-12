@@ -173,6 +173,37 @@ CREATE TABLE change_log(
     at INTEGER NOT NULL
 );
 "#,
+    // v2: chat recall (past conversations are searchable) and running summaries of long chats
+    r#"
+ALTER TABLE chats ADD COLUMN summary TEXT NOT NULL DEFAULT '';
+ALTER TABLE chats ADD COLUMN summary_upto INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE chat_chunks(
+    id INTEGER PRIMARY KEY,
+    chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+    ord INTEGER NOT NULL,
+    message_id INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX chat_chunks_chat ON chat_chunks(chat_id, ord);
+
+CREATE VIRTUAL TABLE chat_chunks_fts USING fts5(
+    text,
+    content='chat_chunks', content_rowid='id',
+    tokenize='porter unicode61 remove_diacritics 2'
+);
+CREATE TRIGGER chat_chunks_ai AFTER INSERT ON chat_chunks BEGIN
+    INSERT INTO chat_chunks_fts(rowid, text) VALUES (new.id, new.text);
+END;
+CREATE TRIGGER chat_chunks_ad AFTER DELETE ON chat_chunks BEGIN
+    INSERT INTO chat_chunks_fts(chat_chunks_fts, rowid, text) VALUES ('delete', old.id, old.text);
+END;
+CREATE TRIGGER chat_chunks_au AFTER UPDATE ON chat_chunks BEGIN
+    INSERT INTO chat_chunks_fts(chat_chunks_fts, rowid, text) VALUES ('delete', old.id, old.text);
+    INSERT INTO chat_chunks_fts(rowid, text) VALUES (new.id, new.text);
+END;
+"#,
 ];
 
 pub fn migrate(c: &Connection) -> Result<()> {

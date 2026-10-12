@@ -17,6 +17,7 @@ rad-api.workspace = true
 rad-vault.workspace = true
 rad-ingest.workspace = true
 rad-llm.workspace = true
+rad-local.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

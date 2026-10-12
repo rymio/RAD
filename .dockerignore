@@ -4,3 +4,4 @@ app/ui/dist
 .git
 *.radvault
 *.radvault-*
+models

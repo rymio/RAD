@@ -44,6 +44,12 @@ struct ServeArgs {
     /// Maximum upload size in MiB.
     #[arg(long, env = "RAD_MAX_UPLOAD_MB", default_value_t = 8192)]
     max_upload_mb: u64,
+    /// Writable folder for the built-in engine's GGUF models (defaults to <vault folder>/models).
+    #[arg(long, env = "RAD_MODELS_DIR")]
+    models_dir: Option<PathBuf>,
+    /// Read-only folder with models shipped alongside the server (checked before downloading).
+    #[arg(long, env = "RAD_BUNDLED_MODELS_DIR")]
+    bundled_models_dir: Option<PathBuf>,
     /// Don't print a pairing code at startup.
     #[arg(long, env = "RAD_NO_PAIRING_CODE")]
     no_pairing_code: bool,
@@ -85,7 +91,7 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,tower_http=warn,rad_server=info".into()),
+                .unwrap_or_else(|_| "info,tower_http=warn,rad_server=info,llama-cpp-2=warn".into()),
         )
         .init();
     let cli = Cli::parse();
@@ -133,6 +139,13 @@ async fn serve(args: ServeArgs) -> anyhow::Result<()> {
         backup_dir: args.backup_dir.clone(),
         ffmpeg: args.ffmpeg.clone(),
         max_upload_mb: args.max_upload_mb,
+        models_dir: args.models_dir.clone(),
+        bundled_models: args
+            .bundled_models_dir
+            .clone()
+            .into_iter()
+            .chain(std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("models"))))
+            .collect(),
     };
     let inst = Instance::start(&opts).await?;
 
@@ -152,7 +165,7 @@ async fn serve(args: ServeArgs) -> anyhow::Result<()> {
     }
     println!();
 
-    match (args.tls_cert, args.tls_key) {
+    let res = match (args.tls_cert, args.tls_key) {
         (Some(cert), Some(key)) => rad_server::serve_tls(&inst, args.listen, cert, key).await,
         (None, None) => {
             rad_server::serve_http(&inst, args.listen, async {
@@ -162,5 +175,7 @@ async fn serve(args: ServeArgs) -> anyhow::Result<()> {
             .await
         }
         _ => anyhow::bail!("--tls-cert and --tls-key must be given together"),
-    }
+    };
+    tokio::task::spawn_blocking(rad_server::shutdown_models).await?;
+    res
 }

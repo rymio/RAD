@@ -5,6 +5,7 @@ members = [
     "crates/rad-vault",
     "crates/rad-ingest",
     "crates/rad-llm",
+    "crates/rad-local",
     "crates/rad-server",
     "app/src-tauri",
 ]
@@ -20,6 +21,7 @@ rad-api = { path = "crates/rad-api" }
 rad-vault = { path = "crates/rad-vault" }
 rad-ingest = { path = "crates/rad-ingest" }
 rad-llm = { path = "crates/rad-llm" }
+rad-local = { path = "crates/rad-local" }
 anyhow = "1"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }

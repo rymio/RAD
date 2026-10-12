@@ -543,6 +543,7 @@ pub fn touch_chat(c: &Connection, id: Id) -> Result<()> {
 }
 
 pub fn delete_chat(c: &Connection, id: Id) -> Result<()> {
+    crate::recall::delete_chat_vectors(c, id)?;
     c.execute("DELETE FROM chats WHERE id = ?1", params![id])?;
     Ok(())
 }
@@ -605,6 +606,8 @@ pub fn add_message(c: &Connection, m: &NewMessage) -> Result<Message> {
 }
 
 pub fn delete_messages_from(c: &Connection, chat_id: Id, from_id: Id) -> Result<usize> {
+    // A summary that covered the removed messages no longer describes the chat.
+    c.execute("UPDATE chats SET summary = '', summary_upto = 0 WHERE id = ?1 AND summary_upto >= ?2", params![chat_id, from_id])?;
     Ok(c.execute("DELETE FROM messages WHERE chat_id = ?1 AND id >= ?2", params![chat_id, from_id])?)
 }
 

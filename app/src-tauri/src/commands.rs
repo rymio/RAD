@@ -69,7 +69,8 @@ pub async fn start_local(app: AppHandle, st: State<'_, App>, path: String) -> Cm
     events::stop(&app);
     stop_embedded(&st).await;
     let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "Vault".into());
-    let emb = rad_server::embedded::Embedded::start(path.clone(), &name, None)
+    let (models_dir, bundled) = model_dirs(&app);
+    let emb = rad_server::embedded::Embedded::start(path.clone(), &name, None, models_dir, bundled)
         .await
         .map_err(|e| CmdError::new("local", format!("Couldn't open the vault: {e:#}")))?;
     st.client.set_server(Some(emb.url()), Some(emb.device_token.clone()));
@@ -83,6 +84,17 @@ pub async fn start_local(app: AppHandle, st: State<'_, App>, path: String) -> Cm
     c.recent_vaults.truncate(8);
     st.save_config(c);
     st.client.json(Method::GET, "/v1/status", None).await
+}
+
+/// Built-in models: downloads go to the app's data folder; the copy bundled with the app (and,
+/// in dev builds, the repo's `models/` folder) is used first so nothing needs downloading.
+fn model_dirs(app: &AppHandle) -> (std::path::PathBuf, Vec<std::path::PathBuf>) {
+    let dir = app.path().app_data_dir().map(|d| d.join("models")).unwrap_or_else(|_| "models".into());
+    let mut bundled: Vec<std::path::PathBuf> = app.path().resource_dir().map(|d| d.join("models")).into_iter().collect();
+    if cfg!(debug_assertions) {
+        bundled.push(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../models"));
+    }
+    (dir, bundled)
 }
 
 #[tauri::command]

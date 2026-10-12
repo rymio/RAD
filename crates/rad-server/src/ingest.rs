@@ -3,11 +3,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use rad_api::{Anchor, DocStatus, Event, Id, Settings};
+use rad_api::{Anchor, DocStatus, Event, Id, Message, Settings};
 use rad_ingest::{Kind, Media, Section};
 use rad_llm::{ChatMsg, ChatRequest, ImagePart, LlmError};
 use rad_vault::repo::{self, Job, NewChunk};
-use rad_vault::{blobs, search, Vault};
+use rad_vault::{blobs, recall, search, Vault};
 use tokio::sync::Semaphore;
 
 use crate::error::ApiErr;
@@ -51,7 +51,7 @@ impl From<rad_vault::VaultError> for JobError {
 impl From<LlmError> for JobError {
     fn from(e: LlmError) -> Self {
         match &e {
-            LlmError::Connect(..) => JobError::Transient(e.to_string()),
+            LlmError::Connect(..) | LlmError::Local { retry: true, .. } => JobError::Transient(e.to_string()),
             LlmError::Http { status, .. } if *status == 429 || *status >= 500 || *status == 408 => JobError::Transient(e.to_string()),
             _ => JobError::Permanent(e.to_string()),
         }
@@ -129,6 +129,14 @@ async fn run_job(state: &Shared, vault: Arc<Vault>, job: Job) {
             None => Ok(()),
         },
         "reindex" => reindex(state, &vault).await,
+        "chat_index" => match job.document_id {
+            Some(chat) => index_chat(state, &vault, chat).await,
+            None => Ok(()),
+        },
+        "chat_summary" => match job.document_id {
+            Some(chat) => summarize_chat(state, &vault, chat).await,
+            None => Ok(()),
+        },
         "gc" => blocking(&vault, |c| blobs::collect_garbage(c).map(|_| ())).await,
         other => Err(JobError::Permanent(format!("unknown job kind {other}"))),
     };
@@ -149,7 +157,8 @@ async fn run_job(state: &Shared, vault: Arc<Vault>, job: Job) {
         }
         Err(JobError::Transient(msg)) | Err(JobError::Permanent(msg)) => {
             tracing::warn!("job {id} ({}) failed: {msg}", job.kind);
-            if let Some(d) = job.document_id {
+            // Chat jobs keep the chat id in `document_id`; only document jobs touch documents.
+            if let Some(d) = job.document_id.filter(|_| job.kind == "ingest" || job.kind == "embed") {
                 let m = msg.clone();
                 if job.kind == "ingest" {
                     let _ = blocking(&vault, move |c| repo::set_document_status(c, d, DocStatus::Error, Some(&m), None)).await;
@@ -420,6 +429,14 @@ async fn reindex(state: &Shared, vault: &Arc<Vault>) -> JResult<()> {
     })
     .await?;
     tracing::info!("reindex: queued {n} documents for embedding");
+    // Earlier conversations need vectors in the new space too.
+    blocking(vault, |c| {
+        for id in recall::chats_with_passages(c)?.into_iter().chain(recall::unindexed_chats(c)?) {
+            repo::enqueue_job(c, "chat_index", Some(id), serde_json::json!({}))?;
+        }
+        Ok(())
+    })
+    .await?;
     state.jobs_wake.notify_waiters();
     Ok(())
 }
@@ -428,4 +445,177 @@ pub fn enqueue(state: &AppState, c: &rad_vault::Connection, kind: &str, doc: Opt
     repo::enqueue_job(c, kind, doc, serde_json::json!({}))?;
     state.jobs_wake.notify_one();
     Ok(())
+}
+
+// ------------------------------------------------------------------ chat recall & summaries
+
+/// Characters per searchable passage of an earlier conversation.
+const CHAT_PASSAGE_CHARS: usize = 1600;
+/// The longest answer text indexed per exchange.
+const CHAT_ANSWER_CHARS: usize = 6000;
+
+/// Queues indexing for chats that have none yet (e.g. from before chat recall existed).
+pub fn backfill_chats(state: &AppState, c: &rad_vault::Connection) -> rad_vault::Result<()> {
+    for id in recall::unindexed_chats(c)? {
+        enqueue(state, c, "chat_index", Some(id))?;
+    }
+    Ok(())
+}
+
+/// Splits a chat into question-and-answer passages: (user message id, text).
+fn chat_passages(msgs: &[Message]) -> Vec<(Id, String)> {
+    let mut out = Vec::new();
+    for pair in msgs.windows(2) {
+        let (q, a) = (&pair[0], &pair[1]);
+        if q.role != "user" || a.role != "assistant" || a.error.is_some() || a.content.trim().is_empty() {
+            continue;
+        }
+        let question: String = q.content.trim().chars().take(1200).collect();
+        let answer: String = a.content.trim().chars().take(CHAT_ANSWER_CHARS).collect();
+        let mut rest = answer.as_str();
+        let mut first = true;
+        while !rest.is_empty() {
+            let head = if first { format!("Owner: {question}\nRAD: ") } else { format!("Owner: {}\nRAD (continued): ", truncate(&question, 200)) };
+            let room = CHAT_PASSAGE_CHARS.saturating_sub(head.len()).max(400);
+            let mut cut = if rest.len() <= room { rest.len() } else { truncate(rest, room).len() };
+            // Prefer to break at a paragraph or sentence.
+            if cut < rest.len() {
+                if let Some(p) = rest[..cut].rfind("\n\n").or_else(|| rest[..cut].rfind(". ")).filter(|p| *p > room / 2) {
+                    cut = p + 1;
+                }
+            }
+            out.push((q.id, format!("{head}{}", rest[..cut].trim())));
+            rest = rest[cut..].trim_start();
+            first = false;
+        }
+    }
+    out
+}
+
+/// Keeps a chat's passages in the recall index current and embeds the new ones.
+async fn index_chat(state: &Shared, vault: &Arc<Vault>, chat_id: Id) -> JResult<()> {
+    let msgs = blocking(vault, move |c| repo::messages(c, chat_id)).await?;
+    let passages = chat_passages(&msgs);
+    blocking(vault, move |c| recall::replace_chunks(c, chat_id, &passages)).await?;
+
+    let settings = blocking(vault, settings_of).await?;
+    let Some(m) = settings.embedding_model.clone() else { return Ok(()) };
+    let m2 = m.clone();
+    let conn = blocking(vault, move |c| Ok(models::resolve(c, &m2))).await?.map_err(JobError::from)?;
+    let key = models::model_key(&m);
+    let prefix = rad_llm::embed_prefix(&m.model, false);
+    let space = blocking(vault, {
+        let key = key.clone();
+        move |c| search::space(c, &key)
+    })
+    .await?;
+    // Without a document index yet, embed one passage first to learn the vector size.
+    let mut space = space;
+    // Round 1 may only embed the first passage (to create the space); round 2 does the rest.
+    for _ in 0..2 {
+        let missing = match space {
+            Some(sp) => blocking(vault, move |c| recall::missing_vectors(c, sp, chat_id)).await?,
+            None => blocking(vault, move |c| {
+                let mut st = c.prepare("SELECT id, text FROM chat_chunks WHERE chat_id = ?1 ORDER BY ord LIMIT 1")?;
+                let rows = st.query_map(rad_vault::rusqlite::params![chat_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+                Ok(rows.collect::<Result<Vec<(Id, String)>, _>>()?)
+            })
+            .await?,
+        };
+        if missing.is_empty() {
+            return Ok(());
+        }
+        for batch in missing.chunks(EMBED_BATCH) {
+            let texts: Vec<String> = batch.iter().map(|(_, t)| format!("{prefix}{t}")).collect();
+            let vecs = state.llm.embed(&conn, &m.model, &texts).await?;
+            let dims = vecs[0].len();
+            let sp = match space {
+                Some(sp) => sp,
+                None => {
+                    let k = key.clone();
+                    blocking(vault, move |c| search::ensure_space(c, &k, dims)).await?
+                }
+            };
+            space = Some(sp);
+            let rows: Vec<(Id, Vec<f32>)> = batch.iter().map(|(id, _)| *id).zip(vecs).collect();
+            blocking(vault, move |c| recall::insert_vectors(c, sp, &rows)).await?;
+        }
+    }
+    Ok(())
+}
+
+/// Folds messages that slid out of the history window into the chat's running summary.
+async fn summarize_chat(state: &Shared, vault: &Arc<Vault>, chat_id: Id) -> JResult<()> {
+    let (chat, msgs, settings, (summary, upto)) = blocking(vault, move |c| {
+        Ok((repo::chat(c, chat_id)?, repo::messages(c, chat_id)?, repo::settings(c)?, recall::summary(c, chat_id)?))
+    })
+    .await?;
+    let history: Vec<Message> = msgs.into_iter().filter(|m| m.role == "user" || m.role == "assistant").collect();
+    let start = crate::rag::window_start(&history);
+    if start == 0 || history[start - 1].id <= upto {
+        return Ok(());
+    }
+    let boundary = history[start - 1].id;
+    let Some(model) = settings.rewrite_model.clone().or(chat.model.clone()).or(settings.chat_model.clone()) else {
+        return Ok(());
+    };
+    let m2 = model.clone();
+    let conn = blocking(vault, move |c| Ok(models::resolve(c, &m2))).await?.map_err(JobError::from)?;
+
+    let mut convo = String::new();
+    for m in history[..start].iter().filter(|m| m.id > upto) {
+        let who = if m.role == "user" { "Owner" } else { "RAD" };
+        convo.push_str(&format!("{who}: {}\n\n", truncate(m.content.trim(), 2500)));
+    }
+    let req = ChatRequest {
+        system: Some(
+            "You keep a running summary of a conversation between the owner and their assistant RAD. \
+             Update the summary with the new messages. Keep names, numbers, dates, decisions, preferences and open \
+             questions; drop small talk. At most 250 words. Output only the updated summary."
+                .into(),
+        ),
+        messages: vec![ChatMsg::new(
+            "user",
+            format!(
+                "Current summary:\n{}\n\nNew messages:\n{convo}Updated summary:",
+                if summary.trim().is_empty() { "(none yet)" } else { summary.trim() }
+            ),
+        )],
+        temperature: Some(0.2),
+        max_tokens: 600,
+    };
+    let text = crate::rag::strip_thinking(&state.llm.complete(&conn, &model.model, &req).await?);
+    let text = truncate(text.trim(), 3000).to_string();
+    if text.is_empty() {
+        return Ok(());
+    }
+    blocking(vault, move |c| recall::set_summary(c, chat_id, &text, boundary)).await?;
+    tracing::info!("chat {chat_id}: summary updated up to message {boundary}");
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rag::tests::msg;
+
+    #[test]
+    fn chat_passages_pair_questions_with_answers() {
+        let mut failed = msg(4, "assistant", "partial");
+        failed.error = Some("provider down".into());
+        let msgs = vec![
+            msg(1, "user", "Which insurer did we pick?"),
+            msg(2, "assistant", "Allianz, for 820 EUR a year [1]."),
+            msg(3, "user", "Thanks"),
+            failed,
+            msg(5, "user", "Summarise the contract"),
+            msg(6, "assistant", &"The contract covers theft and fire. ".repeat(120)),
+        ];
+        let p = chat_passages(&msgs);
+        assert_eq!(p[0], (1, "Owner: Which insurer did we pick?\nRAD: Allianz, for 820 EUR a year [1].".to_string()));
+        assert!(p.iter().all(|(id, _)| *id != 3), "a failed answer isn't indexed");
+        let long: Vec<&String> = p.iter().filter(|(id, _)| *id == 5).map(|(_, t)| t).collect();
+        assert!(long.len() > 1, "long answers are split");
+        assert!(long.iter().all(|t| t.len() <= CHAT_PASSAGE_CHARS + 10 && t.starts_with("Owner: Summarise")));
+    }
 }

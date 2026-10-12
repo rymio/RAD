@@ -10,7 +10,8 @@ RAD is a personal RAG assistant. You put documents, notes, screenshots, images a
   - **Standalone:** no server at all. The app runs the RAD engine itself, on a vault file you choose (local disk, external or USB drive).
   - **Server mode:** the vault lives on a RAD server you own, and the apps on macOS, Windows and Linux are thin clients that all see the same data, live.
   - Both modes run the same code, so every feature works in each. The vault file format is identical, so you can start standalone and move the file to a server later.
-- **Any model.** Ollama, LM Studio, OpenAI, Anthropic, OpenRouter, Groq, Gemini, Mistral, or any OpenAI-compatible endpoint. The server is the only thing that talks to them.
+- **Any model.** Ollama, LM Studio, OpenAI, Anthropic, OpenRouter, Groq, Gemini, Mistral, or any OpenAI-compatible endpoint. The server is the only thing that talks to them. You choose the model for each role (chat, embeddings, vision, transcription, query rewriting).
+- **Built-in models (llama.cpp).** RAD compiles in llama.cpp and ships `nomic-embed-text v1.5` (GGUF, 8-bit, ~146 MB), so semantic search works offline with nothing else installed. Under **Settings → Models → Built-in models** you can also download a light chat model (Qwen3 4B — recommended, Gemma 3 4B, Llama 3.2 3B; 2–2.5 GB each) and answer fully offline. RAD shows whether each one fits your memory before you download. Models are plain files in a local `models` folder (`~/Library/Application Support/com.rymtech.rad/models` on macOS), never inside the vault.
 - **Always at hand.** RAD lives in the tray / menu bar.
   - **Quick Ask:** <kbd>⌥ Space</kbd>
   - **Screenshot into the vault:** <kbd>⌥ ⇧ S</kbd>
@@ -49,7 +50,7 @@ RAD is a personal RAG assistant. You put documents, notes, screenshots, images a
 1. Build and open the app (see step 2 below).
 2. Choose **Standalone → Create vault…** and pick where the `.radvault` file goes.
 3. Set a passphrase and save the recovery kit.
-4. Add a model under **Settings → Models**, e.g. Ollama or LM Studio running on the same computer.
+4. Pick a chat model under **Settings → Models**: download a built-in one (Qwen3 4B is a good default), or add Ollama, LM Studio or a cloud provider. Semantic search already works through the built-in embedding model.
 
 Notes:
 - **Ports:** in standalone mode RAD serves itself on a random `127.0.0.1` port that only the app can use. Nothing is opened to the network.
@@ -66,7 +67,8 @@ On a home server, a NAS, or the machine that runs Ollama:
 docker compose -f deploy/docker-compose.yml up -d
 docker compose -f deploy/docker-compose.yml logs rad      # shows the pairing code
 
-# …or natively
+# …or natively (needs cmake and clang/libclang: llama.cpp is compiled in)
+./scripts/fetch-models.sh                                   # optional: built-in model into ./models
 cargo build --release -p rad-server
 RAD_VAULT=~/rad/personal.radvault ./target/release/rad-server
 ```
@@ -85,6 +87,8 @@ Useful options (flags or environment variables):
 | `RAD_TLS_CERT` / `RAD_TLS_KEY` | — | Serve HTTPS directly |
 | `RAD_FFMPEG` | `ffmpeg` | Needed for audio/video |
 | `RAD_MAX_UPLOAD_MB` | `8192` | |
+| `RAD_MODELS_DIR` | `<vault dir>/models` | Built-in GGUF models; the embedding model is downloaded (and checksum-verified) here on first start if missing |
+| `RAD_BUNDLED_MODELS_DIR` | — | Read-only folder checked first (the Docker image ships the model in `/opt/rad/models`) |
 
 CLI helpers:
 
@@ -95,6 +99,7 @@ CLI helpers:
 ### 2. Install and connect the app
 
 ```bash
+./scripts/fetch-models.sh  # built-in embedding model → models/ (bundled into the app; git-ignored)
 cd app/ui && npm ci && cd ..
 cargo tauri build          # .dmg/.app, .msi/.exe, .AppImage/.deb/.rpm
 # development: cargo tauri dev

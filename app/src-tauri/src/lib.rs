@@ -231,7 +231,7 @@ fn spawn_idle_watch(app: AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,llama-cpp-2=warn".into()))
         .init();
 
     tauri::Builder::default()
@@ -339,6 +339,7 @@ pub fn run() {
                 if let Some(e) = emb {
                     tauri::async_runtime::block_on(e.stop());
                 }
+                rad_server::shutdown_models();
             }
         });
 }

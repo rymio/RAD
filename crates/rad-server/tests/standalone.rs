@@ -36,6 +36,33 @@ impl C {
     }
 }
 
+/// Downloads go to a throwaway folder; the repo's `models/` (scripts/fetch-models.sh) is used
+/// read-only so the test doesn't fetch the embedding model every run.
+fn models(dir: &std::path::Path) -> (std::path::PathBuf, Vec<std::path::PathBuf>) {
+    (dir.join("models"), vec![std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../models")])
+}
+
+/// Sends a chat message and returns the final `done` event.
+async fn ask(c: &C, chat: &Value, content: &str) -> Value {
+    let resp = c
+        .http
+        .post(format!("{}/v1/chats/{}/messages", c.base, chat["id"]))
+        .bearer_auth(&c.token)
+        .header("x-rad-session", c.session.clone().unwrap())
+        .json(&json!({ "content": content }))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    resp.lines()
+        .filter_map(|l| l.strip_prefix("data:"))
+        .filter_map(|d| serde_json::from_str::<Value>(d.trim()).ok())
+        .find(|e| e["type"] == "done")
+        .unwrap_or_else(|| panic!("no done event: {resp}"))
+}
+
 async fn wait_jobs(c: &C) {
     for _ in 0..120 {
         let j = c.get("/v1/jobs").await;
@@ -54,7 +81,10 @@ async fn standalone_vault_roundtrip() {
     let pass = "standalone passphrase 1";
 
     // ---- first run: create
-    let emb = Embedded::start(vault.clone(), "My Vault", None).await.unwrap();
+    let emb = {
+        let (md, bundled) = models(dir.path());
+        Embedded::start(vault.clone(), "My Vault", None, md, bundled).await.unwrap()
+    };
     assert!(emb.addr.ip().is_loopback(), "standalone server must only listen on loopback");
     let mut c = C { http: reqwest::Client::new(), base: emb.url(), token: emb.device_token.clone(), session: None };
     let st = c.get("/v1/status").await;
@@ -67,10 +97,79 @@ async fn standalone_vault_roundtrip() {
 
     let p = c.post("/v1/projects", json!({ "name": "Garden" })).await;
     let pid = p["id"].as_i64().unwrap();
+    // Every vault gets the built-in engine and uses its embedding model by default.
+    let providers = c.get("/v1/providers").await;
+    let builtin = providers.as_array().unwrap().iter().find(|p| p["kind"] == "builtin").expect("built-in provider");
+    let settings = c.get("/v1/settings").await;
+    assert_eq!(settings["embedding_model"]["provider_id"], builtin["id"]);
+    assert_eq!(settings["embedding_model"]["model"], "nomic-embed-text-v1.5-q8");
+    let (code, _) = c.req(reqwest::Method::DELETE, &format!("/v1/providers/{}", builtin["id"]), None).await;
+    assert_eq!(code, 400, "the built-in provider can't be removed");
+    let local = c.get("/v1/local-models").await;
+    assert_eq!(local["provider_id"], builtin["id"]);
+    let nomic = local["models"].as_array().unwrap().iter().find(|m| m["id"] == "nomic-embed-text-v1.5-q8").unwrap();
+    assert_eq!(nomic["installed"], true);
+    assert!(local["models"].as_array().unwrap().iter().any(|m| m["kind"] == "chat" && m["recommended"] == true));
+    let (code, _) = c.req(reqwest::Method::DELETE, "/v1/local-models/nomic-embed-text-v1.5-q8", None).await;
+    assert_eq!(code, 400, "the bundled embedding model can't be deleted");
+
     c.post(&format!("/v1/projects/{pid}/notes"), json!({ "title": "Tomatoes", "content": "Plant the San Marzano tomatoes after the last frost, around 10 May." })).await;
+    c.post(&format!("/v1/projects/{pid}/notes"), json!({ "title": "Car", "content": "The car insurance renewal is due in March; compare quotes first." })).await;
     wait_jobs(&c).await;
     let hits = c.get("/v1/search?q=when%20to%20plant%20tomatoes").await;
     assert_eq!(hits[0]["title"], "Tomatoes", "{hits}");
+    let info = c.get("/v1/vault/info").await;
+    assert!(info["embedded_chunks"].as_i64().unwrap() >= 2, "notes embedded by the built-in model: {info}");
+    // No shared keywords with the note — only the semantic index can find it.
+    let hits = c.get("/v1/search?q=vegetable%20garden%20sowing%20season").await;
+    assert_eq!(hits[0]["title"], "Tomatoes", "{hits}");
+    let hits = c.get("/v1/search?q=vehicle%20cover%20policy").await;
+    assert_eq!(hits[0]["title"], "Car", "{hits}");
+
+    // Full RAG answer from the built-in engine, if a chat model has been downloaded into models/.
+    let local = c.get("/v1/local-models").await;
+    if let Some(m) = local["models"].as_array().unwrap().iter().find(|m| m["kind"] == "chat" && m["installed"] == true) {
+        let (code, _) = c
+            .req(
+                reqwest::Method::PUT,
+                "/v1/settings",
+                Some(json!({ "chat_model": { "provider_id": builtin["id"], "model": m["id"] }, "embedding_model": settings["embedding_model"] })),
+            )
+            .await;
+        assert_eq!(code, 200);
+        let chat = c.post("/v1/chats", json!({})).await;
+        let done = ask(&c, &chat, "When should I plant the tomatoes?").await;
+        let answer = done["message"]["content"].as_str().unwrap();
+        println!("built-in {} answer: {answer}", m["id"]);
+        assert!(answer.contains("May") || answer.contains("frost"), "{answer}");
+        assert!(!done["message"]["citations"].as_array().unwrap().is_empty());
+
+        // Chat recall: a decision made in one chat is found — and cited — from another.
+        let decided = c.post("/v1/chats", json!({})).await;
+        ask(&c, &decided, "I decided to renew the car insurance with Allianz for 820 EUR per year. Acknowledge in one sentence.").await;
+        wait_jobs(&c).await;
+        let later = c.post("/v1/chats", json!({})).await;
+        let done = ask(&c, &later, "Which insurer did I choose for the car insurance renewal, and what does it cost?").await;
+        let answer = done["message"]["content"].as_str().unwrap();
+        println!("recall answer: {answer}");
+        assert!(answer.contains("Allianz") && answer.contains("820"), "{answer}");
+        let cites = done["message"]["citations"].as_array().unwrap();
+        assert!(cites.iter().any(|ct| ct["chat_id"] == decided["id"]), "cites the earlier chat: {cites:?}");
+
+        // Long chats: the first message has left the history window but survives in the summary.
+        let long = c.post("/v1/chats", json!({ "mode": "chat_only" })).await;
+        ask(&c, &long, "My gym locker number is 317. Reply with just OK.").await;
+        for i in 2..=7 {
+            ask(&c, &long, &format!("Filler message {i}. Reply with just OK.")).await;
+        }
+        wait_jobs(&c).await;
+        let done = ask(&c, &long, "What is my gym locker number? Answer with the number.").await;
+        let answer = done["message"]["content"].as_str().unwrap();
+        println!("summary answer: {answer}");
+        assert!(answer.contains("317"), "{answer}");
+    } else {
+        println!("no built-in chat model downloaded — skipped the built-in chat part");
+    }
 
     // Optional: full RAG answer through a local LM Studio, if one is running.
     let lm = reqwest::Client::new().get("http://localhost:1234/v1/models").timeout(std::time::Duration::from_secs(2)).send().await;
@@ -78,7 +177,7 @@ async fn standalone_vault_roundtrip() {
         let prov = c.post("/v1/providers", json!({ "kind": "openai", "name": "LM Studio", "base_url": "http://localhost:1234/v1" })).await;
         let id = prov["id"].as_i64().unwrap();
         let (code, _) = c
-            .req(reqwest::Method::PUT, "/v1/settings", Some(json!({ "chat_model": { "provider_id": id, "model": "google/gemma-4-e4b" } })))
+            .req(reqwest::Method::PUT, "/v1/settings", Some(json!({ "chat_model": { "provider_id": id, "model": "google/gemma-4-e4b" }, "embedding_model": settings["embedding_model"] })))
             .await;
         assert_eq!(code, 200);
         let chat = c.post("/v1/chats", json!({})).await;
@@ -117,7 +216,10 @@ async fn standalone_vault_roundtrip() {
     assert!(!raw.windows(11).any(|w| w == b"San Marzano"), "plaintext in vault file");
 
     // ---- second run: same file, starts locked, unlock with passphrase
-    let emb = Embedded::start(vault.clone(), "My Vault", None).await.unwrap();
+    let emb = {
+        let (md, bundled) = models(dir.path());
+        Embedded::start(vault.clone(), "My Vault", None, md, bundled).await.unwrap()
+    };
     let mut c = C { http: reqwest::Client::new(), base: emb.url(), token: emb.device_token.clone(), session: None };
     let st = c.get("/v1/status").await;
     assert_eq!(st["initialized"], true);

@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { ask } from '@tauri-apps/plugin-dialog';
+  import { revealItemInDir } from '@tauri-apps/plugin-opener';
   import { isEnabled as autoIsEnabled, enable as autoEnable, disable as autoDisable } from '@tauri-apps/plugin-autostart';
   import { store } from '../lib/state.svelte';
   import { api, rad } from '../lib/api';
   import { formatBytes, timeAgo, PROJECT_COLORS } from '../lib/util';
-  import type { Device, ModelRef, Provider, ProviderKind, Settings as S, VaultInfo } from '../lib/types';
+  import type { Device, LocalModel, LocalModels, ModelRef, Provider, ProviderKind, Settings as S, VaultInfo } from '../lib/types';
   import ModelPicker from './ModelPicker.svelte';
   import Modal from './Modal.svelte';
   import RecoveryKit from './RecoveryKit.svelte';
@@ -123,6 +124,47 @@
     store.reloadProviders();
     store.reloadSettings();
   }
+  // Built-in (llama.cpp) models: refreshed every second while a download runs.
+  let local = $state<LocalModels | null>(null);
+  let localTimer: ReturnType<typeof setTimeout> | undefined;
+  async function loadLocal() {
+    clearTimeout(localTimer);
+    try {
+      local = await api.get<LocalModels>('/v1/local-models');
+    } catch (e) {
+      store.error(e, 'Loading built-in models failed');
+      return;
+    }
+    if (local.models.some((m) => m.downloaded !== null)) localTimer = setTimeout(loadLocal, 1000);
+  }
+  $effect(() => {
+    if (tab === 'models') loadLocal();
+    return () => clearTimeout(localTimer);
+  });
+  async function downloadLocal(m: LocalModel) {
+    try {
+      await api.post(`/v1/local-models/${m.id}/download`);
+      loadLocal();
+    } catch (e) {
+      store.error(e, `Can't download ${m.name}`);
+    }
+  }
+  async function removeLocal(m: LocalModel) {
+    if (!(await ask(`Delete ${m.name} (${formatBytes(m.bytes)})? You can download it again any time.`, { title: 'Delete model', kind: 'warning' }))) return;
+    await api.del(`/v1/local-models/${m.id}`).catch((e) => store.error(e));
+    loadLocal();
+    s = await api.get<S>('/v1/settings');
+    store.settings = { ...s };
+  }
+  const usedForChat = (m: LocalModel) => !!local && s?.chat_model?.provider_id === local.provider_id && s?.chat_model?.model === m.id;
+  async function useForChat(m: LocalModel) {
+    if (!local?.provider_id) return;
+    await saveSettings({ chat_model: { provider_id: local.provider_id, model: m.id } });
+    store.toast('success', `${m.name} now answers your chats`, 'Runs on this machine with llama.cpp — no other program needed.');
+  }
+  const fitLabel = { ok: 'Fits', tight: 'Tight fit', too_big: 'Too big for this machine' } as const;
+  const fitClass = { ok: 'success', tight: 'warning', too_big: 'danger' } as const;
+
   async function pull(p: Provider) {
     if (!pullModel.trim()) return;
     pulling = { provider: p.id, status: 'Starting…', pct: 0 };
@@ -246,7 +288,7 @@
 
   const roles: { key: keyof S; label: string; hint: string; filter: 'chat' | 'embed' | '' }[] = [
     { key: 'chat_model', label: 'Chat', hint: 'Answers your questions. Bigger models give better answers.', filter: 'chat' },
-    { key: 'embedding_model', label: 'Embeddings', hint: 'Powers semantic search. Changing it re-indexes your vault in the background.', filter: 'embed' },
+    { key: 'embedding_model', label: 'Embeddings', hint: 'Powers semantic search. The built-in model works offline; changing it re-indexes your vault in the background.', filter: 'embed' },
     { key: 'vision_model', label: 'Vision', hint: 'Reads screenshots and images (e.g. qwen2.5vl, gemma 3/4, llama3.2-vision, GPT-4o, Claude).', filter: 'chat' },
     { key: 'transcription_model', label: 'Transcription', hint: 'Turns MP3/MP4 into searchable text (whisper-1, whisper-large-v3…). OpenAI-compatible providers only.', filter: '' },
     { key: 'rewrite_model', label: 'Query rewriting', hint: 'Optional small, fast model that turns follow-ups into standalone searches. Defaults to the chat model.', filter: 'chat' },
@@ -342,12 +384,20 @@
             <div class="card prov" class:off={!p.enabled}>
               <div class="ph">
                 <span class="dot {!p.enabled ? '' : h ? (h.ok ? 'ok' : 'bad') : 'warn'}"></span>
-                <div class="pn"><div class="st">{p.name} <span class="pill">{p.kind === 'openai' ? 'OpenAI-compatible' : p.kind}</span></div><div class="sd mono">{p.base_url}</div></div>
+                {#if p.kind === 'builtin'}
+                  <div class="pn"><div class="st">{p.name} <span class="pill">built-in</span></div><div class="sd">Runs the built-in models below {store.isLocal ? 'on this computer' : 'on the server'} — no other program needed.</div></div>
+                {:else}
+                  <div class="pn"><div class="st">{p.name} <span class="pill">{p.kind === 'openai' ? 'OpenAI-compatible' : p.kind}</span></div><div class="sd mono">{p.base_url}</div></div>
+                {/if}
                 <span class="spacer"></span>
                 <button class="btn sm" onclick={() => test(p)}><Plug size={13} /> Test</button>
-                <button class="btn sm" onclick={() => setKey(p)}><KeyRound size={13} /> {p.has_api_key ? 'Key ✓' : 'API key'}</button>
+                {#if p.kind !== 'builtin'}
+                  <button class="btn sm" onclick={() => setKey(p)}><KeyRound size={13} /> {p.has_api_key ? 'Key ✓' : 'API key'}</button>
+                {/if}
                 <button class="switch" class:on={p.enabled} onclick={() => toggleProvider(p)} aria-label="Enabled"></button>
-                <button class="icon-btn" onclick={() => removeProvider(p)} aria-label="Remove"><Trash2 size={15} /></button>
+                {#if p.kind !== 'builtin'}
+                  <button class="icon-btn" onclick={() => removeProvider(p)} aria-label="Remove"><Trash2 size={15} /></button>
+                {/if}
               </div>
               {#if testing[p.id]}<div class="test" class:bad={testing[p.id].startsWith('✕')}>{testing[p.id]}</div>{/if}
               {#if h && !h.ok && h.error}<div class="test bad">{h.error}</div>{/if}
@@ -365,6 +415,55 @@
           {/each}
           <button class="add card" onclick={() => ((addOpen = true), pickPreset(0))}><Plus size={16} /> Add provider</button>
         </div>
+
+        <h3>Built-in models <span class="pill">llama.cpp</span></h3>
+        {#if local}
+          <p class="lead">
+            Light models that run inside RAD, {store.isLocal ? 'on this computer' : 'on the server'} — offline, nothing else to install.
+            Memory: {formatBytes(local.total_memory)}. Kept in <span class="mono selectable">{local.dir}</span>
+            {#if store.isLocal}<button class="btn sm" onclick={() => revealItemInDir(local!.dir)}><FolderOpen size={13} /> Open folder</button>{/if}
+          </p>
+          <div class="provs">
+            {#each local.models as m (m.id)}
+              {@const pct = m.downloaded !== null ? Math.floor((m.downloaded / m.bytes) * 100) : 0}
+              <div class="card prov">
+                <div class="ph">
+                  <div class="pn spacer">
+                    <div class="st">
+                      {m.name}
+                      <span class="pill">{m.kind === 'chat' ? 'Chat' : 'Embeddings'}</span>
+                      {#if m.recommended && m.kind === 'chat'}<span class="pill accent">Recommended</span>{/if}
+                      {#if usedForChat(m)}<span class="pill success"><Check size={10} /> Answers your chats</span>{/if}
+                    </div>
+                    <div class="sd">{m.description}</div>
+                    <div class="sd">
+                      {m.parameters} · {formatBytes(m.bytes)} · needs ~{formatBytes(m.memory_needed)} memory ·
+                      <span class="pill {fitClass[m.fit]}">{fitLabel[m.fit]}</span> · {m.license}
+                    </div>
+                  </div>
+                  {#if m.downloaded !== null}
+                    <span class="sd">{pct}%</span>
+                  {:else if !m.installed}
+                    <button class="btn sm primary" disabled={m.fit === 'too_big'} onclick={() => downloadLocal(m)}><Download size={13} /> Download</button>
+                  {:else}
+                    {#if m.kind === 'chat' && !usedForChat(m)}
+                      <button class="btn sm" onclick={() => useForChat(m)}>Use for chat</button>
+                    {/if}
+                    {#if m.bundled}
+                      <span class="pill">Included</span>
+                    {:else}
+                      <button class="icon-btn" onclick={() => removeLocal(m)} aria-label="Delete model"><Trash2 size={15} /></button>
+                    {/if}
+                  {/if}
+                </div>
+                {#if m.downloaded !== null}
+                  <div class="progress"><div style="width:{pct}%"></div></div>
+                {/if}
+                {#if m.error}<div class="test bad">{m.error}</div>{/if}
+              </div>
+            {/each}
+          </div>
+        {/if}
 
         <h3>Model roles</h3>
         {#if s}
@@ -398,6 +497,10 @@
           <div class="srow">
             <div><div class="st">Rewrite follow-up questions</div><div class="sd">Resolves “and what about that?” before searching.</div></div>
             <button class="switch" class:on={s.query_rewrite} onclick={() => saveSettings({ query_rewrite: !s!.query_rewrite })} aria-label="Query rewrite"></button>
+          </div>
+          <div class="srow">
+            <div><div class="st">Remember earlier conversations</div><div class="sd">Search your past chats too and cite them, so RAD recalls what you discussed before. Long chats are also summarised so they don't forget their beginning.</div></div>
+            <button class="switch" class:on={s.chat_recall} onclick={() => saveSettings({ chat_recall: !s!.chat_recall })} aria-label="Remember earlier conversations"></button>
           </div>
           <div class="srow">
             <div><div class="st">Creativity</div><div class="sd">Temperature {s.temperature.toFixed(1)} — lower is more factual.</div></div>

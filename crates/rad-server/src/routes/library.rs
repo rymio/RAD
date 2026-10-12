@@ -363,6 +363,6 @@ pub async fn search(State(state): State<Shared>, a: Authed, Query(q): Query<Sear
     let projects: Vec<Id> = q.projects.unwrap_or_default().split(',').filter_map(|s| s.trim().parse().ok()).collect();
     let settings = db_vault(a.vault.clone(), &state, |_, c| Ok(repo::settings(c)?)).await?;
     let limit = q.limit.unwrap_or(12).clamp(1, 50);
-    let passages = rag::retrieve(&state, &a.vault, &settings, &q.q, projects, limit, 200_000).await?;
+    let passages = rag::retrieve(&state, &a.vault, &settings, &q.q, projects, limit, 200_000, None).await?;
     Ok(Json(passages.into_iter().map(|p| p.citation).collect()))
 }

@@ -38,6 +38,8 @@ export interface Attachment { document_id: Id; title: string; mime: string }
 export interface Citation {
   n: number; chunk_id: Id; document_id: Id; project_id: Id; project_name: string; title: string; mime: string;
   source_kind: string; anchor: Anchor; snippet: string; score: number;
+  /** Set when the source is an earlier conversation. */
+  chat_id?: Id;
 }
 export interface Message {
   id: Id; chat_id: Id; role: 'user' | 'assistant' | string; content: string; attachments: Attachment[];
@@ -53,7 +55,13 @@ export type ChatStreamEvent =
   | { type: 'error'; message: string }
   | { type: 'stopped' };
 
-export type ProviderKind = 'ollama' | 'openai' | 'anthropic';
+export type ProviderKind = 'ollama' | 'openai' | 'anthropic' | 'builtin';
+export interface LocalModel {
+  id: string; name: string; description: string; kind: 'chat' | 'embedding'; file: string; bytes: number;
+  parameters: string; license: string; recommended: boolean; installed: boolean; bundled: boolean;
+  downloaded: number | null; error: string | null; memory_needed: number; fit: 'ok' | 'tight' | 'too_big';
+}
+export interface LocalModels { provider_id: Id | null; dir: string; total_memory: number; models: LocalModel[] }
 export interface Provider {
   id: Id; kind: ProviderKind; name: string; base_url: string; has_api_key: boolean; header_names: string[];
   enabled: boolean; created_at: number;
@@ -65,7 +73,7 @@ export interface Settings {
   chat_model: ModelRef | null; rewrite_model: ModelRef | null; vision_model: ModelRef | null;
   embedding_model: ModelRef | null; transcription_model: ModelRef | null;
   persona: string; top_k: number; context_chars: number; chunk_chars: number; chunk_overlap: number;
-  query_rewrite: boolean; max_output_tokens: number; temperature: number;
+  query_rewrite: boolean; chat_recall: boolean; max_output_tokens: number; temperature: number;
   server_auto_lock_minutes: number; backup_keep: number; backup_daily: boolean;
 }
 export interface Memory { id: Id; text: string; enabled: boolean; created_at: number }

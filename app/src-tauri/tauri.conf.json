@@ -41,11 +41,18 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": {
+      "../../models/nomic-embed-text-v1.5.Q8_0.gguf": "models/nomic-embed-text-v1.5.Q8_0.gguf"
+    },
     "macOS": {
       "minimumSystemVersion": "11.0"
     },
     "linux": {
-      "deb": { "depends": ["libayatana-appindicator3-1"] }
+      "deb": {
+        "depends": [
+          "libayatana-appindicator3-1"
+        ]
+      }
     }
   }
 }

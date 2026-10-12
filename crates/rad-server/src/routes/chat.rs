@@ -17,11 +17,9 @@ use tokio::sync::mpsc;
 use crate::auth::Authed;
 use crate::error::{ApiErr, ApiResult};
 use crate::models;
-use crate::rag;
+use crate::rag::{self, strip_thinking};
 use crate::state::{db_vault, Shared};
 
-const HISTORY_MESSAGES: usize = 12;
-const HISTORY_CHARS: usize = 14_000;
 const ATTACHMENT_CHARS: usize = 16_000;
 
 #[derive(Deserialize)]
@@ -88,6 +86,8 @@ struct Prepared {
     images: Vec<ImagePart>,
     attached_text: String,
     remembered: Option<String>,
+    /// Running summary of the messages that no longer fit the history window.
+    summary: String,
 }
 
 fn remember_request(content: &str) -> Option<String> {
@@ -150,6 +150,7 @@ pub async fn send(
             )?
         };
         let history: Vec<Message> = msgs.into_iter().filter(|m| m.role == "user" || m.role == "assistant").collect();
+        let (summary, _) = rad_vault::recall::summary(c, chat_id)?;
 
         let model = req
             .model
@@ -211,6 +212,7 @@ pub async fn send(
             images,
             attached_text,
             remembered,
+            summary,
         })
     })
     .await?;
@@ -223,6 +225,9 @@ pub async fn send(
     let stream = tokio_stream::wrappers::ReceiverStream::new(rx).map(|ev| Ok(SseEvent::default().json_data(ev).unwrap_or_default()));
     Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
 }
+
+/// Context budget (characters of retrieved passages) for built-in chat models.
+const BUILTIN_CONTEXT_CHARS: u32 = 10_000;
 
 /// Picks projects mentioned as @Name (spaces may be written as - or _).
 fn mentioned_projects(text: &str, projects: &[Project]) -> Vec<Id> {
@@ -271,16 +276,6 @@ async fn rewrite_query(state: &Shared, p: &Prepared) -> String {
 }
 
 /// Removes <think>…</think> blocks some reasoning models emit.
-fn strip_thinking(s: &str) -> String {
-    let mut out = s.to_string();
-    while let (Some(a), Some(b)) = (out.find("<think>"), out.find("</think>")) {
-        if b < a {
-            break;
-        }
-        out.replace_range(a..b + "</think>".len(), "");
-    }
-    out
-}
 
 async fn generate(state: Shared, vault: Arc<Vault>, p: Prepared, tx: mpsc::Sender<ChatStreamEvent>) {
     let _ = tx.send(ChatStreamEvent::UserMessage { message: p.user_msg.clone() }).await;
@@ -296,7 +291,14 @@ async fn generate(state: Shared, vault: Arc<Vault>, p: Prepared, tx: mpsc::Sende
     if rag_mode && !p.user_msg.content.trim().is_empty() {
         let _ = tx.send(ChatStreamEvent::Status { text: "Searching your vault…".into() }).await;
         let query = rewrite_query(&state, &p).await;
-        match rag::retrieve(&state, &vault, &p.settings, &query, scope.clone(), p.settings.top_k as usize, p.settings.context_chars as usize).await {
+        // Built-in models read the prompt on this machine (~500 tokens/s on a laptop GPU):
+        // a smaller budget keeps the first word within a few seconds.
+        let budget = match p.conn.kind {
+            rad_api::ProviderKind::Builtin => p.settings.context_chars.min(BUILTIN_CONTEXT_CHARS),
+            _ => p.settings.context_chars,
+        };
+        let recall = p.settings.chat_recall.then(|| rag::Recall { exclude_chat: p.chat.id, scope: scope.clone() });
+        match rag::retrieve(&state, &vault, &p.settings, &query, scope.clone(), p.settings.top_k as usize, budget as usize, recall).await {
             Ok(ps) => passages = ps,
             Err(e) => tracing::warn!("retrieval failed: {}", e.message),
         }
@@ -312,19 +314,14 @@ async fn generate(state: Shared, vault: Arc<Vault>, p: Prepared, tx: mpsc::Sende
     if let Some(r) = &p.remembered {
         system.push_str(&format!("\n\nThe owner just asked you to remember: “{r}”. It has been saved to long-term memory — confirm briefly."));
     }
-    let mut messages: Vec<ChatMsg> = Vec::new();
-    let mut used = 0usize;
-    let mut hist: Vec<ChatMsg> = Vec::new();
-    for m in p.history.iter().rev().take(HISTORY_MESSAGES) {
-        let text: String = m.content.chars().take(4000).collect();
-        used += text.len();
-        if used > HISTORY_CHARS {
-            break;
-        }
-        hist.push(ChatMsg::new(&m.role, text));
+    let start = rag::window_start(&p.history);
+    if start > 0 && !p.summary.trim().is_empty() {
+        system.push_str(&format!(
+            "\n\nEarlier in this conversation (summary of older messages that are no longer shown):\n{}",
+            p.summary.trim()
+        ));
     }
-    hist.reverse();
-    messages.extend(hist);
+    let mut messages: Vec<ChatMsg> = p.history[start..].iter().map(|m| ChatMsg::new(&m.role, rag::history_text(m))).collect();
     let mut final_user = String::new();
     if rag_mode {
         final_user.push_str(&rag::sources_block(&passages));
@@ -401,6 +398,11 @@ async fn generate(state: Shared, vault: Arc<Vault>, p: Prepared, tx: mpsc::Sende
             },
         )?;
         st.changed(c, "chat", chat_id, "update");
+        if m.error.is_none() {
+            // Make this exchange findable from other chats, and keep the summary of long chats current.
+            crate::ingest::enqueue(&st, c, "chat_index", Some(chat_id))?;
+            crate::ingest::enqueue(&st, c, "chat_summary", Some(chat_id))?;
+        }
         Ok(m)
     })
     .await;

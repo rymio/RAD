@@ -6,6 +6,7 @@ mod pool;
 mod schema;
 
 pub mod blobs;
+pub mod recall;
 pub mod repo;
 pub mod search;
 

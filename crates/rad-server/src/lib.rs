@@ -22,6 +22,11 @@ use anyhow::Context;
 
 pub use state::Shared;
 
+/// Unloads the built-in engine's models. Call once before the process exits.
+pub fn shutdown_models() {
+    rad_local::shutdown();
+}
+
 /// Everything needed to run a RAD server instance.
 #[derive(Debug, Clone)]
 pub struct ServerOptions {
@@ -32,6 +37,10 @@ pub struct ServerOptions {
     pub backup_dir: Option<PathBuf>,
     pub ffmpeg: String,
     pub max_upload_mb: u64,
+    /// Writable folder for downloaded GGUF models (defaults to `<vault folder>/models`).
+    pub models_dir: Option<PathBuf>,
+    /// Read-only folders searched for models first-hand, e.g. the copy shipped with the app.
+    pub bundled_models: Vec<PathBuf>,
 }
 
 /// A running (but not yet listening) server: state, background workers, media endpoint.
@@ -60,8 +69,18 @@ impl Instance {
             max_upload_bytes: opts.max_upload_mb * 1024 * 1024,
             media_addr: Some(media_addr),
         };
-        let state = state::AppState::new(cfg, devices);
+        let models_dir = opts.models_dir.clone().unwrap_or_else(|| vault_dir.join("models"));
+        let library = rad_local::Library::new(models_dir, opts.bundled_models.clone());
+        let state = state::AppState::new(cfg, devices, library.clone());
         media::serve_loopback(media_listener, state.clone());
+
+        // Fetch the default embedding model now if this machine doesn't have it yet, so it's
+        // ready (and works offline from then on) before the first document needs it.
+        tokio::spawn(async move {
+            if let Err(e) = library.ensure(&rad_local::DEFAULT_EMBEDDING).await {
+                tracing::warn!("built-in embedding model unavailable (will retry when needed): {e}");
+            }
+        });
 
         let ff = media::check_ffmpeg(&state).await;
         state.ffmpeg_ok.store(ff, std::sync::atomic::Ordering::Relaxed);

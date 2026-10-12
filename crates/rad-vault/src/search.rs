@@ -109,6 +109,7 @@ pub fn ensure_space(c: &Connection, model_key: &str, dims: usize) -> Result<Spac
 
 pub fn drop_space(c: &Connection, id: i64) -> Result<()> {
     c.execute_batch(&format!("DROP TABLE IF EXISTS {};", vec_table(id)))?;
+    c.execute_batch(&format!("DROP TABLE IF EXISTS {};", crate::recall::vec_table(id)))?;
     c.execute("DELETE FROM embedded WHERE space_id = ?1", params![id])?;
     c.execute("DELETE FROM embedding_spaces WHERE id = ?1", params![id])?;
     Ok(())
@@ -120,7 +121,7 @@ pub fn spaces(c: &Connection) -> Result<Vec<(Space, String)>> {
     Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
 
-fn to_blob(v: &[f32]) -> Vec<u8> {
+pub(crate) fn to_blob(v: &[f32]) -> Vec<u8> {
     let mut b = Vec::with_capacity(v.len() * 4);
     for x in v {
         b.extend_from_slice(&x.to_le_bytes());
@@ -128,7 +129,7 @@ fn to_blob(v: &[f32]) -> Vec<u8> {
     b
 }
 
-fn from_blob(b: &[u8]) -> Vec<f32> {
+pub(crate) fn from_blob(b: &[u8]) -> Vec<f32> {
     b.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
 }
 

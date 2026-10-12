@@ -14,18 +14,25 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Built-in models
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: models-nomic-embed-text-v1.5-q8
+      - run: ./scripts/fetch-models.sh
+        shell: bash
       - name: Linux deps
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libdbus-1-dev libpipewire-0.3-dev libgbm-dev libxcb1-dev libxrandr-dev
+          sudo apt-get install -y cmake clang libclang-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libdbus-1-dev libpipewire-0.3-dev libgbm-dev libxcb1-dev libxrandr-dev
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - run: npm ci
         working-directory: app/ui
       - run: npm run check && npm run build
         working-directory: app/ui
-      - run: cargo test -p rad-vault -p rad-ingest -p rad-server
+      - run: cargo test -p rad-vault -p rad-ingest -p rad-local -p rad-server
       - run: cargo build -p rad-app
 
   release:
@@ -47,11 +54,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - name: Built-in models
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: models-nomic-embed-text-v1.5-q8
+      - run: ./scripts/fetch-models.sh
+        shell: bash
       - name: Linux deps
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libdbus-1-dev libpipewire-0.3-dev libgbm-dev libxcb1-dev libxrandr-dev
+          sudo apt-get install -y cmake clang libclang-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libdbus-1-dev libpipewire-0.3-dev libgbm-dev libxcb1-dev libxrandr-dev
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - run: npm ci

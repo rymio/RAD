@@ -50,9 +50,10 @@ export function formatTime(t: number) {
   return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
 }
 
-export type DocKind = 'note' | 'pdf' | 'doc' | 'sheet' | 'slides' | 'image' | 'audio' | 'video' | 'code' | 'web' | 'mail' | 'archive' | 'text' | 'file';
+export type DocKind = 'chat' | 'note' | 'pdf' | 'doc' | 'sheet' | 'slides' | 'image' | 'audio' | 'video' | 'code' | 'web' | 'mail' | 'archive' | 'text' | 'file';
 
 export function docKind(d: Pick<Document, 'mime' | 'original_name' | 'source_kind'>): DocKind {
+  if (d.source_kind === 'chat') return 'chat';
   if (d.source_kind === 'note') return 'note';
   const m = d.mime;
   const ext = d.original_name.split('.').pop()?.toLowerCase() ?? '';
@@ -72,7 +73,7 @@ export function docKind(d: Pick<Document, 'mime' | 'original_name' | 'source_kin
 }
 
 export const kindColor: Record<DocKind, string> = {
-  note: '#f5a524', pdf: '#e5484d', doc: '#3b82f6', sheet: '#2f9e67', slides: '#f97316', image: '#a855f7',
+  chat: '#7c6cf2', note: '#f5a524', pdf: '#e5484d', doc: '#3b82f6', sheet: '#2f9e67', slides: '#f97316', image: '#a855f7',
   audio: '#ec4899', video: '#06b6d4', code: '#64748b', web: '#0ea5e9', mail: '#8b5cf6', archive: '#a16207', text: '#6b7280', file: '#6b7280',
 };
 

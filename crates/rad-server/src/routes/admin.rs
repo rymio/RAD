@@ -23,6 +23,9 @@ pub async fn list_providers(State(state): State<Shared>, a: Authed) -> ApiResult
 }
 
 pub async fn create_provider(State(state): State<Shared>, a: Authed, Json(input): Json<ProviderInput>) -> ApiResult<Json<Provider>> {
+    if input.kind == Some(ProviderKind::Builtin) {
+        return Err(ApiErr::bad_request("the built-in engine is always present and can't be added again"));
+    }
     db_vault(a.vault, &state, move |st, c| {
         let p = repo::create_provider(c, &input)?;
         st.changed(c, "provider", p.id, "create");
@@ -33,6 +36,10 @@ pub async fn create_provider(State(state): State<Shared>, a: Authed, Json(input)
 
 pub async fn update_provider(State(state): State<Shared>, a: Authed, Path(id): Path<Id>, Json(input): Json<ProviderInput>) -> ApiResult<Json<Provider>> {
     db_vault(a.vault, &state, move |st, c| {
+        let was_builtin = repo::provider(c, id)?.kind == ProviderKind::Builtin;
+        if input.kind.is_some_and(|k| (k == ProviderKind::Builtin) != was_builtin) {
+            return Err(ApiErr::bad_request("a provider can't be turned into or out of the built-in engine"));
+        }
         let p = repo::update_provider(c, id, &input)?;
         st.changed(c, "provider", id, "update");
         Ok(Json(p.public()))
@@ -42,6 +49,9 @@ pub async fn update_provider(State(state): State<Shared>, a: Authed, Path(id): P
 
 pub async fn delete_provider(State(state): State<Shared>, a: Authed, Path(id): Path<Id>) -> ApiResult<StatusCode> {
     db_vault(a.vault, &state, move |st, c| {
+        if repo::provider(c, id)?.kind == ProviderKind::Builtin {
+            return Err(ApiErr::bad_request("the built-in engine can't be removed — switch it off instead"));
+        }
         repo::delete_provider(c, id)?;
         // Drop settings that pointed at this provider.
         let mut s = repo::settings(c)?;
@@ -105,6 +115,76 @@ pub async fn pull_model(
 pub async fn delete_model(State(state): State<Shared>, a: Authed, Path(id): Path<Id>, Json(req): Json<PullRequest>) -> ApiResult<StatusCode> {
     let conn = provider_conn(&state, &a, id).await?;
     state.llm.ollama_delete(&conn, &req.model).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ------------------------------------------------------------------ built-in models
+
+pub async fn local_models(State(state): State<Shared>, a: Authed) -> ApiResult<Json<LocalModels>> {
+    let provider_id = db_vault(a.vault, &state, |_, c| {
+        Ok(repo::providers(c)?.into_iter().find(|p| p.kind == ProviderKind::Builtin).map(|p| p.id))
+    })
+    .await?;
+    let models = state
+        .library
+        .status()
+        .into_iter()
+        .map(|m| LocalModel {
+            id: m.spec.id.into(),
+            name: m.spec.name.into(),
+            description: m.spec.description.into(),
+            kind: m.spec.kind.as_str().into(),
+            file: m.spec.file.into(),
+            bytes: m.spec.bytes,
+            parameters: m.spec.parameters.into(),
+            license: m.spec.license.into(),
+            recommended: m.spec.recommended,
+            installed: m.path.is_some(),
+            bundled: m.bundled,
+            downloaded: m.downloading.map(|(done, _)| done),
+            error: m.error,
+            memory_needed: m.memory_needed,
+            fit: m.fit.as_str().into(),
+        })
+        .collect();
+    Ok(Json(LocalModels {
+        provider_id,
+        dir: state.library.dir().display().to_string(),
+        total_memory: rad_local::total_memory(),
+        models,
+    }))
+}
+
+fn local_spec(id: &str) -> ApiResult<&'static rad_local::ModelSpec> {
+    rad_local::spec(id).ok_or_else(ApiErr::not_found)
+}
+
+pub async fn download_local_model(State(state): State<Shared>, _a: Authed, Path(id): Path<String>) -> ApiResult<StatusCode> {
+    state.library.start_download(local_spec(&id)?).map_err(|e| ApiErr::bad_request(e.to_string()))?;
+    Ok(StatusCode::ACCEPTED)
+}
+
+pub async fn delete_local_model(State(state): State<Shared>, a: Authed, Path(id): Path<String>) -> ApiResult<StatusCode> {
+    let spec = local_spec(&id)?;
+    state.library.delete(spec).map_err(|e| ApiErr::bad_request(e.to_string()))?;
+    // Settings that used it fall back to "not set" (chat) — the embedding default stays.
+    db_vault(a.vault, &state, move |st, c| {
+        let mut s = repo::settings(c)?;
+        let builtin: Vec<Id> = repo::providers(c)?.into_iter().filter(|p| p.kind == ProviderKind::Builtin).map(|p| p.id).collect();
+        let mut changed = false;
+        for slot in [&mut s.chat_model, &mut s.rewrite_model] {
+            if slot.as_ref().is_some_and(|m| builtin.contains(&m.provider_id) && m.model == spec.id) {
+                *slot = None;
+                changed = true;
+            }
+        }
+        if changed {
+            repo::save_settings(c, &s)?;
+            st.changed(c, "settings", 0, "update");
+        }
+        Ok(())
+    })
+    .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

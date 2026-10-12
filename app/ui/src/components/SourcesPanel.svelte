@@ -4,7 +4,7 @@
   import type { Citation } from '../lib/types';
   import DocIcon from './DocIcon.svelte';
   import Preview from './Preview.svelte';
-  import { X, ChevronLeft, FolderOpen } from '@lucide/svelte';
+  import { X, ChevronLeft, FolderOpen, MessagesSquare } from '@lucide/svelte';
 
   let { citations, selected, onclose, onselect }: { citations: Citation[]; selected: Citation | null; onclose: () => void; onselect: (c: Citation | null) => void } = $props();
 </script>
@@ -14,7 +14,11 @@
     {#if selected}
       <button class="icon-btn no-drag" onclick={() => onselect(null)} aria-label="Back"><ChevronLeft size={17} /></button>
       <span class="truncate t">{selected.title}</span>
-      <button class="icon-btn no-drag" title="Open project" onclick={() => store.navigate({ kind: 'project', id: selected!.project_id, doc: selected!.document_id })}><FolderOpen size={16} /></button>
+      {#if selected.chat_id}
+        <button class="icon-btn no-drag" title="Open conversation" onclick={() => store.navigate({ kind: 'chat', id: selected!.chat_id! })}><MessagesSquare size={16} /></button>
+      {:else}
+        <button class="icon-btn no-drag" title="Open project" onclick={() => store.navigate({ kind: 'project', id: selected!.project_id, doc: selected!.document_id })}><FolderOpen size={16} /></button>
+      {/if}
     {:else}
       <span class="t">Sources <span class="muted">{citations.length || ''}</span></span>
     {/if}
@@ -22,7 +26,13 @@
     <button class="icon-btn no-drag" onclick={onclose} aria-label="Close"><X size={17} /></button>
   </header>
 
-  {#if selected}
+  {#if selected?.chat_id}
+    <div class="convo">
+      <div class="meta">Earlier conversation{#if anchorLabel(selected.anchor)} · {anchorLabel(selected.anchor)}{/if}</div>
+      <div class="excerpt selectable">{selected.snippet}</div>
+      <button class="btn sm" onclick={() => store.navigate({ kind: 'chat', id: selected!.chat_id! })}><MessagesSquare size={13} /> Open conversation</button>
+    </div>
+  {:else if selected}
     {#key selected.chunk_id}
       <Preview documentId={selected.document_id} mime={selected.mime} title={selected.title} anchor={selected.anchor} chunkId={selected.chunk_id} />
     {/key}
@@ -35,7 +45,11 @@
             <DocIcon kind={docKind({ mime: c.mime, original_name: c.title, source_kind: c.source_kind })} size={15} />
             <span class="truncate title">{c.title}</span>
           </div>
-          <div class="meta"><span class="pdot" style="background:{store.projectMap.get(c.project_id)?.color ?? 'var(--text-4)'}"></span>{c.project_name}{#if anchorLabel(c.anchor)} · {anchorLabel(c.anchor)}{/if}</div>
+          {#if c.chat_id}
+            <div class="meta">Earlier conversation{#if anchorLabel(c.anchor)} · {anchorLabel(c.anchor)}{/if}</div>
+          {:else}
+            <div class="meta"><span class="pdot" style="background:{store.projectMap.get(c.project_id)?.color ?? 'var(--text-4)'}"></span>{c.project_name}{#if anchorLabel(c.anchor)} · {anchorLabel(c.anchor)}{/if}</div>
+          {/if}
           <div class="snip">{c.snippet}</div>
         </button>
       {:else}
@@ -130,6 +144,20 @@
     width: 7px;
     height: 7px;
     border-radius: 2px;
+  }
+  .convo {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px;
+    overflow: auto;
+  }
+  .excerpt {
+    white-space: pre-wrap;
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: var(--text);
   }
   .snip {
     font-size: 12.5px;

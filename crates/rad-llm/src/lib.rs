@@ -1,7 +1,9 @@
-//! Model provider adapters: Ollama, any OpenAI-compatible API, and Anthropic.
+//! Model provider adapters: Ollama, any OpenAI-compatible API, Anthropic, and RAD's built-in
+//! llama.cpp engine (`rad-local`).
 
 use std::collections::BTreeMap;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use base64::Engine;
@@ -19,6 +21,14 @@ pub enum LlmError {
     Protocol(String),
     #[error("{0}")]
     Unsupported(String),
+    #[error("built-in engine: {message}")]
+    Local { message: String, retry: bool },
+}
+
+impl From<rad_local::LocalError> for LlmError {
+    fn from(e: rad_local::LocalError) -> Self {
+        LlmError::Local { retry: e.is_transient(), message: e.to_string() }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, LlmError>;
@@ -77,6 +87,7 @@ pub struct Transcript {
 #[derive(Clone)]
 pub struct Llm {
     http: reqwest::Client,
+    local: Option<Arc<rad_local::Library>>,
 }
 
 impl Default for Llm {
@@ -93,7 +104,17 @@ impl Llm {
             .user_agent(concat!("RAD/", env!("CARGO_PKG_VERSION")))
             .build()
             .expect("http client");
-        Llm { http }
+        Llm { http, local: None }
+    }
+
+    /// Enables the built-in provider, running GGUF models from `library`.
+    pub fn with_local(mut self, library: Arc<rad_local::Library>) -> Self {
+        self.local = Some(library);
+        self
+    }
+
+    fn local(&self) -> Result<&Arc<rad_local::Library>> {
+        self.local.as_ref().ok_or_else(|| LlmError::Unsupported("the built-in engine is not available here".into()))
     }
 
     fn req(&self, p: &ProviderConn, method: reqwest::Method, url: String) -> reqwest::RequestBuilder {
@@ -181,6 +202,20 @@ impl Llm {
                     .map(|id| ModelInfo { id, size: None, family: None, parameter_size: None })
                     .collect()
             }
+            ProviderKind::Builtin => {
+                // Downloaded models, plus the default embedding model (fetched on demand).
+                self.local()?
+                    .status()
+                    .into_iter()
+                    .filter(|m| m.path.is_some() || m.spec.id == rad_local::DEFAULT_EMBEDDING.id)
+                    .map(|m| ModelInfo {
+                        id: m.spec.id.to_string(),
+                        size: Some(m.spec.bytes),
+                        family: Some(m.spec.family.to_string()),
+                        parameter_size: Some(m.spec.parameters.to_string()),
+                    })
+                    .collect()
+            }
         };
         models.sort_by(|a, b| a.id.cmp(&b.id));
         Ok(models)
@@ -194,6 +229,10 @@ impl Llm {
             ProviderKind::Ollama => format!("{base}/api/version"),
             ProviderKind::Openai => format!("{base}/models"),
             ProviderKind::Anthropic => format!("{base}/v1/models?limit=1"),
+            ProviderKind::Builtin => {
+                self.local()?;
+                return Ok(start.elapsed());
+            }
         };
         self.send(p, self.req(p, reqwest::Method::GET, url).timeout(Duration::from_secs(10))).await?;
         Ok(start.elapsed())
@@ -206,6 +245,7 @@ impl Llm {
             ProviderKind::Ollama => self.ollama_chat(p, model, req).await,
             ProviderKind::Openai => self.openai_chat(p, model, req).await,
             ProviderKind::Anthropic => self.anthropic_chat(p, model, req).await,
+            ProviderKind::Builtin => self.builtin_chat(model, req),
         }
     }
 
@@ -217,6 +257,30 @@ impl Llm {
             out.push_str(&c?.text);
         }
         Ok(out)
+    }
+
+    fn builtin_chat(&self, model: &str, req: &ChatRequest) -> Result<TextStream> {
+        if req.messages.iter().any(|m| !m.images.is_empty()) {
+            return Err(LlmError::Unsupported("built-in models can't read images — choose a vision model from another provider".into()));
+        }
+        let mut messages = Vec::new();
+        if let Some(s) = &req.system {
+            messages.push(rad_local::ChatMessage { role: "system".into(), content: s.clone() });
+        }
+        messages.extend(req.messages.iter().map(|m| rad_local::ChatMessage { role: m.role.clone(), content: m.content.clone() }));
+        let opts = rad_local::ChatOptions { max_tokens: req.max_tokens, temperature: req.temperature };
+        let rx = self.local()?.chat(model, messages, opts)?;
+        let s = tokio_stream::wrappers::ReceiverStream::new(rx).map(|ev| {
+            Ok(match ev? {
+                rad_local::ChatEvent::Text(text) => StreamChunk { text, ..Default::default() },
+                rad_local::ChatEvent::Done { prompt_tokens, completion_tokens } => StreamChunk {
+                    text: String::new(),
+                    tokens_in: Some(prompt_tokens as i64),
+                    tokens_out: Some(completion_tokens as i64),
+                },
+            })
+        });
+        Ok(Box::pin(s))
     }
 
     async fn ollama_chat(&self, p: &ProviderConn, model: &str, req: &ChatRequest) -> Result<TextStream> {
@@ -429,6 +493,7 @@ impl Llm {
                     "Anthropic has no embeddings API — choose an Ollama or OpenAI-compatible embedding model".into(),
                 ))
             }
+            ProviderKind::Builtin => self.local()?.embed(model, texts.to_vec()).await?,
         };
         if out.len() != texts.len() || out.iter().any(|v| v.is_empty()) {
             return Err(LlmError::Protocol(format!("expected {} embeddings, got {}", texts.len(), out.len())));
