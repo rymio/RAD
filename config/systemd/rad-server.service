@@ -1,0 +1,54 @@
+# RAD server — systemd unit (Ubuntu/Debian)
+# Install: see config/README.md
+#   sudo cp config/systemd/rad-server.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now rad-server
+#   journalctl -u rad-server -n 40        # shows the pairing code
+[Unit]
+Description=RAD personal RAG server (encrypted vault)
+Documentation=file:///opt/rad/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rad
+Group=rad
+EnvironmentFile=/etc/rad/rad-server.env
+ExecStart=/usr/local/bin/rad-server
+Restart=on-failure
+RestartSec=5
+# SIGINT makes rad-server lock the vault (drop the key from memory) before exiting.
+KillSignal=SIGINT
+TimeoutStopSec=20
+
+# --- keep the vault key out of swap and core dumps
+LimitCORE=0
+MemorySwapMax=0
+
+# --- sandboxing
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/rad
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RemoveIPC=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

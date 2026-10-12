@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "RAD",
+  "version": "0.1.0",
+  "identifier": "com.rymtech.rad",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../ui/dist"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "withGlobalTauri": false,
+    "windows": [],
+    "security": {
+      "csp": {
+        "default-src": "'self' rad: http://rad.localhost",
+        "img-src": "'self' rad: http://rad.localhost data: blob:",
+        "media-src": "'self' rad: http://rad.localhost blob:",
+        "connect-src": "'self' ipc: http://ipc.localhost rad: http://rad.localhost",
+        "style-src": "'self' 'unsafe-inline'",
+        "font-src": "'self' data:",
+        "worker-src": "'self' blob:",
+        "script-src": "'self' 'wasm-unsafe-eval'",
+        "frame-src": "'none'",
+        "object-src": "'none'"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Productivity",
+    "shortDescription": "Personal RAG assistant with an encrypted vault",
+    "longDescription": "RAD lets you chat with all your documents, notes, images and recordings, stored in one encrypted vault on your own server.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
+    "linux": {
+      "deb": { "depends": ["libayatana-appindicator3-1"] }
+    }
+  }
+}

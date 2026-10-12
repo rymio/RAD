@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8B7CF6"/>
+      <stop offset="0.55" stop-color="#6D5AE6"/>
+      <stop offset="1" stop-color="#3E2FB8"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.3" cy="0.22" r="0.8">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="core" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#E4DEFF"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#bg)"/>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#glow)"/>
+  <!-- vault ring -->
+  <circle cx="512" cy="512" r="250" fill="none" stroke="url(#core)" stroke-width="56" stroke-opacity="0.95"/>
+  <circle cx="512" cy="512" r="250" fill="none" stroke="#ffffff" stroke-width="56" stroke-dasharray="40 92" stroke-opacity="0.18" transform="rotate(-8 512 512)"/>
+  <!-- spark -->
+  <path d="M512 352 C 528 456, 568 496, 672 512 C 568 528, 528 568, 512 672 C 496 568, 456 528, 352 512 C 456 496, 496 456, 512 352 Z" fill="url(#core)"/>
+</svg>

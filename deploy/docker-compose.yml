@@ -1,0 +1,30 @@
+# Start:   docker compose -f deploy/docker-compose.yml up -d
+# Pairing: docker compose -f deploy/docker-compose.yml logs rad   (prints the pairing code)
+services:
+  rad:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: rad-server:latest
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    volumes:
+      - rad-data:/data          # the encrypted vault, device list and backups
+    environment:
+      RAD_NAME: "Home RAD"
+      # RAD_BACKUP_DIR: /backups  # mount a separate disk/NAS share for encrypted backups
+    # Reach Ollama / LM Studio on the host machine via host.docker.internal:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Optional: run Ollama next to RAD (GPU users: see https://hub.docker.com/r/ollama/ollama)
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   restart: unless-stopped
+  #   volumes: [ "ollama:/root/.ollama" ]
+  #   # then add a provider in RAD with base URL http://ollama:11434
+
+volumes:
+  rad-data:
+  # ollama:

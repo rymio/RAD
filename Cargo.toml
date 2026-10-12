@@ -1,0 +1,43 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/rad-api",
+    "crates/rad-vault",
+    "crates/rad-ingest",
+    "crates/rad-llm",
+    "crates/rad-server",
+    "app/src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Robert <robert@rymtechsystems.com>"]
+
+[workspace.dependencies]
+rad-api = { path = "crates/rad-api" }
+rad-vault = { path = "crates/rad-vault" }
+rad-ingest = { path = "crates/rad-ingest" }
+rad-llm = { path = "crates/rad-llm" }
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+base64 = "0.22"
+blake3 = "1"
+rand = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true
+
+[profile.dev.package."*"]
+opt-level = 2
