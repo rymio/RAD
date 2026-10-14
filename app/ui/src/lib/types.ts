@@ -16,7 +16,7 @@ export interface Project {
 export type DocStatus = 'queued' | 'processing' | 'ready' | 'error';
 export interface Document {
   id: Id; project_id: Id; title: string; original_name: string; mime: string; size: number; hash: string;
-  source_kind: 'upload' | 'paste' | 'screenshot' | 'note' | 'chat' | string;
+  source_kind: 'upload' | 'paste' | 'screenshot' | 'note' | 'chat' | 'web' | string;
   status: DocStatus; error: string | null; notice: string | null; page_count: number | null; chunk_count: number;
   has_thumb: boolean; tags: string[]; pinned: boolean; created_at: number; updated_at: number;
 }
@@ -105,4 +105,17 @@ export interface ClientConfig {
 export type Route =
   | { kind: 'chat'; id: Id | null }
   | { kind: 'project'; id: Id; doc?: Id }
-  | { kind: 'settings'; tab?: string };
+  | { kind: 'settings'; tab?: string }
+  | { kind: 'browser' };
+
+/** An image sent with one message only (e.g. a browser screenshot); base64 data. */
+export interface InlineImage { mime: string; data: string }
+
+/** Built-in browser (Servo engine). */
+export interface BrowserTab { id: number; url: string; title: string; loading: boolean; can_back: boolean; can_forward: boolean; zoom: number }
+export interface BrowserState { type: 'state'; tabs: BrowserTab[]; active: number }
+export interface PageScrape {
+  url: string; title: string; description: string; selection: string; text: string;
+  links: { text: string; href: string }[]; scroll_y: number; page_height: number;
+}
+export interface BrowserSnapshot { page?: PageScrape; image?: InlineImage }

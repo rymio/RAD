@@ -1,0 +1,31 @@
+[package]
+name = "rad-browser"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Robert <robert@rymtechsystems.com>"]
+description = "RAD web browser engine: an offscreen Servo instance driven over stdin/stdout"
+
+# Servo pins its own versions of SQLite and ICU, which clash with the RAD vault's, so the
+# engine is its own workspace and runs as a separate process next to the app.
+[workspace]
+
+[dependencies]
+servo = { version = "0.7", default-features = false, features = ["bundled", "js_jit", "clipboard"] }
+url = "2"
+euclid = "0.22"
+dpi = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+crossbeam-channel = "0.5"
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs"] }
+log = "0.4"
+env_logger = "0.11"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true

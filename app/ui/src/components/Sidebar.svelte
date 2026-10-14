@@ -6,7 +6,7 @@
   import Logo from './Logo.svelte';
   import Menu from './Menu.svelte';
   import Modal from './Modal.svelte';
-  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive } from '@lucide/svelte';
+  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe } from '@lucide/svelte';
 
   let newProjectOpen = $state(false);
   let npName = $state('');
@@ -90,6 +90,9 @@
   </button>
 
   <div class="scroll">
+    <button class="item web" class:active={store.route.kind === 'browser'} onclick={() => store.navigate({ kind: 'browser' })}>
+      <Globe size={15} /> <span class="spacer">Web Browser</span>
+    </button>
     <div class="sect">
       <div class="sect-h">
         <span class="section-title">Projects</span>
@@ -296,6 +299,9 @@
     background: var(--surface-active);
     color: var(--text);
     font-weight: 550;
+  }
+  .item.web :global(svg) {
+    color: var(--accent);
   }
   .item.empty,
   .item.sub {

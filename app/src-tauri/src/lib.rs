@@ -1,5 +1,6 @@
 //! RAD desktop client: a thin, secure shell around the RAD server API.
 
+mod browser;
 mod capture;
 mod client;
 mod commands;
@@ -276,6 +277,7 @@ pub fn run() {
                 events_task: Mutex::new(None),
                 embedded: tokio::sync::Mutex::new(None),
             });
+            app.manage(browser::Browser::default());
             let handle = app.handle().clone();
             tray::build(&handle)?;
             register_hotkeys(&handle);
@@ -324,6 +326,15 @@ pub fn run() {
             commands::open_main,
             commands::hide_quick,
             commands::toggle_quick_cmd,
+            browser::browser_start,
+            browser::browser_stop,
+            browser::browser_send,
+            browser::browser_frame,
+            browser::browser_eval,
+            browser::browser_scrape,
+            browser::browser_snapshot,
+            browser::browser_save_screenshot,
+            browser::browser_save_page,
         ])
         .build(tauri::generate_context!())
         .expect("error while building RAD")
@@ -333,6 +344,7 @@ pub fn run() {
             }
             if let tauri::RunEvent::Exit = ev {
                 // Drop the session — and in standalone mode lock the vault and checkpoint it.
+                app.state::<browser::Browser>().stop();
                 let st = app.state::<App>();
                 st.client.set_session(None);
                 let emb = tauri::async_runtime::block_on(async { st.embedded.lock().await.take() });

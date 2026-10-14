@@ -44,6 +44,8 @@ class Store {
   streamingChats = $state<Record<number, boolean>>({});
   messages = $state<Record<number, T.Message[]>>({});
   drafts = $state<Record<number, Draft>>({});
+  /** The conversation docked under the web browser. */
+  browserChatId = $state<number | null>(null);
 
   private toastId = 0;
   private listening = false;
@@ -301,7 +303,14 @@ class Store {
   }
 
   /** Sends a message and streams the answer into `drafts[chatId]`. */
-  async sendMessage(chatId: T.Id, req: { content: string; attachments?: T.Id[]; model?: T.ModelRef | null; truncate_from?: T.Id; regenerate?: boolean }) {
+  async sendMessage(
+    chatId: T.Id,
+    req: {
+      content: string; attachments?: T.Id[]; model?: T.ModelRef | null; truncate_from?: T.Id; regenerate?: boolean;
+      /** For this answer only, not stored: e.g. the page open in the browser. */
+      context?: string; images?: T.InlineImage[];
+    },
+  ) {
     const list = this.messages[chatId] ?? [];
     if (req.truncate_from) this.messages[chatId] = list.filter((m) => m.id < req.truncate_from!);
     if (req.regenerate) {

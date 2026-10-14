@@ -131,6 +131,7 @@ pub async fn upload(State(state): State<Shared>, a: Authed, Path(project_id): Pa
         Some("paste") => "paste",
         Some("screenshot") => "screenshot",
         Some("chat") => "chat",
+        Some("web") => "web",
         _ => "upload",
     };
     db_vault(a.vault.clone(), &state, move |_, c| Ok(repo::project(c, project_id)?)).await?;

@@ -43,6 +43,24 @@ RAD is a personal RAG assistant. You put documents, notes, screenshots, images a
 - `@Project` in a message limits the search to that project.
 - "Remember that…" saves a long-term memory.
 
+## Web browser
+
+Click **Web Browser** in the sidebar (or pick it in <kbd>⌘K</kbd>) for a full browser inside RAD, built on the [Servo](https://servo.org) engine. It has tabs, an address bar that also searches, back/forward/reload, zoom, page dialogs and `<select>` menus. The chat sits at the bottom:
+
+- **Ask about the page.** Each question carries the page's text, links and your selection (**Page text**).
+- **Vision.** With **Screenshot: auto**, the vision model also gets a screenshot whenever the question is about how the page looks, or the page has little text (charts, image galleries, canvas apps). Use **always** or **off** to override.
+- **Vault.** Switch **Page only** to **Vault** to also search your own documents.
+- **Keep it.** The camera button saves a screenshot to your vault, where the vision model describes it for search. The download button saves the page's text as a Markdown document.
+
+Notes:
+- Links in answers open in the RAD browser.
+- The page context goes to the model with the question but isn't stored in the chat.
+- Browsing data (cookies, storage, cache) is kept in memory only and is gone when RAD quits.
+- Servo is still pre-1.0, so some sites don't render perfectly yet.
+- The engine runs as a separate process (`rad-browser`) because Servo pins its own SQLite and ICU, which clash with the vault's. A page that crashes it can't take the vault down with it.
+
+Build the engine once with `./scripts/build-browser.sh`. The first build compiles Servo and takes a few minutes. `cargo tauri dev` then finds it automatically; for a bundle, use `cargo tauri build --config app/src-tauri/tauri.browser.conf.json`.
+
 ## Quick start
 
 ### Standalone (no server)
@@ -145,6 +163,7 @@ crates/rad-llm      Ollama / OpenAI-compatible / Anthropic adapters: chat, embed
 crates/rad-server   axum server: auth, unlock, uploads, jobs, RAG, live sync (SSE), backups
 app/src-tauri       desktop shell: tray, hotkeys, screenshots, rad:// file protocol, keychain
 app/ui              Svelte 5 interface
+browser/rad-browser web browser engine: Servo rendering offscreen, driven by the app (its own Cargo workspace)
 deploy/             Dockerfile, docker-compose
 config/             Ubuntu deployment: nginx (HTTPS) site, systemd unit + env, certbot hook — see config/README.md
 ```

@@ -71,6 +71,18 @@ export const rad = {
   },
   captureScreenshot: (projectId?: T.Id) => call<T.UploadResponse | null>('capture_screenshot', { projectId: projectId ?? null }),
   exportDocument: (documentId: T.Id, dest: string) => call<void>('export_document', { documentId, dest }),
+
+  browserStart: (width: number, height: number, scale: number, url?: string) =>
+    call<T.BrowserState | null>('browser_start', { width, height, scale, url: url ?? null }),
+  browserStop: () => call<void>('browser_stop'),
+  browserSend: (cmd: Record<string, unknown>) => call<void>('browser_send', { cmd }),
+  /** Changed rows of the page: `[w, h, y0, rows]` (u32 LE), then RGBA. */
+  browserFrame: () => invoke<ArrayBuffer>('browser_frame'),
+  browserEval: (script: string) => call<unknown>('browser_eval', { script }),
+  browserScrape: (maxChars?: number) => call<T.PageScrape>('browser_scrape', { maxChars: maxChars ?? null }),
+  browserSnapshot: (text: boolean, image: boolean) => call<T.BrowserSnapshot>('browser_snapshot', { text, image }),
+  browserSaveScreenshot: (projectId?: T.Id) => call<T.UploadResponse>('browser_save_screenshot', { projectId: projectId ?? null }),
+  browserSavePage: (projectId?: T.Id) => call<T.UploadResponse>('browser_save_page', { projectId: projectId ?? null }),
 };
 
 let platformName = '';

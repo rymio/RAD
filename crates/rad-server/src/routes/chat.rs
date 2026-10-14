@@ -21,6 +21,9 @@ use crate::rag::{self, strip_thinking};
 use crate::state::{db_vault, Shared};
 
 const ATTACHMENT_CHARS: usize = 16_000;
+/// Per-message context (e.g. the page open in the browser).
+const CONTEXT_CHARS: usize = 32_000;
+const MAX_INLINE_IMAGES: usize = 4;
 
 #[derive(Deserialize)]
 pub struct ListQuery {
@@ -113,6 +116,17 @@ pub async fn send(
     if req.content.trim().is_empty() && req.attachments.is_empty() && !req.regenerate {
         return Err(ApiErr::bad_request("message is empty"));
     }
+    // Inline images are decoded and resized up front, outside the database section.
+    let inline_images: Vec<ImagePart> = {
+        use base64::Engine as _;
+        let raw: Vec<Vec<u8>> = req.images.iter().take(MAX_INLINE_IMAGES).filter_map(|i| base64::engine::general_purpose::STANDARD.decode(i.data.trim()).ok()).collect();
+        if raw.len() < req.images.len().min(MAX_INLINE_IMAGES) {
+            return Err(ApiErr::bad_request("an attached image isn't valid base64"));
+        }
+        tokio::task::spawn_blocking(move || raw.iter().filter_map(|b| rad_ingest::vision_image(b)).map(|(data, mime)| ImagePart { mime, data }).collect())
+            .await
+            .map_err(ApiErr::internal)?
+    };
     let vault = a.vault.clone();
     let prepared = db_vault(a.vault.clone(), &state, move |st, c| {
         let chat = repo::chat(c, chat_id)?;
@@ -152,7 +166,9 @@ pub async fn send(
         let history: Vec<Message> = msgs.into_iter().filter(|m| m.role == "user" || m.role == "assistant").collect();
         let (summary, _) = rad_vault::recall::summary(c, chat_id)?;
 
-        let (model, conn) = models::pick_chat_model(st, c, &[req.model.as_ref(), chat.model.as_ref(), settings.chat_model.as_ref()])?;
+        // Something to look at: prefer the vision model unless this message names a model.
+        let vision = if inline_images.is_empty() { None } else { settings.vision_model.as_ref() };
+        let (model, conn) = models::pick_chat_model(st, c, &[req.model.as_ref(), vision, chat.model.as_ref(), settings.chat_model.as_ref()])?;
         // The chat's own model choice points at a disabled or removed provider: forget it, so
         // the chat follows the default from now on and the picker shows what really answers.
         let mut chat = chat;
@@ -163,8 +179,12 @@ pub async fn send(
         let rewrite = settings.rewrite_model.as_ref().and_then(|m| models::resolve(c, m).ok().map(|p| (m.clone(), p)));
 
         // Attachments: images go to the model as images; other documents as text.
-        let mut images = Vec::new();
+        let mut images = inline_images;
         let mut attached_text = String::new();
+        if let Some(ctx) = req.context.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+            attached_text.push_str(&ctx.chars().take(CONTEXT_CHARS).collect::<String>());
+            attached_text.push_str("\n\n");
+        }
         for att in &user_msg.attachments {
             let blob_id = match repo::document_blob_id(c, att.document_id) {
                 Ok(b) => b,

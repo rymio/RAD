@@ -410,6 +410,21 @@ pub struct SendMessageRequest {
     /// Drop the trailing assistant message and answer the last user message again.
     #[serde(default)]
     pub regenerate: bool,
+    /// Context for this answer only, not stored with the message — e.g. the text of the web
+    /// page open in RAD's browser.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+    /// Images for this answer only, not stored — e.g. a screenshot of the browser. When present
+    /// and no model is given, the vision model answers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<InlineImage>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InlineImage {
+    pub mime: String,
+    /// Base64.
+    pub data: String,
 }
 
 /// Server-sent events on `POST /v1/chats/:id/messages`.

@@ -61,24 +61,31 @@ pub async fn capture_and_upload(app: &AppHandle, project_id: Option<i64>) -> Cmd
         crate::show_main(app);
         return Err(CmdError::new("session_required", "Unlock RAD first"));
     }
-    let project = match project_id.or(st.config().screenshot_project_id) {
-        Some(p) => p,
-        None => {
-            let projects = st.client.json(reqwest::Method::GET, "/v1/projects", None).await?;
-            projects
-                .as_array()
-                .and_then(|a| a.iter().find(|p| p["archived"] == false))
-                .and_then(|p| p["id"].as_i64())
-                .ok_or_else(|| CmdError::new("no_project", "Create a project first"))?
-        }
-    };
+    let project = target_project(app, project_id).await?;
     let Some(png) = grab().await? else { return Ok(None) };
     let name = format!("Screenshot {}.png", chrono_like_now());
     let v = crate::commands::upload_bytes(app, project, &name, "screenshot", png).await?;
     Ok(Some(v))
 }
 
-fn chrono_like_now() -> String {
+/// The project screenshots go to: the one asked for, the configured one, or the first project.
+pub async fn target_project(app: &AppHandle, project_id: Option<i64>) -> CmdResult<i64> {
+    let st = app.state::<App>();
+    if !st.client.has_session() {
+        return Err(CmdError::new("session_required", "Unlock RAD first"));
+    }
+    if let Some(p) = project_id.or(st.config().screenshot_project_id) {
+        return Ok(p);
+    }
+    let projects = st.client.json(reqwest::Method::GET, "/v1/projects", None).await?;
+    projects
+        .as_array()
+        .and_then(|a| a.iter().find(|p| p["archived"] == false))
+        .and_then(|p| p["id"].as_i64())
+        .ok_or_else(|| CmdError::new("no_project", "Create a project first"))
+}
+
+pub fn chrono_like_now() -> String {
     // Local time without pulling in chrono: YYYY-MM-DD at HH.MM.SS (UTC offset ignored if unknown).
     let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) as i64;
     let days = secs.div_euclid(86_400);

@@ -4627,6 +4627,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arboard",
+ "base64 0.22.1",
  "blake3",
  "futures",
  "hostname",
@@ -4718,6 +4719,7 @@ dependencies = [
  "anyhow",
  "axum",
  "axum-server",
+ "base64 0.22.1",
  "blake3",
  "chrono",
  "clap",

@@ -8,6 +8,7 @@
   import ChatView from './ChatView.svelte';
   import ProjectView from './ProjectView.svelte';
   import Settings from './Settings.svelte';
+  import BrowserView from './BrowserView.svelte';
   import CommandPalette from './CommandPalette.svelte';
   import { UploadCloud } from '@lucide/svelte';
 
@@ -47,10 +48,11 @@
     getCurrentWebview()
       .onDragDropEvent((ev) => {
         const p = ev.payload;
-        if (p.type === 'enter' || p.type === 'over') dragging = true;
+        if (p.type === 'enter' || p.type === 'over') dragging = store.route.kind !== 'browser';
         else if (p.type === 'leave') dragging = false;
         else if (p.type === 'drop') {
           dragging = false;
+          if (store.route.kind === 'browser') return;
           uploadTo(p.paths);
         }
       })
@@ -88,6 +90,8 @@
       {#key store.route.id}<ProjectView projectId={store.route.id} />{/key}
     {:else if store.route.kind === 'settings'}
       <Settings />
+    {:else if store.route.kind === 'browser'}
+      <BrowserView />
     {/if}
   </main>
   {#if dragging}

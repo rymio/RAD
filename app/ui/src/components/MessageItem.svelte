@@ -15,6 +15,7 @@
     oncite,
     onregenerate,
     onedit,
+    onlink,
   }: {
     message: Message;
     streaming?: boolean;
@@ -23,6 +24,8 @@
     oncite?: (c: Citation, all: Citation[]) => void;
     onregenerate?: () => void;
     onedit?: (m: Message, text: string) => void;
+    /** Handles web links instead of the system browser (e.g. in RAD's own browser). */
+    onlink?: (href: string) => void;
   } = $props();
 
   let copied = $state(false);
@@ -59,6 +62,7 @@
     const a = t.closest('a') as HTMLAnchorElement | null;
     if (a?.href?.startsWith('http')) {
       e.preventDefault();
+      if (onlink) return onlink(a.href);
       import('@tauri-apps/plugin-opener').then((m) => m.openUrl(a.href));
     }
   }

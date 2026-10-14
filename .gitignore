@@ -5,3 +5,5 @@ node_modules
 *.radvault-*
 .DS_Store
 /models
+/browser/rad-browser/target
+/app/src-tauri/binaries
