@@ -8,6 +8,7 @@ mod config;
 mod files;
 mod events;
 mod protocol;
+mod sandbox;
 mod secrets;
 mod terminal;
 mod tray;
@@ -283,6 +284,7 @@ pub fn run() {
             app.manage(browser::Browser::default());
             app.manage(terminal::Terminals::default());
             app.manage(tts::Tts::default());
+            app.manage(sandbox::Sandboxes::default());
             let handle = app.handle().clone();
             tray::build(&handle)?;
             register_hotkeys(&handle);
@@ -347,6 +349,7 @@ pub fn run() {
             terminal::term_write,
             terminal::term_resize,
             terminal::term_close,
+            terminal::sandbox_exec,
             files::fs_places,
             files::fs_list,
             files::fs_preview,
@@ -358,6 +361,13 @@ pub fn run() {
             tts::tts_speak,
             tts::tts_add_voice,
             tts::tts_delete_voice,
+            sandbox::sandbox_status,
+            sandbox::sandbox_create,
+            sandbox::sandbox_reset,
+            sandbox::sandbox_delete,
+            sandbox::sandbox_update,
+            sandbox::sandbox_send,
+            sandbox::sandbox_shared_dir,
         ])
         .build(tauri::generate_context!())
         .expect("error while building RAD")

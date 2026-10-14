@@ -248,6 +248,27 @@ pub async fn send(
     Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
 }
 
+/// One reply from the chat model for a conversation kept by the app (nothing is stored).
+pub async fn assist(State(state): State<Shared>, a: Authed, Json(req): Json<AssistRequest>) -> ApiResult<Json<AssistResponse>> {
+    if req.messages.is_empty() || req.messages.len() > 200 {
+        return Err(ApiErr::bad_request("send between 1 and 200 messages"));
+    }
+    let (model, conn, max_tokens) = db_vault(a.vault, &state, move |st, c| {
+        let settings = repo::settings(c)?;
+        let (m, conn) = models::pick_chat_model(st, c, &[req.model.as_ref(), settings.chat_model.as_ref()])?;
+        Ok((m, conn, settings.max_output_tokens.min(4096)))
+    })
+    .await?;
+    let messages = req
+        .messages
+        .iter()
+        .map(|m| ChatMsg::new(if m.role == "assistant" { "assistant" } else { "user" }, m.content.chars().take(40_000).collect::<String>()))
+        .collect();
+    let r = ChatRequest { system: Some(req.system), messages, temperature: Some(0.2), max_tokens };
+    let text = state.llm.complete(&conn, &model.model, &r).await?;
+    Ok(Json(AssistResponse { content: strip_thinking(&text).trim().to_string(), model: model.model }))
+}
+
 /// Context budget (characters of retrieved passages) for built-in chat models.
 const BUILTIN_CONTEXT_CHARS: u32 = 10_000;
 

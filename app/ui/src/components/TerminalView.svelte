@@ -7,9 +7,12 @@
   import '@xterm/xterm/css/xterm.css';
   import { rad } from '../lib/api';
   import { store } from '../lib/state.svelte';
-  import type { SshHost, TermInfo } from '../lib/types';
+  import type { SandboxInfo, SshHost, TermInfo } from '../lib/types';
+  import SandboxManager from './SandboxManager.svelte';
+  import SandboxChat from './SandboxChat.svelte';
+  import { agentFor } from '../lib/sandboxAgent.svelte';
   import Modal from './Modal.svelte';
-  import { Plus, X, SquareTerminal, Server, KeyRound, Trash2 } from '@lucide/svelte';
+  import { Plus, X, SquareTerminal, Server, KeyRound, Trash2, Box } from '@lucide/svelte';
 
   interface View {
     term: Terminal;
@@ -23,6 +26,9 @@
   const views = new Map<number, View>();
 
   let sshOpen = $state(false);
+  let sandboxesOpen = $state(false);
+  /** Code waiting for a sandbox to run in (chosen or created in the manager). */
+  let pendingRun = $state<{ code: string; lang: string } | null>(null);
   let form = $state<SshHost>({ host: '', user: '', port: 22, identity_file: '' });
 
   const THEME = {
@@ -34,8 +40,23 @@
     brightBlack: '#5c5c70', brightRed: '#ff8fa0', brightGreen: '#a2f0c3', brightYellow: '#fbe7a3', brightBlue: '#a3c2ff', brightMagenta: '#d8bcff', brightCyan: '#9eeaf7', brightWhite: '#ffffff',
   };
 
+  /** Name and distro of each sandbox, for the agent dock. */
+  let sbMeta = $state<Record<string, { name: string; distro: string }>>({});
+  const activeSession = $derived(sessions.find((s) => s.id === active) ?? null);
+  const agent = $derived.by(() => {
+    const s = activeSession;
+    if (!s || s.kind !== 'sandbox' || s.exited || !s.sandbox) return null;
+    const m = sbMeta[s.sandbox];
+    return agentFor(s.id, m?.name ?? s.title, m?.distro ?? 'Linux');
+  });
+
   async function refresh() {
     sessions = await rad.termList().catch(() => []);
+    if (sessions.some((s) => s.kind === 'sandbox')) {
+      rad.sandboxStatus().then((st) => {
+        sbMeta = Object.fromEntries(st.sandboxes.map((b) => [b.id, { name: b.name, distro: b.distro_name }]));
+      }).catch(() => {});
+    }
     if (active === null || !sessions.some((s) => s.id === active)) active = sessions.at(-1)?.id ?? null;
   }
 
@@ -129,6 +150,50 @@
     }
   }
 
+  const LAST_SANDBOX = 'rad-last-sandbox';
+
+  async function openSandbox(sb: { id: string }, script?: { code: string; lang: string }) {
+    try {
+      const s = await rad.termOpen({ kind: 'sandbox', sandbox: sb.id, script, ...size() });
+      await refresh();
+      active = s.id;
+      try {
+        localStorage.setItem(LAST_SANDBOX, sb.id);
+      } catch {
+        /* ignore */
+      }
+    } catch (e) {
+      store.error(e, 'Couldn’t start the sandbox');
+    }
+  }
+
+  function fromManager(sb: SandboxInfo) {
+    sandboxesOpen = false;
+    const run = pendingRun ?? undefined;
+    pendingRun = null;
+    openSandbox(sb, run);
+  }
+
+  /** Runs code in the last-used sandbox, or asks which one (or to create one). */
+  async function runCode(code: string, lang: string) {
+    const st = await rad.sandboxStatus().catch(() => null);
+    if (!st?.supported || !st.engine) {
+      pendingRun = { code, lang };
+      sandboxesOpen = true;
+      return;
+    }
+    let last: string | null = null;
+    try {
+      last = localStorage.getItem(LAST_SANDBOX);
+    } catch {
+      /* ignore */
+    }
+    const sb = st.sandboxes.find((s) => s.id === last) ?? (st.sandboxes.length === 1 ? st.sandboxes[0] : null);
+    if (sb) return openSandbox(sb, { code, lang });
+    pendingRun = { code, lang };
+    sandboxesOpen = true;
+  }
+
   async function close(id: number, e?: Event) {
     e?.stopPropagation();
     await rad.termClose(id).catch(() => {});
@@ -161,7 +226,9 @@
     const a = store.pendingTerminal;
     if (!a || !host) return;
     store.pendingTerminal = null;
-    if (a.kind === 'ssh' && a.host) openSsh({ host: a.host, user: a.user, port: a.port, identity_file: a.identity_file });
+    if (a.kind === 'ssh' && 'host' in a && a.host) openSsh({ host: a.host, user: a.user, port: a.port, identity_file: a.identity_file });
+    else if (a.kind === 'sandbox_run' && 'code' in a) runCode(a.code, a.lang);
+    else if (a.kind === 'sandbox' && 'id' in a) openSandbox({ id: a.id });
     else openLocal();
   });
 
@@ -203,13 +270,14 @@
     {#each sessions as s (s.id)}
       <div class="tab no-drag" class:active={s.id === active} class:dead={!!s.exited} role="tab" tabindex="0" aria-selected={s.id === active}
         onclick={() => (active = s.id)} onkeydown={(e) => e.key === 'Enter' && (active = s.id)}>
-        {#if s.kind === 'ssh'}<Server size={13} />{:else}<SquareTerminal size={13} />{/if}
+        {#if s.kind === 'ssh'}<Server size={13} />{:else if s.kind === 'sandbox'}<Box size={13} />{:else}<SquareTerminal size={13} />{/if}
         <span class="truncate spacer">{s.title}</span>
         <button class="x" aria-label="Close terminal" onclick={(e) => close(s.id, e)}><X size={12} /></button>
       </div>
     {/each}
     <button class="icon-btn sm no-drag" title="New terminal (⌘T)" onclick={openLocal}><Plus size={15} /></button>
     <button class="btn ghost sm no-drag ssh" onclick={() => ((form = { host: '', user: '', port: 22, identity_file: '' }), (sshOpen = true))}><Server size={13} /> SSH…</button>
+    <button class="btn ghost sm no-drag ssh" onclick={() => (sandboxesOpen = true)}><Box size={13} /> Sandboxes…</button>
   </div>
 
   <div class="body" bind:this={host}>
@@ -217,10 +285,11 @@
       <div class="empty">
         <SquareTerminal size={30} strokeWidth={1.5} />
         <strong>No terminals open</strong>
-        <p>Open a shell on this computer, or connect to a server over SSH. You can also ask in any chat: “open ssh to coursemat.au”.</p>
+        <p>Open a shell on this computer, connect to a server over SSH, or start an isolated Linux sandbox to play with Python and scripts. You can also ask in any chat: “open ssh to coursemat.au”.</p>
         <div class="row">
           <button class="btn primary sm" onclick={openLocal}><Plus size={14} /> New terminal</button>
           <button class="btn sm" onclick={() => (sshOpen = true)}><Server size={14} /> Connect over SSH…</button>
+          <button class="btn sm" onclick={() => (sandboxesOpen = true)}><Box size={14} /> Linux sandbox…</button>
         </div>
         {#if store.sshHosts.length}
           <div class="hosts">
@@ -236,7 +305,14 @@
       </div>
     {/if}
   </div>
+  {#if agent}
+    {#key agent}<SandboxChat {agent} />{/key}
+  {/if}
 </div>
+
+<Modal bind:open={sandboxesOpen} title={pendingRun ? 'Run in which sandbox?' : 'Linux sandboxes'} width={640} onclose={() => (pendingRun = null)}>
+  <SandboxManager onopen={fromManager} />
+</Modal>
 
 <Modal bind:open={sshOpen} title="Connect over SSH" width={440}>
   <form onsubmit={connect}>

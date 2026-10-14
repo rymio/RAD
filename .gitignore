@@ -9,3 +9,6 @@ node_modules
 /app/src-tauri/binaries
 /tts/mio-tts-cpp
 /tts/bin
+/sandbox/work
+/sandbox/bin
+/app/src-tauri/frameworks

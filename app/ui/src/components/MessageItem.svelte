@@ -52,6 +52,12 @@
       if (c) oncite?.(c, message.citations);
       return;
     }
+    const runBtn = t.closest('[data-run]') as HTMLElement | null;
+    if (runBtn) {
+      const code = runBtn.parentElement?.querySelector('code')?.textContent ?? '';
+      store.runInSandbox(code, runBtn.dataset.run || 'sh');
+      return;
+    }
     const copyBtn = t.closest('[data-copy]') as HTMLElement | null;
     if (copyBtn) {
       const code = copyBtn.parentElement?.querySelector('code')?.textContent ?? '';

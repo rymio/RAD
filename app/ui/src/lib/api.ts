@@ -84,7 +84,10 @@ export const rad = {
   browserSaveScreenshot: (projectId?: T.Id) => call<T.UploadResponse>('browser_save_screenshot', { projectId: projectId ?? null }),
   browserSavePage: (projectId?: T.Id) => call<T.UploadResponse>('browser_save_page', { projectId: projectId ?? null }),
 
-  termOpen: (args: { kind: 'local' | 'ssh'; host?: string; user?: string; port?: number; identity_file?: string; cols: number; rows: number }) =>
+  termOpen: (args: {
+    kind: 'local' | 'ssh' | 'sandbox'; host?: string; user?: string; port?: number; identity_file?: string;
+    sandbox?: string; script?: { code: string; lang: string }; cols: number; rows: number;
+  }) =>
     call<T.TermInfo>('term_open', { args }),
   termList: () => call<T.TermInfo[]>('term_list'),
   /** Streams output: ArrayBuffer chunks, or `{ exit }` when the session ends. Replays scrollback first. */
@@ -97,6 +100,21 @@ export const rad = {
   termWrite: (id: number, data: string) => call<void>('term_write', { id, data }),
   termResize: (id: number, cols: number, rows: number) => call<void>('term_resize', { id, cols, rows }),
   termClose: (id: number) => call<void>('term_close', { id }),
+
+  /** Runs a command in a sandbox terminal's shell (visibly) and returns what it printed. */
+  sandboxExec: (id: number, command: string, timeoutSecs?: number) =>
+    call<{ exit_code: number | null; output: string; truncated: boolean; timed_out: boolean }>('sandbox_exec', { id, command, timeoutSecs: timeoutSecs ?? null }),
+  /** One model reply for a conversation the app keeps itself (nothing is stored). */
+  assist: (system: string, messages: { role: 'user' | 'assistant'; content: string }[]) =>
+    req<{ content: string; model: string }>('POST', '/v1/assist', { system, messages }),
+  sandboxStatus: () => call<T.SandboxStatus>('sandbox_status'),
+  sandboxCreate: (args: { name: string; distro: string; cpus: number; mem_mb: number; disk_gb: number; network: boolean }) =>
+    call<T.SandboxInfo>('sandbox_create', { args }),
+  sandboxReset: (id: string) => call<void>('sandbox_reset', { id }),
+  sandboxDelete: (id: string) => call<void>('sandbox_delete', { id }),
+  sandboxUpdate: (args: { id: string; name?: string; cpus?: number; mem_mb?: number; network?: boolean }) => call<T.SandboxInfo>('sandbox_update', { args }),
+  sandboxSend: (id: string, paths: string[]) => call<number>('sandbox_send', { id, paths }),
+  sandboxSharedDir: (id: string) => call<string>('sandbox_shared_dir', { id }),
 
   fsPlaces: () => call<T.FsPlace[]>('fs_places'),
   fsList: (path?: string) => call<T.FsListing>('fs_list', { path: path ?? null }),

@@ -3,8 +3,8 @@
   import { rad } from '../lib/api';
   import { store } from '../lib/state.svelte';
   import { formatBytes } from '../lib/util';
-  import type { Document, FsEntry, FsListing, FsPlace, FsPreview, Id } from '../lib/types';
-  import { Home, Monitor, FileText, Download, Image, HardDrive, Folder, File, ArrowLeft, ArrowUp, RefreshCw, Eye, EyeOff, Sparkles, FolderInput, ExternalLink, Search, Loader } from '@lucide/svelte';
+  import type { Document, FsEntry, FsListing, FsPlace, FsPreview, Id, SandboxInfo } from '../lib/types';
+  import { Home, Monitor, FileText, Download, Image, HardDrive, Folder, File, ArrowLeft, ArrowUp, RefreshCw, Eye, EyeOff, Sparkles, FolderInput, ExternalLink, Search, Loader, Box } from '@lucide/svelte';
 
   const ICONS: Record<string, any> = { home: Home, desktop: Monitor, docs: FileText, downloads: Download, pictures: Image, drive: HardDrive };
   const IMAGE = /\.(png|jpe?g|gif|webp|bmp|svg|tiff?)$/i;
@@ -21,6 +21,19 @@
   let preview = $state<{ entry: FsEntry; data: FsPreview | null } | null>(null);
   let busy = $state<'import' | 'ask' | null>(null);
   let target = $state<Id | null>(null);
+  let sandboxes = $state<SandboxInfo[]>([]);
+  let sandboxTarget = $state('');
+
+  async function sendToSandbox() {
+    const sb = sandboxes.find((s) => s.id === sandboxTarget);
+    if (!sb || !chosen.length) return;
+    try {
+      const n = await rad.sandboxSend(sb.id, chosen.map((e) => e.path));
+      store.toast('success', `${n} file${n === 1 ? '' : 's'} sent to ${sb.name}`, 'Inside the sandbox they’re in ~/shared.');
+    } catch (e) {
+      store.error(e, 'Couldn’t send the files');
+    }
+  }
 
   const visible = $derived(
     (listing?.entries ?? []).filter((e) => (showHidden || !e.hidden) && (!filter.trim() || e.name.toLowerCase().includes(filter.trim().toLowerCase()))),
@@ -144,6 +157,12 @@
 
   onMount(async () => {
     places = await rad.fsPlaces().catch(() => []);
+    rad.sandboxStatus().then((s) => {
+      if (s.supported && s.engine) {
+        sandboxes = s.sandboxes;
+        sandboxTarget = sandboxes[0]?.id ?? '';
+      }
+    }).catch(() => {});
     let last: string | undefined;
     try {
       last = localStorage.getItem('rad-files-dir') ?? undefined;
@@ -238,6 +257,13 @@
   <footer>
     <span class="muted">{chosen.length ? `${chosen.length} file${chosen.length > 1 ? 's' : ''} selected` : 'Select files to add them to your vault or ask about them. ⌘/Shift-click selects several.'}</span>
     <span class="spacer"></span>
+    {#if sandboxes.length}
+      <select class="select" bind:value={sandboxTarget} title="Linux sandbox">
+        {#each sandboxes as sb}<option value={sb.id}>{sb.name}</option>{/each}
+      </select>
+      <button class="btn sm" disabled={!chosen.length} onclick={sendToSandbox}><Box size={14} /> Send to sandbox</button>
+      <span class="sep"></span>
+    {/if}
     <select class="select" bind:value={target} title="Project to add the files to">
       <option value={null}>Inbox</option>
       {#each projects.filter((p) => p.name !== 'Inbox') as p}<option value={p.id}>{p.name}</option>{/each}
@@ -487,6 +513,11 @@
     padding: 10px 14px;
     border-top: 1px solid var(--border);
     font-size: 12.5px;
+  }
+  .sep {
+    width: 1px;
+    height: 20px;
+    background: var(--border);
   }
   footer .select {
     width: 160px;

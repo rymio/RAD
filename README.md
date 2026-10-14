@@ -61,7 +61,7 @@ Notes:
 
 The ☆ in the address bar adds a page to **Favourites**, which are kept encrypted in your vault and shown under the toolbar. Right-click a favourite to remove it. The chat collapses to a single line (⌄), and − / + change its height.
 
-Build the engine once with `./scripts/build-browser.sh`. The first build compiles Servo and takes a few minutes. `cargo tauri dev` then finds it automatically; for a bundle, use `cargo tauri build --config app/src-tauri/tauri.browser.conf.json`.
+Build the engine once with `./scripts/build-browser.sh`. The first build compiles Servo and takes a few minutes. `cargo tauri dev` then finds it automatically; `./scripts/build-app.sh` puts it inside the installable app.
 
 ## Terminal, Files and actions from chat
 
@@ -81,9 +81,41 @@ Build the engine once with `./scripts/build-browser.sh`. The first build compile
 - **Reading:** a speaker button appears on every answer, or turn on **Read answers aloud automatically**. Long answers are read sentence by sentence while the next one is prepared.
 - **Privacy:** audio is made in memory and never written to disk.
 
-The engine is [mio-tts-cpp](https://github.com/mmnga/mio-tts-cpp) (MIT; llama.cpp + ggml). Build it once with `./scripts/build-tts.sh`. To build the installable app with both the browser and voice engines inside it, run `./scripts/build-app.sh`. An installed RAD only finds engines bundled inside it, so a plain `cargo tauri build` produces an app without them.
+The engine is [mio-tts-cpp](https://github.com/mmnga/mio-tts-cpp) (MIT; llama.cpp + ggml). Build it once with `./scripts/build-tts.sh`.
 
 Licences: MioTTS-0.1B is under the Falcon-LLM licence, MioCodec is MIT, and WavLM is CC BY-SA 3.0.
+
+## Linux sandboxes
+
+**Terminal → Sandboxes…** creates small Linux machines for playing with Python and scripts, isolated from your Mac. They need macOS on Apple Silicon.
+
+- **Distros:**
+
+  | Distro | Size | Package manager |
+  |---|---|---|
+  | Alpine 3.24 | about 10 MB | `apk add python3` |
+  | Debian 13 | about 450 MB | `apt install python3` |
+  | Arch Linux ARM | about 900 MB | `pacman -S python` |
+
+  You choose CPUs, memory, drive size and whether the sandbox has internet.
+- **Opening one:** a sandbox opens as a terminal tab and boots in about a second.
+- **Run:** code blocks in chat answers (Python, shell, JavaScript, Ruby, Perl) get a **▶ Run** button that runs them in your sandbox.
+- **Files:** **Files → Send to sandbox** copies files in.
+- **Reset and delete:** **Reset** returns a sandbox to a fresh system; **Delete** removes it.
+
+**How it's isolated:**
+- **The VM:** each sandbox is a [libkrun](https://github.com/containers/libkrun) microVM on Apple's Hypervisor.framework.
+- **Its own drive:** it boots from its own ext4 drive, a sparse disk image that only uses the space it fills. That gives real Linux ownership, permissions and case-sensitive names.
+- **Files:** it sees nothing of your Mac except its exchange folder (`~/shared` inside, with a Finder shortcut in Sandboxes).
+- **Network:** traffic goes through [gvproxy](https://github.com/containers/gvisor-tap-vsock)'s private NAT. The internet is reachable; your Mac's `localhost` (LM Studio, Ollama, dev servers) is not. Other devices on your LAN are reachable, as from any computer.
+- **No network:** with internet off, there's no network device at all.
+- **Downloads:** distro images are checked against their published SHA-256 checksums. Debian and Arch come from [Linux Containers](https://images.linuxcontainers.org); Alpine is a pinned official release.
+
+Build the engine once with `./scripts/build-sandbox.sh`. It needs `brew install lld llvm` to compile libkrun's guest init.
+
+## Building the app with its engines
+
+`./scripts/build-app.sh` builds the browser, voice and sandbox engines and bundles RAD with all of them inside, signed so the sandbox keeps permission to use the hypervisor. An installed RAD only finds engines bundled inside it, so a plain `cargo tauri build` produces an app without them.
 
 ## Quick start
 
@@ -143,7 +175,7 @@ CLI helpers:
 ```bash
 ./scripts/fetch-models.sh  # built-in embedding model → models/ (bundled into the app; git-ignored)
 cd app/ui && npm ci && cd ..
-cargo tauri build          # .dmg/.app, .msi/.exe, .AppImage/.deb/.rpm — or ./scripts/build-app.sh to include the browser and voice engines
+cargo tauri build          # .dmg/.app, .msi/.exe, .AppImage/.deb/.rpm — or ./scripts/build-app.sh to include the browser, voice and sandbox engines
 # development: cargo tauri dev
 ```
 
@@ -189,6 +221,7 @@ app/src-tauri       desktop shell: tray, hotkeys, screenshots, rad:// file proto
 app/ui              Svelte 5 interface
 browser/rad-browser web browser engine: Servo rendering offscreen, driven by the app (its own Cargo workspace)
 tts/                text-to-speech engine build (mio-tts-cpp, fetched and built by scripts/build-tts.sh)
+sandbox/launcher    Linux sandbox launcher (libkrun); scripts/build-sandbox.sh builds it with libkrun and gvproxy
 deploy/             Dockerfile, docker-compose
 config/             Ubuntu deployment: nginx (HTTPS) site, systemd unit + env, certbot hook — see config/README.md
 ```

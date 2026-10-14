@@ -51,7 +51,9 @@ class Store {
   bookmarks = $state<T.Bookmark[]>([]);
   sshHosts = $state<T.SshHost[]>([]);
   /** Requests for views that may not be open yet (from agent actions, Files…). */
-  pendingTerminal = $state<T.AgentAction | null>(null);
+  pendingTerminal = $state<T.TerminalRequest | null>(null);
+  /** Linux sandboxes can run here (engine present). */
+  sandboxReady = $state(false);
   pendingBrowserUrl = $state<string | null>(null);
   pendingAttachments = $state<T.Document[]>([]);
   private quick = false;
@@ -156,6 +158,16 @@ class Store {
     this.jobs = jobs as T.JobSummary;
     this.loadAppData('bookmarks');
     this.loadAppData('ssh_hosts');
+    bridge.sandboxStatus().then((s) => {
+      this.sandboxReady = s.supported && s.engine;
+      document.documentElement.classList.toggle('sandbox-ok', this.sandboxReady);
+    }).catch(() => {});
+  }
+
+  /** "Run" on a code block: runs it in a Linux sandbox, in the Terminal. */
+  runInSandbox(code: string, lang: string) {
+    this.pendingTerminal = { kind: 'sandbox_run', code, lang };
+    this.route = { kind: 'terminal' };
   }
 
   async loadAppData(key: 'bookmarks' | 'ssh_hosts') {

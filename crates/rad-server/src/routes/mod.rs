@@ -55,6 +55,7 @@ pub fn router(state: Shared) -> Router {
         .route("/v1/chats", get(chat::list).post(chat::create))
         .route("/v1/chats/{id}", get(chat::get).patch(chat::update).delete(chat::remove))
         .route("/v1/chats/{id}/messages", post(chat::send))
+        .route("/v1/assist", post(chat::assist))
         .route("/v1/messages/{id}", delete(chat::delete_message))
         // providers, settings, memories, devices
         .route("/v1/providers", get(admin::list_providers).post(admin::create_provider))

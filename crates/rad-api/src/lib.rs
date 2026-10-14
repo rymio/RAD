@@ -459,6 +459,30 @@ pub struct AgentAction {
     pub url: Option<String>,
 }
 
+/// `POST /v1/assist`: one model reply for a conversation the app runs itself (e.g. the sandbox
+/// agent). Nothing is stored in the vault.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssistRequest {
+    pub system: String,
+    pub messages: Vec<AssistMessage>,
+    /// Defaults to the chat model.
+    #[serde(default)]
+    pub model: Option<ModelRef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssistMessage {
+    /// user | assistant
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssistResponse {
+    pub content: String,
+    pub model: String,
+}
+
 // ---------------------------------------------------------------- search
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -206,13 +206,11 @@ a:hover {
   background: transparent;
 }
 
+/* Window dragging is handled in lib/windowDrag.ts (not -webkit-app-region, whose regions
+   WebKit can stop updating after layout changes). */
 .drag {
-  -webkit-app-region: drag;
-  app-region: drag;
-}
-.no-drag {
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* ───────────────────────────── controls ───────────────────────────── */
@@ -748,6 +746,31 @@ button.chip:hover {
   font-size: 11px;
   opacity: 0;
   transition: opacity var(--t);
+}
+.md pre .run-code {
+  position: absolute;
+  top: 6px;
+  right: 38px;
+  display: none;
+  height: 24px;
+  padding: 0 9px;
+  border: none;
+  border-radius: var(--r-xs);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 11.5px;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity var(--t-fast);
+}
+html.sandbox-ok .md pre .run-code {
+  display: block;
+}
+html.sandbox-ok .md pre:hover:has(.run-code) .code-lang {
+  opacity: 0;
+}
+.md pre:hover .run-code {
+  opacity: 1;
 }
 .md pre:hover .copy-code {
   opacity: 1;

@@ -24,6 +24,8 @@ pub struct TermInfo {
     pub title: String,
     pub kind: String,
     pub exited: Option<String>,
+    /// The Linux sandbox this session runs in.
+    pub sandbox: Option<String>,
 }
 
 struct Session {
@@ -33,6 +35,8 @@ struct Session {
     child: Mutex<Box<dyn Child + Send + Sync>>,
     history: Mutex<VecDeque<u8>>,
     out: Mutex<Option<Channel<InvokeResponseBody>>>,
+    /// A sandbox's private network; stopped with the session.
+    net: Mutex<Option<crate::sandbox::Net>>,
 }
 
 #[derive(Default)]
@@ -44,6 +48,14 @@ pub struct Terminals {
 impl Terminals {
     fn get(&self, id: u32) -> CmdResult<Arc<Session>> {
         self.sessions.lock().unwrap().get(&id).cloned().ok_or_else(|| CmdError::new("not_found", "That terminal is closed"))
+    }
+
+    /// The live session of a sandbox, if one is open (a drive must never be booted twice).
+    pub fn sandbox_session(&self, sandbox: &str) -> Option<u32> {
+        self.sessions.lock().unwrap().values().find_map(|s| {
+            let i = s.info.lock().unwrap();
+            (i.sandbox.as_deref() == Some(sandbox) && i.exited.is_none()).then_some(i.id)
+        })
     }
 
     pub fn close_all(&self) {
@@ -61,8 +73,17 @@ pub struct OpenArgs {
     user: Option<String>,
     port: Option<u16>,
     identity_file: Option<String>,
+    /// "sandbox": the sandbox to start, and optionally code to run in it.
+    sandbox: Option<String>,
+    script: Option<ScriptArg>,
     cols: u16,
     rows: u16,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ScriptArg {
+    code: String,
+    lang: String,
 }
 
 fn host_ok(h: &str) -> bool {
@@ -121,8 +142,33 @@ fn command(a: &OpenArgs) -> CmdResult<(CommandBuilder, String)> {
 }
 
 #[tauri::command]
-pub fn term_open(app: AppHandle, t: State<'_, Terminals>, args: OpenArgs) -> CmdResult<TermInfo> {
-    let (mut cmd, title) = command(&args)?;
+pub async fn term_open(app: AppHandle, t: State<'_, Terminals>, args: OpenArgs) -> CmdResult<TermInfo> {
+    let mut net = None;
+    let mut sandbox = None;
+    let (mut cmd, title) = if args.kind == "sandbox" {
+        let id = args.sandbox.clone().ok_or_else(|| CmdError::new("bad_request", "Choose a sandbox"))?;
+        if let Some(open) = t.sandbox_session(&id) {
+            // Already running: run the code in its shell, and show that tab.
+            if let Some(sc) = &args.script {
+                let runner = crate::sandbox::write_script(&crate::sandbox::Env::from_app(&app), &id, &sc.code, &sc.lang, false)?;
+                term_write(t.clone(), open, format!("sh {runner}\r"))?;
+            }
+            let s = t.get(open)?;
+            let info = s.info.lock().unwrap().clone();
+            return Ok(info);
+        }
+        let env = crate::sandbox::Env::from_app(&app);
+        let runner = match &args.script {
+            Some(sc) => Some(crate::sandbox::write_script(&env, &id, &sc.code, &sc.lang, true)?),
+            None => None,
+        };
+        let l = crate::sandbox::launch(&env, &id, runner)?;
+        net = l.net;
+        sandbox = Some(id);
+        (l.cmd, l.title)
+    } else {
+        command(&args)?
+    };
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     if let Some(h) = home() {
@@ -136,7 +182,7 @@ pub fn term_open(app: AppHandle, t: State<'_, Terminals>, args: OpenArgs) -> Cmd
     let mut reader = pty.master.try_clone_reader().map_err(|e| CmdError::new("terminal", e.to_string()))?;
     let writer = pty.master.take_writer().map_err(|e| CmdError::new("terminal", e.to_string()))?;
     let id = t.next.fetch_add(1, Ordering::Relaxed) + 1;
-    let info = TermInfo { id, title, kind: args.kind.clone(), exited: None };
+    let info = TermInfo { id, title, kind: args.kind.clone(), exited: None, sandbox };
     let s = Arc::new(Session {
         info: Mutex::new(info.clone()),
         writer: Mutex::new(writer),
@@ -144,6 +190,7 @@ pub fn term_open(app: AppHandle, t: State<'_, Terminals>, args: OpenArgs) -> Cmd
         child: Mutex::new(child),
         history: Mutex::new(VecDeque::new()),
         out: Mutex::new(None),
+        net: Mutex::new(net),
     });
     t.sessions.lock().unwrap().insert(id, s.clone());
     std::thread::spawn(move || {
@@ -167,12 +214,64 @@ pub fn term_open(app: AppHandle, t: State<'_, Terminals>, args: OpenArgs) -> Cmd
         let status = s.child.lock().unwrap().wait().map(|st| if st.success() { "exited".to_string() } else { format!("exited with code {}", st.exit_code()) });
         let msg = status.unwrap_or_else(|e| e.to_string());
         s.info.lock().unwrap().exited = Some(msg.clone());
+        drop(s.net.lock().unwrap().take());
         if let Some(ch) = s.out.lock().unwrap().as_ref() {
             let _ = ch.send(InvokeResponseBody::Json(json!({ "exit": msg }).to_string()));
         }
         let _ = app.emit_to("main", "term-changed", ());
     });
     Ok(info)
+}
+
+/// Output kept for the agent (the end of it, where errors and results are).
+const AGENT_OUTPUT: usize = 12_000;
+
+/// Runs a command in a sandbox session's shell, visibly, and returns its output and exit code.
+/// The shell sources a small script, so `cd` and variables carry over like typed commands.
+#[tauri::command]
+pub async fn sandbox_exec(app: AppHandle, t: State<'_, Terminals>, id: u32, command: String, timeout_secs: Option<u64>) -> CmdResult<serde_json::Value> {
+    let s = t.get(id)?;
+    let (sandbox, exited) = {
+        let i = s.info.lock().unwrap();
+        (i.sandbox.clone(), i.exited.is_some())
+    };
+    let sandbox = sandbox.ok_or_else(|| CmdError::new("bad_request", "That terminal isn't a sandbox"))?;
+    if exited {
+        return Err(CmdError::new("terminal", "The sandbox has stopped — open it again"));
+    }
+    let dir = crate::sandbox::rad_dir(&crate::sandbox::Env::from_app(&app), &sandbox)?;
+    let n = crate::now_ms();
+    let g = format!("/root/shared/.rad/a-{n}");
+    let (cmd_f, out_f, rc_f) = (dir.join(format!("a-{n}.cmd")), dir.join(format!("a-{n}.out")), dir.join(format!("a-{n}.rc")));
+    std::fs::write(&cmd_f, format!("{}\n", command.trim_end())).map_err(|e| CmdError::new("io", e.to_string()))?;
+    let script = format!(
+        "printf '\\033[35m'; sed 's/^/agent$ /' {g}.cmd; printf '\\033[0m'\n{{ . {g}.cmd\n}} </dev/null >{g}.out 2>&1\necho $? >{g}.rc.tmp; mv {g}.rc.tmp {g}.rc\ncat {g}.out\n"
+    );
+    std::fs::write(dir.join(format!("a-{n}.sh")), script).map_err(|e| CmdError::new("io", e.to_string()))?;
+    {
+        let mut w = s.writer.lock().unwrap();
+        w.write_all(format!(". {g}.sh\r").as_bytes()).and_then(|_| w.flush()).map_err(|e| CmdError::new("terminal", e.to_string()))?;
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs.unwrap_or(120).clamp(5, 1800));
+    let rc = loop {
+        if let Ok(v) = std::fs::read_to_string(&rc_f) {
+            break v.trim().parse::<i32>().ok();
+        }
+        if std::time::Instant::now() > deadline || s.info.lock().unwrap().exited.is_some() {
+            break None;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    };
+    let raw = std::fs::read(&out_f).unwrap_or_default();
+    let text = String::from_utf8_lossy(&raw);
+    let truncated = text.chars().count() > AGENT_OUTPUT;
+    let output: String = if truncated { text.chars().skip(text.chars().count() - AGENT_OUTPUT).collect() } else { text.into_owned() };
+    if rc.is_some() {
+        for f in [&cmd_f, &out_f, &rc_f, &dir.join(format!("a-{n}.sh"))] {
+            let _ = std::fs::remove_file(f);
+        }
+    }
+    Ok(serde_json::json!({ "exit_code": rc, "output": output, "truncated": truncated, "timed_out": rc.is_none() }))
 }
 
 #[tauri::command]
@@ -232,7 +331,7 @@ mod tests {
     use super::*;
 
     fn args(host: &str, user: &str, port: u16, key: &str) -> OpenArgs {
-        OpenArgs { kind: "ssh".into(), host: Some(host.into()), user: Some(user.into()), port: Some(port), identity_file: Some(key.into()), cols: 80, rows: 24 }
+        OpenArgs { kind: "ssh".into(), host: Some(host.into()), user: Some(user.into()), port: Some(port), identity_file: Some(key.into()), sandbox: None, script: None, cols: 80, rows: 24 }
     }
 
     #[test]

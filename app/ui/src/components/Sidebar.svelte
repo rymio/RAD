@@ -6,7 +6,7 @@
   import Logo from './Logo.svelte';
   import Menu from './Menu.svelte';
   import Modal from './Modal.svelte';
-  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, PanelLeftClose } from '@lucide/svelte';
+  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, PanelLeftClose } from '@lucide/svelte';
 
   let newProjectOpen = $state(false);
   let npName = $state('');
@@ -99,6 +99,9 @@
     </button>
     <button class="item web" class:active={store.route.kind === 'files'} onclick={() => store.navigate({ kind: 'files' })}>
       <FolderOpen size={15} /> <span class="spacer">Files</span>
+    </button>
+    <button class="item web" class:active={store.route.kind === 'calendar'} onclick={() => store.navigate({ kind: 'calendar' })}>
+      <CalendarDays size={15} /> <span class="spacer">Calendar</span>
     </button>
     <div class="sect">
       <div class="sect-h">

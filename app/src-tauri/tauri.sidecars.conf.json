@@ -1,5 +1,0 @@
-{
-  "bundle": {
-    "externalBin": ["binaries/rad-browser", "binaries/mio-tts-server"]
-  }
-}

@@ -15,10 +15,16 @@ const marked = new Marked({
         html = escapeHtml(text);
       }
       const label = language ? `<span class="code-lang">${escapeHtml(language)}</span>` : '';
-      return `<pre>${label}<button class="copy-code" data-copy title="Copy">⧉</button><code class="hljs">${html}</code></pre>`;
+      const run = RUNNABLE.has(language.toLowerCase())
+        ? `<button class="run-code" data-run="${escapeHtml(language.toLowerCase())}" title="Run in a Linux sandbox">▶ Run</button>`
+        : '';
+      return `<pre>${label}${run}<button class="copy-code" data-copy title="Copy">⧉</button><code class="hljs">${html}</code></pre>`;
     },
   },
 });
+
+/** Code that can run in a Linux sandbox. */
+const RUNNABLE = new Set(['python', 'py', 'python3', 'sh', 'bash', 'shell', 'zsh', 'javascript', 'js', 'node', 'ruby', 'rb', 'perl']);
 
 export function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -29,7 +35,7 @@ export function renderMarkdown(src: string, maxCite = 0): string {
   // Strip <think> blocks from reasoning models.
   src = src.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/<think>[\s\S]*$/, '');
   const raw = marked.parse(src, { async: false }) as string;
-  const clean = DOMPurify.sanitize(raw, { ADD_ATTR: ['data-copy', 'target'], FORBID_TAGS: ['style', 'iframe', 'form', 'input'] });
+  const clean = DOMPurify.sanitize(raw, { ADD_ATTR: ['data-copy', 'data-run', 'target'], FORBID_TAGS: ['style', 'iframe', 'form', 'input'] });
   if (!maxCite) return clean;
   // Replace citations outside code.
   return clean

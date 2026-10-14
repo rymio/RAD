@@ -106,19 +106,36 @@ export interface ClientConfig {
   tts_temperature: number; tts_top_p: number; tts_top_k: number; tts_repetition_penalty: number;
 }
 
+/** A calendar entry. `start`/`end` are "HH:MM"; no `start` means all day. */
+export interface CalendarEvent { id: string; title: string; date: string; start: string | null; end: string | null; notes: string; color: string }
+
 export type Route =
   | { kind: 'chat'; id: Id | null }
   | { kind: 'project'; id: Id; doc?: Id }
   | { kind: 'settings'; tab?: string }
   | { kind: 'browser' }
   | { kind: 'terminal' }
-  | { kind: 'files' };
+  | { kind: 'files' }
+  | { kind: 'calendar' };
 
 /** Something the assistant asks the app to do (see crates/rad-server/src/agent.rs). */
 export interface AgentAction { kind: 'ssh' | 'open_url' | 'terminal' | string; host?: string; user?: string; port?: number; identity_file?: string; url?: string }
 export interface Bookmark { title: string; url: string }
 export interface SshHost { host: string; user?: string; port?: number; identity_file?: string; last_used?: number }
-export interface TermInfo { id: number; title: string; kind: 'local' | 'ssh' | string; exited: string | null }
+export interface TermInfo { id: number; title: string; kind: 'local' | 'ssh' | 'sandbox' | string; exited: string | null; sandbox: string | null }
+export interface SandboxInfo {
+  id: string; name: string; distro: string; distro_name: string; cpus: number; mem_mb: number; disk_gb: number;
+  network: boolean; created_at: number; disk_used: number; running: boolean;
+}
+export interface SandboxStatus {
+  supported: boolean; engine: boolean; dev_build: boolean;
+  distros: { id: string; name: string; description: string }[];
+  sandboxes: SandboxInfo[];
+  progress: SandboxProgress | null;
+}
+export interface SandboxProgress { phase: string; done?: number; total?: number }
+/** What the Terminal should open next (from chat actions, code blocks, Files…). */
+export type TerminalRequest = AgentAction | { kind: 'sandbox_run'; code: string; lang: string } | { kind: 'sandbox'; id: string };
 export interface FsEntry { name: string; path: string; is_dir: boolean; size: number; modified: number; hidden: boolean }
 export interface FsListing { path: string; parent: string | null; entries: FsEntry[] }
 export interface FsPlace { name: string; path: string; icon: string }
