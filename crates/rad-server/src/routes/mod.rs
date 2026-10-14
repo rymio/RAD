@@ -24,6 +24,7 @@ pub fn router(state: Shared) -> Router {
         .route("/v1/vault/lock", post(vault::lock))
         .route("/v1/vault/info", get(vault::info))
         .route("/v1/vault/passphrase", post(vault::change_passphrase))
+        .route("/v1/vault/sharing", get(vault::sharing).put(vault::set_sharing))
         .route("/v1/vault/backup", post(vault::backup))
         .route("/v1/vault/verify", post(vault::verify))
         .route("/v1/vault/compact", post(vault::compact))

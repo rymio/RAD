@@ -6,6 +6,7 @@ mod client;
 mod commands;
 mod config;
 mod files;
+mod mail;
 mod events;
 mod protocol;
 mod sandbox;
@@ -285,6 +286,7 @@ pub fn run() {
             app.manage(terminal::Terminals::default());
             app.manage(tts::Tts::default());
             app.manage(sandbox::Sandboxes::default());
+            app.manage(mail::Mail::default());
             let handle = app.handle().clone();
             tray::build(&handle)?;
             register_hotkeys(&handle);
@@ -329,6 +331,7 @@ pub fn run() {
             commands::capture_screenshot,
             commands::export_document,
             commands::save_text_file,
+            commands::vault_relocate,
             commands::activity,
             commands::open_main,
             commands::hide_quick,
@@ -355,6 +358,13 @@ pub fn run() {
             files::fs_preview,
             files::fs_open,
             files::fs_reveal,
+            mail::mail_test,
+            mail::mail_set_password,
+            mail::mail_has_password,
+            mail::mail_folders,
+            mail::mail_list,
+            mail::mail_read,
+            mail::mail_set_flags,
             tts::tts_status,
             tts::tts_download,
             tts::tts_remove,

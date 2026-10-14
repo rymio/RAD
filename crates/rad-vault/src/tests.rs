@@ -129,9 +129,74 @@ fn jobs_queue() {
     let a = repo::enqueue_job(&c, "ingest", Some(1), serde_json::json!({})).unwrap();
     let b = repo::enqueue_job(&c, "ingest", Some(1), serde_json::json!({})).unwrap();
     assert_eq!(a, b, "duplicate pending jobs collapse");
-    let j = repo::claim_job(&c).unwrap().unwrap();
-    assert!(repo::claim_job(&c).unwrap().is_none());
+    let j = repo::claim_job(&c, "me").unwrap().unwrap();
+    assert!(repo::claim_job(&c, "me").unwrap().is_none());
     repo::retry_job(&c, j.id, 0, "x").unwrap();
-    assert!(repo::claim_job(&c).unwrap().is_some());
-    assert_eq!(repo::requeue_running_jobs(&c).unwrap(), 1);
+    assert!(repo::claim_job(&c, "me").unwrap().is_some());
+    // A job another live computer is running stays theirs; ours (or a gone computer's) requeues.
+    assert_eq!(repo::requeue_running_jobs(&c, "other", &["me".into()]).unwrap(), 0);
+    assert_eq!(repo::requeue_running_jobs(&c, "other", &[]).unwrap(), 1);
+}
+
+fn journal_mode(v: &Vault) -> String {
+    v.conn().query_row("PRAGMA journal_mode", [], |r| r.get(0)).unwrap()
+}
+
+#[test]
+fn shared_mode_switches_journal_and_persists() {
+    let (_d, p) = tmp();
+    let (v, _) = Vault::create(&p, "correct horse battery").unwrap();
+    assert_eq!(journal_mode(&v), "wal");
+    assert!(!v.is_shared());
+    v.set_shared(true).unwrap();
+    assert!(v.is_shared());
+    assert_eq!(journal_mode(&v), "delete");
+    v.close();
+    assert!(!std::path::Path::new(&format!("{}-wal", p.display())).exists(), "no WAL file next to a shared vault");
+    let v = Vault::open(&p, "correct horse battery").unwrap();
+    assert!(v.is_shared());
+    assert_eq!(journal_mode(&v), "delete");
+    v.set_shared(false).unwrap();
+    assert_eq!(journal_mode(&v), "wal");
+}
+
+/// Two independent openings of one shared vault (as two computers would have) writing at the
+/// same time: every write lands, and each sees the other's.
+#[test]
+fn shared_vault_two_writers() {
+    let (_d, p) = tmp();
+    {
+        let (v, _) = Vault::create(&p, "correct horse battery").unwrap();
+        v.set_shared(true).unwrap();
+        v.close();
+    }
+    let a = std::sync::Arc::new(Vault::open(&p, "correct horse battery").unwrap());
+    let b = std::sync::Arc::new(Vault::open(&p, "correct horse battery").unwrap());
+    let before = repo::last_seq(&a.conn()).unwrap();
+    let hs: Vec<_> = [a.clone(), b.clone()]
+        .into_iter()
+        .enumerate()
+        .map(|(i, v)| {
+            std::thread::spawn(move || {
+                for n in 0..40 {
+                    let c = v.conn();
+                    crate::in_tx(&c, |tx| repo::log_change(tx, "test", (i * 1000 + n) as i64, "write").map(|_| ())).unwrap();
+                }
+            })
+        })
+        .collect();
+    for h in hs {
+        h.join().unwrap();
+    }
+    let seen_a = repo::changes_since(&a.conn(), before, 1000).unwrap();
+    let seen_b = repo::changes_since(&b.conn(), before, 1000).unwrap();
+    assert_eq!(seen_a.len(), 80);
+    assert_eq!(seen_b.len(), 80);
+    let pa = repo::claim_job(&a.conn(), "a").unwrap();
+    assert!(pa.is_none());
+    let j = repo::enqueue_job(&a.conn(), "ingest", Some(1), serde_json::json!({})).unwrap();
+    // The job is claimed by exactly one of them.
+    let ca = repo::claim_job(&a.conn(), "a").unwrap().map(|j| j.id);
+    let cb = repo::claim_job(&b.conn(), "b").unwrap().map(|j| j.id);
+    assert_eq!([ca, cb].iter().flatten().collect::<Vec<_>>(), vec![&j]);
 }

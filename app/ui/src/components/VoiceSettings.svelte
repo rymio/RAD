@@ -10,7 +10,7 @@
   import { Download, Trash2, Play, Square, Loader, Mic, FolderOpen, RotateCcw, CircleAlert } from '@lucide/svelte';
 
   interface Status {
-    installed: boolean; cloning_installed: boolean; engine: boolean; dev_build: boolean; bytes: number; cloning_bytes: number; dir: string;
+    installed: boolean; hd: boolean; hd_bytes: number; cloning_installed: boolean; engine: boolean; dev_build: boolean; bytes: number; cloning_bytes: number; dir: string;
     downloading: { file?: string; done: number; total: number } | null;
     voices: { key: string; name: string; custom: boolean }[];
   }
@@ -30,11 +30,13 @@
   }
 
   async function download(clone = false) {
-    progress = { done: 0, total: clone ? (st?.cloning_bytes ?? 0) : (st?.bytes ?? 0) };
+    const upgrade = !clone && !!st?.installed && !st.hd;
+    progress = { done: 0, total: clone ? (st?.cloning_bytes ?? 0) : upgrade ? (st?.hd_bytes ?? 0) : (st?.bytes ?? 0) };
     try {
       await invoke('tts_download', { cloning: clone });
       if (!clone && cfg && !cfg.tts_enabled) await set({ tts_enabled: true });
-      store.toast('success', clone ? 'Voice cloning is ready' : 'Text to speech is ready', clone ? 'Make a voice from a recording below.' : 'Answers can now be read aloud.');
+      if (upgrade) store.toast('success', 'Clearer voice installed', 'Press Play to hear the difference.');
+      else store.toast('success', clone ? 'Voice cloning is ready' : 'Text to speech is ready', clone ? 'Make a voice from a recording below.' : 'Answers can now be read aloud.');
     } catch (e) {
       store.error(e, 'Download failed');
     } finally {
@@ -114,7 +116,7 @@
     <div class="ph">
       <div class="pn spacer">
         <div class="st">MioTTS-0.1B <span class="pill">Text to speech</span> {#if st.installed}<span class="pill success">Installed</span>{/if}</div>
-        <div class="sd">Speech model (Q8, 125 MB) + MioCodec voice decoder (388 MB) + 4 voices · {formatBytes(st.bytes)} · Falcon-LLM licence (model), MIT (codec)</div>
+        <div class="sd">Speech model (Q8, 125 MB) + MioCodec 44.1 kHz voice decoder (393 MB) + 4 voices · {formatBytes(st.bytes)} · Falcon-LLM licence (model), MIT (codec)</div>
       </div>
       {#if progress}
         <span class="sd">{pct}%</span>
@@ -126,6 +128,13 @@
       {/if}
     </div>
     {#if progress}<div class="progress"><div style="width:{pct}%"></div></div>{/if}
+    {#if st.installed && !st.hd && !progress}
+      <div class="test bad">
+        <CircleAlert size={13} />
+        <span class="spacer">This install uses the older 24 kHz voice decoder, which sounds breathy. The 44.1 kHz decoder reads the same speech much more clearly ({formatBytes(st.hd_bytes)}; the old one is removed afterwards).</span>
+        <button class="btn sm primary" onclick={() => download(false)}><Download size={13} /> Get clearer voice</button>
+      </div>
+    {/if}
     {#if !st.engine}
       <div class="test bad">
         <CircleAlert size={13} />

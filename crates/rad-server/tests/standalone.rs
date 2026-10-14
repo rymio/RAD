@@ -83,7 +83,7 @@ async fn standalone_vault_roundtrip() {
     // ---- first run: create
     let emb = {
         let (md, bundled) = models(dir.path());
-        Embedded::start(vault.clone(), "My Vault", None, md, bundled).await.unwrap()
+        Embedded::start(vault.clone(), "My Vault", None, md, bundled, None, None).await.unwrap()
     };
     assert!(emb.addr.ip().is_loopback(), "standalone server must only listen on loopback");
     let mut c = C { http: reqwest::Client::new(), base: emb.url(), token: emb.device_token.clone(), session: None };
@@ -234,7 +234,7 @@ async fn standalone_vault_roundtrip() {
     // ---- second run: same file, starts locked, unlock with passphrase
     let emb = {
         let (md, bundled) = models(dir.path());
-        Embedded::start(vault.clone(), "My Vault", None, md, bundled).await.unwrap()
+        Embedded::start(vault.clone(), "My Vault", None, md, bundled, None, None).await.unwrap()
     };
     let mut c = C { http: reqwest::Client::new(), base: emb.url(), token: emb.device_token.clone(), session: None };
     let st = c.get("/v1/status").await;

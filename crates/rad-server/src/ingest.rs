@@ -83,7 +83,8 @@ pub async fn worker_loop(state: Shared) {
         };
         let permit = sem.clone().acquire_owned().await.expect("semaphore");
         let v = vault.clone();
-        let job = tokio::task::spawn_blocking(move || repo::claim_job(&v.conn())).await;
+        let owner = state.cfg.machine_id.clone();
+        let job = tokio::task::spawn_blocking(move || repo::claim_job(&v.conn(), &owner)).await;
         match job {
             Ok(Ok(Some(job))) => {
                 let st = state.clone();

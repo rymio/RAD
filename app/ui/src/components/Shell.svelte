@@ -12,6 +12,7 @@
   import TerminalView from './TerminalView.svelte';
   import FilesView from './FilesView.svelte';
   import CalendarView from './CalendarView.svelte';
+  import EmailView from './EmailView.svelte';
   import CommandPalette from './CommandPalette.svelte';
   import { UploadCloud, PanelLeftOpen } from '@lucide/svelte';
 
@@ -51,11 +52,11 @@
     getCurrentWebview()
       .onDragDropEvent((ev) => {
         const p = ev.payload;
-        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'terminal', 'files', 'calendar'].includes(store.route.kind);
+        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'terminal', 'files', 'calendar', 'email'].includes(store.route.kind);
         else if (p.type === 'leave') dragging = false;
         else if (p.type === 'drop') {
           dragging = false;
-          if (['browser', 'terminal', 'files', 'calendar'].includes(store.route.kind)) return;
+          if (['browser', 'terminal', 'files', 'calendar', 'email'].includes(store.route.kind)) return;
           uploadTo(p.paths);
         }
       })
@@ -108,6 +109,8 @@
       <FilesView />
     {:else if store.route.kind === 'calendar'}
       <CalendarView />
+    {:else if store.route.kind === 'email'}
+      <EmailView />
     {/if}
   </main>
   {#if dragging}

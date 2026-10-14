@@ -38,7 +38,7 @@ async fn fake_provider() -> (String, Arc<Mutex<Vec<Value>>>) {
 async fn page_context_and_screenshot_reach_the_model_but_are_not_stored() {
     let dir = tempfile::tempdir().unwrap();
     let bundled = vec![std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../models")];
-    let emb = Embedded::start(dir.path().join("v.radvault"), "V", None, dir.path().join("models"), bundled).await.unwrap();
+    let emb = Embedded::start(dir.path().join("v.radvault"), "V", None, dir.path().join("models"), bundled, None, None).await.unwrap();
     let http = reqwest::Client::new();
     let token = emb.device_token.clone();
     let base = emb.url();

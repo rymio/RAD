@@ -47,3 +47,44 @@ pub fn delete(dir: &Path, server: &str) {
     }
     let _ = std::fs::remove_file(fallback_path(dir, server));
 }
+
+/// Other per-device secrets (e.g. the email password), stored the same way as the device
+/// token under their own `name`.
+pub fn get_named(dir: &Path, name: &str) -> Option<String> {
+    if let Ok(e) = keyring::Entry::new(SERVICE, name) {
+        if let Ok(t) = e.get_password() {
+            return Some(t);
+        }
+    }
+    std::fs::read_to_string(named_path(dir, name)).ok().filter(|s| !s.is_empty())
+}
+
+pub fn set_named(dir: &Path, name: &str, secret: &str) -> anyhow::Result<()> {
+    if let Ok(e) = keyring::Entry::new(SERVICE, name) {
+        if e.set_password(secret).is_ok() && e.get_password().ok().as_deref() == Some(secret) {
+            let _ = std::fs::remove_file(named_path(dir, name));
+            return Ok(());
+        }
+    }
+    tracing::warn!("OS keychain unavailable; storing a secret in a private file");
+    std::fs::create_dir_all(dir)?;
+    let p = named_path(dir, name);
+    std::fs::write(&p, secret)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
+}
+
+pub fn delete_named(dir: &Path, name: &str) {
+    if let Ok(e) = keyring::Entry::new(SERVICE, name) {
+        let _ = e.delete_credential();
+    }
+    let _ = std::fs::remove_file(named_path(dir, name));
+}
+
+fn named_path(dir: &Path, name: &str) -> std::path::PathBuf {
+    dir.join(format!("secret-{}.secret", &blake3::hash(name.as_bytes()).to_hex()[..16]))
+}

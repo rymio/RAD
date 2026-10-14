@@ -6,6 +6,8 @@ mod pool;
 mod schema;
 
 pub mod blobs;
+pub mod location;
+pub mod presence;
 pub mod recall;
 pub mod repo;
 pub mod search;
@@ -156,10 +158,41 @@ impl Vault {
         let pool = Pool::new(path.to_path_buf(), key_hex, first, 6);
         let v = Vault { path: path.to_path_buf(), key: Mutex::new(key), pool };
         {
+            // A shared vault keeps the classic rollback journal: WAL's index lives in shared
+            // memory, which other computers can't see.
             let c = v.conn();
-            c.execute_batch("PRAGMA journal_mode=WAL;")?;
+            let shared = repo::meta_get(&c, "shared")?.as_deref() == Some("1");
+            c.execute_batch(if shared { "PRAGMA journal_mode=DELETE;" } else { "PRAGMA journal_mode=WAL;" })?;
         }
         Ok(v)
+    }
+
+    /// Whether several computers may have this vault open at the same time.
+    pub fn is_shared(&self) -> bool {
+        repo::meta_get(&self.conn(), "shared").ok().flatten().as_deref() == Some("1")
+    }
+
+    /// Turns shared use on or off. Needs every other computer to have closed the vault when
+    /// turning it off (the caller checks); waits for this process's own connections.
+    pub fn set_shared(&self, on: bool) -> Result<()> {
+        let key_hex = Zeroizing::new(hex::encode(&**self.key.lock().unwrap()));
+        self.pool.exclusive(
+            move |c| {
+                if on {
+                    c.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+                    let mode: String = c.query_row("PRAGMA journal_mode=DELETE;", [], |r| r.get(0))?;
+                    if !mode.eq_ignore_ascii_case("delete") {
+                        return Err(VaultError::Invalid("the vault is busy — try again in a moment".into()));
+                    }
+                    repo::meta_set(c, "shared", "1")
+                } else {
+                    repo::meta_set(c, "shared", "0")?;
+                    c.execute_batch("PRAGMA journal_mode=WAL;")?;
+                    Ok(())
+                }
+            },
+            key_hex,
+        )
     }
 
     pub fn path(&self) -> &Path {

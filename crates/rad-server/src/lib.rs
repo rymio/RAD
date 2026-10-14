@@ -12,9 +12,12 @@ mod media;
 mod models;
 mod rag;
 mod routes;
+mod sharing;
 mod state;
 
 pub mod embedded;
+/// Which computers have a vault file open (see `sharing`).
+pub use rad_vault::presence as vault_presence;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -42,6 +45,11 @@ pub struct ServerOptions {
     pub models_dir: Option<PathBuf>,
     /// Read-only folders searched for models first-hand, e.g. the copy shipped with the app.
     pub bundled_models: Vec<PathBuf>,
+    /// Identifies this computer to others sharing the vault. Without an id, one is kept in
+    /// `state_dir` (or derived from the host when there's none).
+    pub machine_id: Option<String>,
+    /// How this computer is named to others sharing the vault (defaults to the host name).
+    pub machine_name: Option<String>,
 }
 
 /// A running (but not yet listening) server: state, background workers, media endpoint.
@@ -62,6 +70,7 @@ impl Instance {
         };
 
         let (media_listener, media_addr) = media::bind_loopback().await?;
+        let (machine_id, machine_name) = sharing::machine_identity(opts.machine_id.clone(), opts.machine_name.clone(), opts.state_dir.as_deref());
         let cfg = state::Config {
             name: opts.name.clone(),
             vault_path: vault_path.clone(),
@@ -69,6 +78,8 @@ impl Instance {
             ffmpeg: opts.ffmpeg.clone(),
             max_upload_bytes: opts.max_upload_mb * 1024 * 1024,
             media_addr: Some(media_addr),
+            machine_id,
+            machine_name,
         };
         let models_dir = opts.models_dir.clone().unwrap_or_else(|| vault_dir.join("models"));
         let library = rad_local::Library::new(models_dir, opts.bundled_models.clone());

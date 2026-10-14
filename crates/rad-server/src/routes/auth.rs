@@ -68,9 +68,12 @@ pub async fn unlock(State(state): State<Shared>, DeviceAuth(device): DeviceAuth,
         // Already unlocked by another device: prove knowledge of the passphrase.
         Some(v) => tokio::task::spawn_blocking(move || v.verify_passphrase(&req.passphrase)).await.map_err(ApiErr::internal)?,
         None => {
+            // Another computer may be using this vault file (a network share or sync folder).
+            crate::sharing::check_can_open(&state)?;
             let path = state.cfg.vault_path.clone();
             match tokio::task::spawn_blocking(move || Vault::open(&path, &req.passphrase)).await.map_err(ApiErr::internal)? {
                 Ok(v) => {
+                    crate::sharing::check_opened(&state, &v)?;
                     // Another request may have unlocked meanwhile; either way the passphrase is right.
                     if state.current_vault().is_none() {
                         state.set_unlocked(v);
@@ -99,7 +102,8 @@ pub async fn unlock_recovery(
     if req.new_passphrase.chars().count() < rad_vault::MIN_PASSPHRASE {
         return Err(rad_vault::VaultError::WeakPassphrase(rad_vault::MIN_PASSPHRASE).into());
     }
-    // Recovery re-keys the vault, so every other session must go.
+    // Recovery re-keys the vault: no other computer may have it open, and every session goes.
+    crate::sharing::check_alone(&state, "recover it")?;
     state.lock();
     let path = state.cfg.vault_path.clone();
     let res = tokio::task::spawn_blocking(move || -> rad_vault::Result<(Vault, String)> {

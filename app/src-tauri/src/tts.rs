@@ -2,9 +2,13 @@
 //!
 //! The engine is `mio-tts-server` (mio-tts-cpp: llama.cpp + ggml), built by
 //! `scripts/build-tts.sh` and started on demand on 127.0.0.1. It runs the MioTTS language model
-//! (text → speech tokens) and the MioCodec vocoder (tokens + a voice → 24 kHz audio). Audio is
-//! returned in memory and never written to disk. Models (~510 MB) are downloaded once into the
-//! app's `models/miotts` folder and verified against pinned checksums.
+//! (text → speech tokens) and the MioCodec decoder (tokens + a voice → audio). Audio is returned
+//! in memory and never written to disk. Models (~520 MB) are downloaded once into the app's
+//! `models/miotts` folder and verified against pinned checksums.
+//!
+//! The decoder is MioCodec-25Hz-44.1kHz-v2: it reads the same speech tokens as the original
+//! 24 kHz decoder but renders them with clearer harmonics (the 24 kHz one sounds breathy).
+//! Installs that only have the 24 kHz decoder keep working until they upgrade.
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -25,7 +29,9 @@ const BIN: &str = if cfg!(windows) { "mio-tts-server.exe" } else { "mio-tts-serv
 const MODELS: &str = "https://huggingface.co/mmnga-o/miotts-cpp-gguf/resolve/6ffcbb61be839a7f2b7acf52dde534efa9e1d125";
 const WAVLM: &str = "https://huggingface.co/mmnga-o/wavlm-base-plus-gguf/resolve/a6c76be37081877942ab07069c5296b7c03ffadc";
 const LLM: &str = "MioTTS-0.1B-Q8_0.gguf";
-const CODEC: &str = "miocodec.gguf";
+/// The original 24 kHz decoder. No longer downloaded; used only until the clearer one is installed.
+const CODEC_24K: &str = "miocodec.gguf";
+const CODEC: &str = "miocodec-25hz-44k-v2.gguf";
 const WAVLM_FILE: &str = "wavlm_base_plus_2l_f32.gguf";
 
 struct ModelFile {
@@ -39,7 +45,7 @@ struct ModelFile {
 
 const FILES: &[ModelFile] = &[
     ModelFile { name: LLM, base: MODELS, sha256: "f11afe7b878bf2ac99bd6551b95f34dd3aa9c1af263d186ccff2d0e57055219b", bytes: 124_956_192, cloning: false },
-    ModelFile { name: CODEC, base: MODELS, sha256: "70008c545da10ce3c576ca2097e95ae05ff6cb2c2d691a92bd4e6d92edbc60f9", bytes: 387_687_136, cloning: false },
+    ModelFile { name: CODEC, base: MODELS, sha256: "444b710dc5b654486ac771ac8e3956d31ac4d6f34accbb209685d866afa11112", bytes: 392_700_224, cloning: false },
     ModelFile { name: "en_female.emb.gguf", base: MODELS, sha256: "aa8e5efd699eee3648d60eda4c954e31a3d0eebf99bcd09453178b38d78e6ccb", bytes: 768, cloning: false },
     ModelFile { name: "en_male.emb.gguf", base: MODELS, sha256: "4b8e7b748d20cb463863ddff718aa9a078651c1ab34003d555d12c8f36f6ad43", bytes: 768, cloning: false },
     ModelFile { name: "jp_female.emb.gguf", base: MODELS, sha256: "1a99490f54aedefc98010ae53101f1cd49fd73a2cfc043e2009e3e2795a1ffdb", bytes: 768, cloning: false },
@@ -80,9 +86,28 @@ fn voices_dir(app: &AppHandle) -> PathBuf {
     dir(app).join("voices")
 }
 
+fn present(d: &Path, f: &ModelFile) -> bool {
+    std::fs::metadata(d.join(f.name)).is_ok_and(|m| m.len() == f.bytes)
+}
+
+/// The decoder to run: the clearer one when downloaded, else an older install's 24 kHz one.
+fn codec_file(app: &AppHandle) -> Option<&'static str> {
+    let d = dir(app);
+    if FILES.iter().any(|f| f.name == CODEC && present(&d, f)) {
+        Some(CODEC)
+    } else if std::fs::metadata(d.join(CODEC_24K)).is_ok_and(|m| m.len() == 387_687_136) {
+        Some(CODEC_24K)
+    } else {
+        None
+    }
+}
+
 fn installed(app: &AppHandle, cloning: bool) -> bool {
     let d = dir(app);
-    FILES.iter().filter(|f| f.cloning == cloning).all(|f| std::fs::metadata(d.join(f.name)).is_ok_and(|m| m.len() == f.bytes))
+    if cloning {
+        return FILES.iter().filter(|f| f.cloning).all(|f| present(&d, f));
+    }
+    FILES.iter().filter(|f| !f.cloning && f.name != CODEC).all(|f| present(&d, f)) && codec_file(app).is_some()
 }
 
 fn engine_path(app: &AppHandle) -> Option<PathBuf> {
@@ -162,9 +187,12 @@ async fn ensure_engine(app: &AppHandle, t: &Tts, need_cloning: bool) -> CmdResul
     let port = free_port()?;
     let threads = std::thread::available_parallelism().map(|n| (n.get() / 2).clamp(2, 6)).unwrap_or(2);
     let cloning = installed(app, true);
+    let codec = codec_file(app).unwrap_or(CODEC);
     let mut cmd = Command::new(&bin);
-    cmd.arg("-m").arg(d.join(LLM)).arg("-mv").arg(d.join(CODEC));
-    cmd.args(["--host", "127.0.0.1", "--port", &port.to_string(), "--threads", &threads.to_string()]);
+    cmd.arg("-m").arg(d.join(LLM)).arg("-mv").arg(d.join(codec));
+    // Prompt (up to ~80 tokens for a 220-character piece) + up to 700 speech tokens; the
+    // engine's default 700 makes long pieces fail with "requires n_ctx=…".
+    cmd.args(["--host", "127.0.0.1", "--port", &port.to_string(), "--threads", &threads.to_string(), "--ctx-size", "1024"]);
     cmd.arg("--reference-file-json").arg(Value::Array(refs).to_string());
     cmd.arg("--reference-added-output-dir").arg(&vd);
     // Anything the engine would write goes to a private folder, not /tmp.
@@ -207,6 +235,9 @@ pub fn tts_status(app: AppHandle, t: State<'_, Tts>) -> Value {
     let cloning_bytes: u64 = FILES.iter().filter(|f| f.cloning).map(|f| f.bytes).sum();
     json!({
         "installed": installed(&app, false),
+        // false: an older install still on the breathy 24 kHz decoder (offer the upgrade).
+        "hd": codec_file(&app) == Some(CODEC),
+        "hd_bytes": FILES.iter().find(|f| f.name == CODEC).map(|f| f.bytes).unwrap_or(0),
         "cloning_installed": installed(&app, true),
         "engine": engine_path(&app).is_some(),
         // An installed app only finds engines bundled inside it; a dev build also finds tts/bin.
@@ -232,8 +263,12 @@ pub async fn tts_download(app: AppHandle, t: State<'_, Tts>, cloning: bool) -> C
     let r = download(&app, &t, cloning).await;
     *t.downloading.lock().unwrap() = None;
     let _ = app.emit("tts-progress", json!({"done": true, "error": r.as_ref().err().map(|e| e.message.clone())}));
-    if r.is_ok() && cloning {
+    if r.is_ok() {
+        // Pick up a newly downloaded decoder (or cloning model) on the next request.
         restart(&t).await;
+        if codec_file(&app) == Some(CODEC) {
+            let _ = tokio::fs::remove_file(dir(&app).join(CODEC_24K)).await;
+        }
     }
     r
 }
@@ -286,10 +321,11 @@ pub async fn tts_remove(app: AppHandle, t: State<'_, Tts>) -> CmdResult<()> {
     for f in FILES {
         let _ = tokio::fs::remove_file(d.join(f.name)).await;
     }
+    let _ = tokio::fs::remove_file(d.join(CODEC_24K)).await;
     Ok(())
 }
 
-/// One sentence or short paragraph → a 24 kHz WAV, in memory.
+/// One sentence or short paragraph → a WAV (44.1 kHz, or 24 kHz on older installs), in memory.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn tts_speak(
@@ -338,7 +374,9 @@ pub async fn tts_speak(
             return Err(CmdError::new("tts", msg.unwrap_or_else(|| "Speech synthesis failed".into())));
         }
         let wav = resp.bytes().await.map_err(|e| CmdError::new("tts", e.to_string()))?.to_vec();
-        let secs = wav.len().saturating_sub(44) as f64 / 48_000.0;
+        // Byte rate from the WAV header: the decoder decides the sample rate.
+        let byte_rate = wav.get(28..32).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]])).filter(|r| *r > 0).unwrap_or(48_000);
+        let secs = wav.len().saturating_sub(44) as f64 / byte_rate as f64;
         let better = best.as_ref().is_none_or(|(s, _)| secs < *s);
         if better {
             best = Some((secs, wav));

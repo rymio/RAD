@@ -58,6 +58,7 @@ pub async fn info(State(state): State<Shared>, a: Authed) -> ApiResult<Json<Vaul
 
 pub async fn change_passphrase(State(state): State<Shared>, a: Authed, Json(req): Json<ChangePassphraseRequest>) -> ApiResult<Json<RecoveryKit>> {
     state.unlock_allowed()?;
+    crate::sharing::check_alone(&state, "change the passphrase")?;
     let v = a.vault.clone();
     let cur = req.current.clone();
     let ok = tokio::task::spawn_blocking(move || v.verify_passphrase(&cur)).await.map_err(ApiErr::internal)?;
@@ -70,6 +71,21 @@ pub async fn change_passphrase(State(state): State<Shared>, a: Authed, Json(req)
     let recovery_key = tokio::task::spawn_blocking(move || v.rekey(&new)).await.map_err(ApiErr::internal)??;
     tracing::warn!("vault passphrase changed by device “{}”", a.device.name);
     Ok(Json(RecoveryKit { recovery_key }))
+}
+
+pub async fn sharing(State(state): State<Shared>, a: Authed) -> ApiResult<Json<VaultSharing>> {
+    let v = a.vault.clone();
+    let shared = tokio::task::spawn_blocking(move || v.is_shared()).await.map_err(ApiErr::internal)?;
+    Ok(Json(crate::sharing::info(&state, shared)))
+}
+
+pub async fn set_sharing(State(state): State<Shared>, a: Authed, Json(req): Json<SharingRequest>) -> ApiResult<Json<VaultSharing>> {
+    crate::sharing::check_toggle(&state, req.shared)?;
+    let v = a.vault.clone();
+    tokio::task::spawn_blocking(move || v.set_shared(req.shared)).await.map_err(ApiErr::internal)??;
+    state.mark_sharing_changed();
+    tracing::info!("vault sharing turned {} by device “{}”", if req.shared { "on" } else { "off" }, a.device.name);
+    Ok(Json(crate::sharing::info(&state, req.shared)))
 }
 
 pub async fn backup(State(state): State<Shared>, a: Authed) -> ApiResult<Json<BackupInfo>> {

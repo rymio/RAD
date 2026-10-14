@@ -146,6 +146,8 @@ async fn serve(args: ServeArgs) -> anyhow::Result<()> {
             .into_iter()
             .chain(std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("models"))))
             .collect(),
+        machine_id: None,
+        machine_name: None,
     };
     let inst = Instance::start(&opts).await?;
 

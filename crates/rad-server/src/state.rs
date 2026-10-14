@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -19,6 +19,9 @@ pub struct Config {
     pub max_upload_bytes: u64,
     /// Loopback address of the internal media endpoint used to feed ffmpeg without temp files.
     pub media_addr: Option<std::net::SocketAddr>,
+    /// This computer, for a vault shared by several (see `sharing`).
+    pub machine_id: String,
+    pub machine_name: String,
 }
 
 pub struct Session {
@@ -34,6 +37,7 @@ pub struct UnlockLimiter {
 }
 
 pub struct AppState {
+    me: std::sync::Weak<AppState>,
     pub cfg: Config,
     pub devices: DeviceStore,
     vault: RwLock<Option<Arc<Vault>>>,
@@ -51,6 +55,11 @@ pub struct AppState {
     pub ffmpeg_ok: std::sync::atomic::AtomicBool,
     stopped: std::sync::atomic::AtomicBool,
     pub stop_notify: Notify,
+    /// Change-log entries this process wrote, so the shared-vault watcher only relays others'.
+    own_seqs: Mutex<HashSet<i64>>,
+    /// Sharing was switched on or off: refresh the session file now.
+    pub sharing_changed: Notify,
+    sharing_dirty: std::sync::atomic::AtomicBool,
 }
 
 pub type Shared = Arc<AppState>;
@@ -58,7 +67,8 @@ pub type Shared = Arc<AppState>;
 impl AppState {
     pub fn new(cfg: Config, devices: DeviceStore, library: Arc<rad_local::Library>) -> Shared {
         let (events, _) = broadcast::channel(512);
-        Arc::new(AppState {
+        Arc::new_cyclic(|me| AppState {
+            me: me.clone(),
             cfg,
             devices,
             vault: RwLock::new(None),
@@ -75,7 +85,14 @@ impl AppState {
             ffmpeg_ok: std::sync::atomic::AtomicBool::new(false),
             stopped: std::sync::atomic::AtomicBool::new(false),
             stop_notify: Notify::new(),
+            own_seqs: Mutex::new(HashSet::new()),
+            sharing_changed: Notify::new(),
+            sharing_dirty: std::sync::atomic::AtomicBool::new(false),
         })
+    }
+
+    fn arc(&self) -> Shared {
+        self.me.upgrade().expect("server state is alive")
     }
 
     pub fn current_vault(&self) -> Option<Arc<Vault>> {
@@ -93,7 +110,9 @@ impl AppState {
     pub fn set_unlocked(&self, v: Vault) {
         let v = Arc::new(v);
         if let Ok(c) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| v.conn())) {
-            if let Err(e) = rad_vault::repo::requeue_running_jobs(&c) {
+            // Jobs another computer sharing this vault is running stay theirs.
+            let alive: Vec<String> = rad_vault::presence::others(&self.cfg.vault_path, &self.cfg.machine_id).into_iter().map(|s| s.machine_id).collect();
+            if let Err(e) = rad_vault::repo::requeue_running_jobs(&c, &self.cfg.machine_id, &alive) {
                 tracing::warn!("requeue jobs: {e}");
             }
             if let Err(e) = crate::models::ensure_builtin(self, &c) {
@@ -103,7 +122,10 @@ impl AppState {
                 tracing::warn!("chat recall backfill: {e}");
             }
         }
-        *self.vault.write().unwrap() = Some(v);
+        *self.vault.write().unwrap() = Some(v.clone());
+        if let Ok(rt) = tokio::runtime::Handle::try_current() {
+            rt.spawn(crate::sharing::run(self.arc(), v));
+        }
         self.touch();
         let _ = self.events.send(Event::Unlocked);
         self.jobs_wake.notify_waiters();
@@ -113,12 +135,29 @@ impl AppState {
     /// Removes the key from memory. Running jobs finish with their Arc and then drop it.
     pub fn lock(&self) {
         let had = self.vault.write().unwrap().take().is_some();
+        if had {
+            crate::sharing::withdraw(self);
+        }
         self.sessions.lock().unwrap().clear();
         self.media_tokens.lock().unwrap().clear();
         if had {
             let _ = self.events.send(Event::Locked);
             tracing::info!("vault locked");
         }
+    }
+
+    /// True once per call after this process wrote `seq` (see `changed`).
+    pub fn take_own_seq(&self, seq: i64) -> bool {
+        self.own_seqs.lock().unwrap().remove(&seq)
+    }
+
+    pub fn mark_sharing_changed(&self) {
+        self.sharing_dirty.store(true, Ordering::SeqCst);
+        self.sharing_changed.notify_waiters();
+    }
+
+    pub fn sharing_dirty(&self) -> bool {
+        self.sharing_dirty.swap(false, Ordering::SeqCst)
     }
 
     /// Ends background work for good (standalone mode switching vaults / quitting).
@@ -239,6 +278,12 @@ impl AppState {
     pub fn changed(&self, c: &Connection, entity: &str, id: Id, op: &str) {
         match rad_vault::repo::log_change(c, entity, id, op) {
             Ok(seq) => {
+                let mut own = self.own_seqs.lock().unwrap();
+                if own.len() > 4096 {
+                    own.clear();
+                }
+                own.insert(seq);
+                drop(own);
                 let _ = self.events.send(Event::Change { seq, entity: entity.into(), entity_id: id, op: op.into() });
             }
             Err(e) => tracing::warn!("change log: {e}"),

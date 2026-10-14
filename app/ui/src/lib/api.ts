@@ -116,11 +116,25 @@ export const rad = {
   sandboxSend: (id: string, paths: string[]) => call<number>('sandbox_send', { id, paths }),
   sandboxSharedDir: (id: string) => call<string>('sandbox_shared_dir', { id }),
 
+  /** Moves this computer's vault file into `folder` and reopens it there (locked). */
+  vaultRelocate: (folder: string) => call<T.ServerStatus>('vault_relocate', { folder }),
+
   fsPlaces: () => call<T.FsPlace[]>('fs_places'),
   fsList: (path?: string) => call<T.FsListing>('fs_list', { path: path ?? null }),
   fsPreview: (path: string) => call<T.FsPreview>('fs_preview', { path }),
   fsOpen: (path: string) => call<void>('fs_open', { path }),
   fsReveal: (path: string) => call<void>('fs_reveal', { path }),
+
+  mailTest: (account: T.EmailAccount, password: string) => call<number>('mail_test', { account, password }),
+  mailSetPassword: (account: T.EmailAccount, password: string | null) => call<void>('mail_set_password', { account, password }),
+  mailHasPassword: (account: T.EmailAccount) => call<boolean>('mail_has_password', { account }),
+  mailFolders: (account: T.EmailAccount) => call<T.MailFolder[]>('mail_folders', { account }),
+  mailList: (account: T.EmailAccount, folder: string, query: string | null, cursor: number | null) =>
+    call<T.MailPage>('mail_list', { account, folder, query, cursor }),
+  /** Fetching a message marks it as read on the server. */
+  mailRead: (account: T.EmailAccount, folder: string, uid: number) => call<T.MailMessage>('mail_read', { account, folder, uid }),
+  mailSetFlags: (account: T.EmailAccount, folder: string, uid: number, flags: { seen?: boolean; flagged?: boolean }) =>
+    call<void>('mail_set_flags', { account, folder, uid, seen: flags.seen ?? null, flagged: flags.flagged ?? null }),
 };
 
 let platformName = '';

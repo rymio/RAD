@@ -35,7 +35,7 @@ async fn fake_provider() -> (String, Arc<Mutex<Vec<Value>>>) {
 async fn ssh_request_uses_the_vault_and_is_remembered() {
     let dir = tempfile::tempdir().unwrap();
     let bundled = vec![std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../models")];
-    let emb = Embedded::start(dir.path().join("v.radvault"), "V", None, dir.path().join("models"), bundled).await.unwrap();
+    let emb = Embedded::start(dir.path().join("v.radvault"), "V", None, dir.path().join("models"), bundled, None, None).await.unwrap();
     let http = reqwest::Client::new();
     let (base, token) = (emb.url(), emb.device_token.clone());
     let r: Value = http.post(format!("{base}/v1/vault/init")).bearer_auth(&token).json(&json!({ "passphrase": "agent test pass" })).send().await.unwrap().json().await.unwrap();

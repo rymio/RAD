@@ -18,7 +18,17 @@ pub struct Embedded {
 impl Embedded {
     /// `models_dir` is where downloaded models go; `bundled_models` are read-only folders
     /// (e.g. the app's resources) checked first.
-    pub async fn start(vault: PathBuf, name: &str, ffmpeg: Option<String>, models_dir: PathBuf, bundled_models: Vec<PathBuf>) -> anyhow::Result<Embedded> {
+    /// `machine_id` (stable per installation) and `machine_name` identify this computer to
+    /// others sharing the vault.
+    pub async fn start(
+        vault: PathBuf,
+        name: &str,
+        ffmpeg: Option<String>,
+        models_dir: PathBuf,
+        bundled_models: Vec<PathBuf>,
+        machine_id: Option<String>,
+        machine_name: Option<String>,
+    ) -> anyhow::Result<Embedded> {
         let opts = ServerOptions {
             vault,
             name: name.to_string(),
@@ -28,6 +38,8 @@ impl Embedded {
             max_upload_mb: 16 * 1024,
             models_dir: Some(models_dir),
             bundled_models,
+            machine_id,
+            machine_name,
         };
         let inst = std::sync::Arc::new(Instance::start(&opts).await?);
         let (_device, device_token) = inst.state.devices.add("This computer", std::env::consts::OS)?;
@@ -46,6 +58,12 @@ impl Embedded {
         });
         tracing::info!("standalone vault {} served on {addr}", inst.vault_path.display());
         Ok(Embedded { addr, device_token, vault_path: inst.vault_path.clone(), inst, shutdown: Some(tx), task: Some(task) })
+    }
+
+    /// Names of other computers that have this vault open right now (a shared folder).
+    pub fn others_using(&self) -> Vec<String> {
+        let st = &self.inst.state;
+        rad_vault::presence::others(&self.vault_path, &st.cfg.machine_id).into_iter().map(|s| s.machine).collect()
     }
 
     pub fn url(&self) -> String {

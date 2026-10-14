@@ -18,11 +18,12 @@ pub(crate) fn open_conn(path: &Path, key_hex: &str) -> Result<Connection> {
         }
         Err(e) => return Err(e.into()),
     }
+    // A long busy timeout: on a shared vault, a write waits its turn behind other computers'.
     c.execute_batch(
         "PRAGMA foreign_keys=ON;
          PRAGMA synchronous=NORMAL;
          PRAGMA temp_store=MEMORY;
-         PRAGMA busy_timeout=20000;
+         PRAGMA busy_timeout=60000;
          PRAGMA cache_size=-32000;",
     )?;
     Ok(c)

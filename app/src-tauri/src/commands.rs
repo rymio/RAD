@@ -33,6 +33,7 @@ pub fn set_config(app: AppHandle, st: State<'_, App>, config: ClientConfig) -> C
     c.mode = before.mode.clone();
     c.local_vault = before.local_vault.clone();
     c.recent_vaults = before.recent_vaults.clone();
+    c.machine_id = before.machine_id.clone();
     st.save_config(c.clone());
     if before.hotkey_quick_ask != c.hotkey_quick_ask || before.hotkey_screenshot != c.hotkey_screenshot || before.hotkey_lock != c.hotkey_lock {
         crate::register_hotkeys(&app);
@@ -68,9 +69,18 @@ pub async fn start_local(app: AppHandle, st: State<'_, App>, path: String) -> Cm
     }
     events::stop(&app);
     stop_embedded(&st).await;
+    serve_local(&app, &st, &path, None).await
+}
+
+/// Serves `path` in-process and makes it the current vault (locked). `replaces` is an old
+/// location of the same vault, dropped from the recent list.
+async fn serve_local(app: &AppHandle, st: &App, path: &std::path::Path, replaces: Option<&str>) -> CmdResult<Value> {
     let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "Vault".into());
-    let (models_dir, bundled) = model_dirs(&app);
-    let emb = rad_server::embedded::Embedded::start(path.clone(), &name, None, models_dir, bundled)
+    let (models_dir, bundled) = model_dirs(app);
+    let cfg = st.config();
+    let machine_name = Some(cfg.device_name).filter(|n| !n.trim().is_empty());
+    let machine_id = Some(cfg.machine_id).filter(|n| !n.is_empty());
+    let emb = rad_server::embedded::Embedded::start(path.to_path_buf(), &name, None, models_dir, bundled, machine_id, machine_name)
         .await
         .map_err(|e| CmdError::new("local", format!("Couldn't open the vault: {e:#}")))?;
     st.client.set_server(Some(emb.url()), Some(emb.device_token.clone()));
@@ -79,11 +89,57 @@ pub async fn start_local(app: AppHandle, st: State<'_, App>, path: String) -> Cm
     let mut c = st.config();
     c.mode = "local".into();
     c.local_vault = Some(p.clone());
-    c.recent_vaults.retain(|r| r != &p);
+    c.recent_vaults.retain(|r| r != &p && Some(r.as_str()) != replaces);
     c.recent_vaults.insert(0, p);
     c.recent_vaults.truncate(8);
-    st.save_config(c);
+    st.save_config(c.clone());
+    let _ = app.emit("rad-config", &c);
     st.client.json(Method::GET, "/v1/status", None).await
+}
+
+/// Moves this computer's vault file into `folder` and reopens it from there (locked, so the
+/// next step is unlocking). Refuses while another computer has it open.
+#[tauri::command]
+pub async fn vault_relocate(app: AppHandle, st: State<'_, App>, folder: String) -> CmdResult<Value> {
+    let cfg = st.config();
+    let from = match (cfg.mode.as_str(), cfg.local_vault.as_deref()) {
+        ("local", Some(p)) => std::path::PathBuf::from(p),
+        _ => return Err(CmdError::new("local", "Only a vault stored by this app can be moved. A server's vault is moved on the server.")),
+    };
+    let dest_dir = std::path::PathBuf::from(folder.trim());
+    if !dest_dir.is_dir() {
+        return Err(CmdError::new("local", "That folder doesn't exist"));
+    }
+    let file_name = from.file_name().ok_or_else(|| CmdError::new("local", "The vault path is invalid"))?;
+    let to = dest_dir.join(file_name);
+    let same = |a: &std::path::Path, b: &std::path::Path| match (a.canonicalize(), b.canonicalize()) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => a == b,
+    };
+    if from.parent().is_some_and(|p| same(p, &dest_dir)) {
+        return Err(CmdError::new("local", "The vault is already in that folder"));
+    }
+    if to.exists() {
+        return Err(CmdError::new("local", format!("There's already a file named {} in that folder", file_name.to_string_lossy())));
+    }
+    if let Some(e) = st.embedded.lock().await.as_ref() {
+        let others = e.others_using();
+        if !others.is_empty() {
+            return Err(CmdError::new("vault_in_use", format!("{} has this vault open. Lock RAD there before moving it.", others.join(", "))));
+        }
+    }
+
+    // Lock and stop serving, so the file is closed and complete (WAL checkpointed).
+    do_lock(&app, true).await;
+    events::stop(&app);
+    stop_embedded(&st).await;
+
+    let moved = crate::files::move_vault(&app, &from, &to).await;
+    let open_at = if moved.is_ok() { &to } else { &from };
+    // Serve the vault again from wherever it now is, even if the move failed.
+    let status = serve_local(&app, &st, open_at, moved.is_ok().then(|| from.to_str()).flatten()).await;
+    moved?;
+    status
 }
 
 /// Built-in models: downloads go to the app's data folder; the copy bundled with the app (and,
@@ -195,6 +251,7 @@ pub async fn unlock_recovery(app: AppHandle, st: State<'_, App>, recovery_key: S
 pub fn handle_locked(app: &AppHandle) {
     let st = app.state::<App>();
     st.client.set_session(None);
+    app.state::<crate::mail::Mail>().disconnect();
     for (_, t) in st.chat_tasks.lock().unwrap().drain() {
         t.abort();
     }

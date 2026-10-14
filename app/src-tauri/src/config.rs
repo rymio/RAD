@@ -15,6 +15,9 @@ pub struct ClientConfig {
     pub server_url: Option<String>,
     pub server_name: Option<String>,
     pub device_name: String,
+    /// Random id for this installation, made once. Tells computers sharing a vault apart
+    /// (two Macs can have the same user folder and host name).
+    pub machine_id: String,
     /// Minutes of inactivity before this device locks (0 = never).
     pub auto_lock_minutes: u32,
     pub lock_on_sleep: bool,
@@ -51,6 +54,7 @@ impl Default for ClientConfig {
             server_url: None,
             server_name: None,
             device_name: hostname::get().ok().and_then(|h| h.into_string().ok()).unwrap_or_else(|| "My computer".into()),
+            machine_id: String::new(),
             auto_lock_minutes: 30,
             lock_on_sleep: true,
             close_to_tray: true,
@@ -82,7 +86,20 @@ pub fn path(dir: &std::path::Path) -> PathBuf {
 }
 
 pub fn load(dir: &std::path::Path) -> ClientConfig {
-    std::fs::read(path(dir)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    let mut c: ClientConfig = std::fs::read(path(dir)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+    if c.machine_id.is_empty() {
+        c.machine_id = new_machine_id();
+        let _ = save(dir, &c);
+    }
+    c
+}
+
+fn new_machine_id() -> String {
+    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let host = hostname::get().map(|h| h.to_string_lossy().into_owned()).unwrap_or_default();
+    let local = 0u8;
+    let seed = format!("{t}\0{}\0{host}\0{:p}", std::process::id(), &local);
+    blake3::hash(seed.as_bytes()).to_hex()[..20].to_string()
 }
 
 pub fn save(dir: &std::path::Path, cfg: &ClientConfig) -> std::io::Result<()> {

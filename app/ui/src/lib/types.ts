@@ -109,6 +109,22 @@ export interface ClientConfig {
 /** A calendar entry. `start`/`end` are "HH:MM"; no `start` means all day. */
 export interface CalendarEvent { id: string; title: string; date: string; start: string | null; end: string | null; notes: string; color: string }
 
+/** The email account, saved in the vault. The password stays in this device's keychain. */
+export interface EmailAccount { email: string; host: string; port: number; security: 'ssl' | 'starttls'; username: string }
+export interface MailFolder { name: string; label: string; special: 'inbox' | 'sent' | 'drafts' | 'archive' | 'junk' | 'trash' | 'all' | 'flagged' | null }
+export interface MailSummary { uid: number; from_name: string; from_addr: string; to: string; subject: string; date: number; seen: boolean; flagged: boolean; attachments: boolean; size: number }
+export interface MailPage { total: number; messages: MailSummary[]; next: number | null }
+export interface MailMessage {
+  uid: number; subject: string; from: string; to: string; cc: string; reply_to: string; date: number;
+  text: string; html: string | null; attachments: { name: string; mime: string; size: number }[]; flagged: boolean;
+}
+
+/** One vault file used by several computers (on a network share). */
+export interface VaultSharing {
+  shared: boolean; location: 'local' | 'network' | 'synced'; location_label: string;
+  sessions: { machine: string; this: boolean; since: number; last_seen: number }[];
+}
+
 export type Route =
   | { kind: 'chat'; id: Id | null }
   | { kind: 'project'; id: Id; doc?: Id }
@@ -116,7 +132,8 @@ export type Route =
   | { kind: 'browser' }
   | { kind: 'terminal' }
   | { kind: 'files' }
-  | { kind: 'calendar' };
+  | { kind: 'calendar' }
+  | { kind: 'email' };
 
 /** Something the assistant asks the app to do (see crates/rad-server/src/agent.rs). */
 export interface AgentAction { kind: 'ssh' | 'open_url' | 'terminal' | string; host?: string; user?: string; port?: number; identity_file?: string; url?: string }

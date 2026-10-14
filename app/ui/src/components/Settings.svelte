@@ -6,14 +6,15 @@
   import { store } from '../lib/state.svelte';
   import { api, rad } from '../lib/api';
   import { formatBytes, timeAgo, PROJECT_COLORS } from '../lib/util';
-  import type { Device, LocalModel, LocalModels, ModelRef, Provider, ProviderKind, Settings as S, VaultInfo } from '../lib/types';
+  import type { Device, LocalModel, LocalModels, ModelRef, Provider, ProviderKind, Settings as S, VaultInfo, VaultSharing } from '../lib/types';
   import ModelPicker from './ModelPicker.svelte';
   import Modal from './Modal.svelte';
   import RecoveryKit from './RecoveryKit.svelte';
   import VoiceSettings from './VoiceSettings.svelte';
+  import EmailSettings from './EmailSettings.svelte';
   import {
     SlidersHorizontal, Palette, Cpu, Search, Brain, MonitorSmartphone, ShieldCheck, Server, Plus, Trash2, Plug, Loader,
-    Check, Download, KeyRound, HardDriveDownload, Lock, Wrench, Sun, Moon, Monitor, Circle, CircleAlert, FolderOpen, AudioLines,
+    Check, Download, KeyRound, HardDriveDownload, Lock, Wrench, Sun, Moon, Monitor, Circle, CircleAlert, FolderOpen, AudioLines, Mail, FolderInput, Users,
   } from '@lucide/svelte';
 
   const tabs = [
@@ -21,6 +22,7 @@
     { id: 'appearance', label: 'Appearance', icon: Palette },
     { id: 'models', label: 'Models', icon: Cpu },
     { id: 'voice', label: 'Voice', icon: AudioLines },
+    { id: 'email', label: 'Email', icon: Mail },
     { id: 'retrieval', label: 'Answers & search', icon: Search },
     { id: 'memories', label: 'Memories', icon: Brain },
     { id: 'devices', label: 'Devices', icon: MonitorSmartphone },
@@ -266,6 +268,55 @@
     revealItemInDir(cfg.local_vault).catch((e) => store.error(e));
   }
 
+  // ---- where the vault lives, and sharing it between computers
+  let sharing = $state<VaultSharing | null>(null);
+  let sharingBusy = $state(false);
+  let moveTo = $state<string | null>(null);
+
+  async function loadSharing() {
+    sharing = await api.get<VaultSharing>('/v1/vault/sharing').catch(() => null);
+  }
+  $effect(() => {
+    if (tab !== 'server' || !store.isLocal) return;
+    loadSharing();
+    const t = setInterval(loadSharing, 10_000);
+    return () => clearInterval(t);
+  });
+
+  async function setSharing(on: boolean) {
+    sharingBusy = true;
+    try {
+      sharing = await api.put<VaultSharing>('/v1/vault/sharing', { shared: on });
+      store.toast('success', on ? 'Sharing is on' : 'Sharing is off', on ? 'Other computers can now open this vault at the same time.' : 'Only one computer at a time can open this vault.');
+    } catch (e) {
+      store.error(e, 'Couldn’t change sharing');
+    } finally {
+      sharingBusy = false;
+    }
+  }
+
+  async function pickMoveFolder() {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const d = await open({ directory: true, title: 'Move the vault to…' });
+    if (typeof d === 'string') moveTo = d;
+  }
+
+  async function moveVault() {
+    const folder = moveTo;
+    moveTo = null;
+    if (!folder) return;
+    store.vaultMove = { done: 0, total: 1 };
+    try {
+      await rad.vaultRelocate(folder);
+      store.config = await rad.config();
+      store.toast('success', 'Vault moved', `It’s now in ${folder}. Unlock it to carry on.`);
+    } catch (e) {
+      store.error(e, 'Couldn’t move the vault');
+    } finally {
+      store.vaultMove = null;
+    }
+  }
+
   async function switchVault() {
     if (!(await ask('Lock this vault and choose another one?', { title: 'Switch vault' }))) return;
     await rad.forgetServer();
@@ -494,6 +545,8 @@
         {/if}
       {:else if tab === 'voice'}
         <VoiceSettings />
+      {:else if tab === 'email'}
+        <EmailSettings />
       {:else if tab === 'retrieval' && s}
         <h2>Answers & search</h2>
         <div class="group">
@@ -639,8 +692,9 @@
         <p class="lead">Standalone mode — your vault is a single encrypted file on this computer. No server is involved; RAD runs everything itself.</p>
         <div class="group">
           <div class="srow">
-            <div><div class="st">Vault file</div><div class="sd mono selectable">{cfg?.local_vault}</div></div>
+            <div class="spacer"><div class="st">Vault file</div><div class="sd mono selectable">{cfg?.local_vault}</div>{#if sharing}<div class="sd">Location: {sharing.location_label}</div>{/if}</div>
             <button class="btn sm" onclick={revealVault}><FolderOpen size={13} /> Show</button>
+            <button class="btn sm" onclick={pickMoveFolder}><FolderInput size={13} /> Move…</button>
           </div>
           <div class="srow">
             <div><div class="st">Switch vault</div><div class="sd">Open or create another vault file, or connect to a RAD server instead. This vault is locked first.</div></div>
@@ -649,7 +703,50 @@
         </div>
         <h3>Moving to a server later</h3>
         <p class="lead">The vault file is the same format a RAD server uses. Copy it to your server (e.g. <code>/var/lib/rad/personal.radvault</code>), start <code>rad-server</code>, then choose <em>Connect to a RAD server</em> here — same passphrase, all your data.</p>
-        <p class="lead">Keep the file on a local or external disk. Don't open the live vault from Dropbox/iCloud/OneDrive folders — sync tools can corrupt it. Backups are safe to sync.</p>
+        {#if sharing?.location === 'synced'}
+          <div class="test bad">
+            <CircleAlert size={13} />
+            <span class="spacer">
+              Your vault is in <strong>{sharing.location_label}</strong>. Sync services copy the file between computers instead of sharing it, so use it on one
+              computer at a time — RAD won’t open it on a second computer while it’s open here. To use it on several computers at once, move it to a network share.
+            </span>
+          </div>
+        {/if}
+
+        <h3>Several computers</h3>
+        <div class="group">
+          <div class="srow">
+            <div class="spacer">
+              <div class="st">Use on several computers at once</div>
+              <div class="sd">
+                {#if sharing?.location === 'synced'}
+                  Not available in {sharing.location_label}. Move the vault to a network share first — a NAS, or a shared folder on another computer.
+                {:else if sharing?.location === 'network'}
+                  Other computers open this file from the share and unlock it with the same passphrase. Changes show up everywhere within seconds; when two save at once, one waits its turn.
+                {:else}
+                  For other computers to open this vault too, it has to be on a network share they can all reach — a NAS works best. Move it there, then turn this on.
+                {/if}
+              </div>
+            </div>
+            <button
+              class="switch"
+              class:on={sharing?.shared}
+              disabled={!sharing || sharingBusy || sharing.location === 'synced'}
+              onclick={() => sharing && setSharing(!sharing.shared)}
+              aria-label="Use on several computers at once"
+            ></button>
+          </div>
+          {#each sharing?.sessions ?? [] as s (s.machine + s.since)}
+            <div class="srow">
+              <Users size={16} />
+              <div class="spacer">
+                <div class="st">{s.machine} {#if s.this}<span class="pill accent">This computer</span>{/if}</div>
+                <div class="sd">Open since {timeAgo(s.since)}</div>
+              </div>
+            </div>
+          {/each}
+        </div>
+        <p class="lead">Backups are safe to keep in a sync folder. To use it on another computer, choose <em>Open…</em> on RAD’s start screen there and pick this file.</p>
       {:else if tab === 'server'}
         <h2>Server</h2>
         <div class="group">
@@ -684,6 +781,16 @@
     </div>
     <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" onclick={() => (addOpen = false)}>Cancel</button><button class="btn primary" disabled={!np.base_url}>Add & test</button></div>
   </form>
+</Modal>
+
+<Modal open={!!moveTo} title="Move the vault" width={480} onclose={() => (moveTo = null)}>
+  <p class="lead" style="margin-top:0">RAD locks the vault, moves the file to</p>
+  <p class="mono selectable" style="font-size:12.5px;margin:0 0 12px;overflow-wrap:anywhere">{moveTo}</p>
+  <p class="lead">and opens it from there — unlock it with your passphrase as usual. Within one disk it takes a moment; to another disk or a network share the file is copied, checked, and only then removed from the old place.</p>
+  <div class="row" style="justify-content:flex-end;margin-top:16px">
+    <button class="btn ghost" onclick={() => (moveTo = null)}>Cancel</button>
+    <button class="btn primary" onclick={moveVault}><FolderInput size={14} /> Move vault</button>
+  </div>
 </Modal>
 
 <Modal bind:open={passOpen} title="Change passphrase" width={440}>

@@ -204,6 +204,10 @@ CREATE TRIGGER chat_chunks_au AFTER UPDATE ON chat_chunks BEGIN
     INSERT INTO chat_chunks_fts(rowid, text) VALUES (new.id, new.text);
 END;
 "#,
+    // v3: a vault shared by several computers — which computer is running each job
+    r#"
+ALTER TABLE jobs ADD COLUMN claimed_by TEXT;
+"#,
 ];
 
 pub fn migrate(c: &Connection) -> Result<()> {

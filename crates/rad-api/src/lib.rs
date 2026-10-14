@@ -93,6 +93,31 @@ pub struct RecoveryKit {
 
 // ---------------------------------------------------------------- vault
 
+/// Several computers using one vault file (on a network share).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultSharing {
+    pub shared: bool,
+    /// local | network | synced
+    pub location: String,
+    /// "This computer", "Network share (smbfs)", "iCloud Drive"…
+    pub location_label: String,
+    /// Computers with the vault open right now, this one included.
+    pub sessions: Vec<VaultSession>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultSession {
+    pub machine: String,
+    pub this: bool,
+    pub since: Ts,
+    pub last_seen: Ts,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SharingRequest {
+    pub shared: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VaultInfo {
     pub path: String,

@@ -50,6 +50,10 @@ class Store {
   /** Kept in the vault: browser favourites and SSH hosts. */
   bookmarks = $state<T.Bookmark[]>([]);
   sshHosts = $state<T.SshHost[]>([]);
+  /** undefined until loaded from the vault; null when no account is set up. */
+  emailAccount = $state<T.EmailAccount | null | undefined>(undefined);
+  /** The vault file is being moved to another folder (bytes copied so far). */
+  vaultMove = $state<{ done: number; total: number } | null>(null);
   /** Requests for views that may not be open yet (from agent actions, Files…). */
   pendingTerminal = $state<T.TerminalRequest | null>(null);
   /** Linux sandboxes can run here (engine present). */
@@ -158,6 +162,7 @@ class Store {
     this.jobs = jobs as T.JobSummary;
     this.loadAppData('bookmarks');
     this.loadAppData('ssh_hosts');
+    this.loadAppData('email_account');
     bridge.sandboxStatus().then((s) => {
       this.sandboxReady = s.supported && s.engine;
       document.documentElement.classList.toggle('sandbox-ok', this.sandboxReady);
@@ -170,10 +175,16 @@ class Store {
     this.route = { kind: 'terminal' };
   }
 
-  async loadAppData(key: 'bookmarks' | 'ssh_hosts') {
+  async loadAppData(key: 'bookmarks' | 'ssh_hosts' | 'email_account') {
     const v = await api.get<any>(`/v1/app-data/${key}`).catch(() => null);
     if (key === 'bookmarks') this.bookmarks = Array.isArray(v) ? v : [];
+    else if (key === 'email_account') this.emailAccount = v && typeof v === 'object' && v.host ? v : null;
     else this.sshHosts = Array.isArray(v) ? v : [];
+  }
+
+  async saveEmailAccount(acc: T.EmailAccount | null) {
+    await api.put('/v1/app-data/email_account', acc);
+    this.emailAccount = acc;
   }
 
   async saveBookmarks(list: T.Bookmark[]) {
@@ -297,6 +308,9 @@ class Store {
     await listen<T.ClientConfig>('rad-config', (e) => {
       this.config = e.payload;
       this.applyTheme();
+    });
+    await listen<{ done: number; total: number }>('rad-vault-move', (e) => {
+      this.vaultMove = e.payload.done >= e.payload.total ? null : e.payload;
     });
     await listen<any>('rad-upload-progress', (e) => {
       this.uploading = e.payload.phase === 'done' ? null : e.payload;

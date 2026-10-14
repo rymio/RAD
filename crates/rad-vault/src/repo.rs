@@ -810,11 +810,13 @@ pub fn enqueue_job(c: &Connection, kind: &str, document_id: Option<Id>, payload:
 }
 
 /// Atomically claims the next runnable job.
-pub fn claim_job(c: &Connection) -> Result<Option<Job>> {
-    crate::in_tx(c, claim_job_tx)
+/// Takes the next due job for this computer (`owner`). The write transaction makes this safe
+/// when several computers share the vault: each job is claimed once.
+pub fn claim_job(c: &Connection, owner: &str) -> Result<Option<Job>> {
+    crate::in_tx(c, |tx| claim_job_tx(tx, owner))
 }
 
-fn claim_job_tx(tx: &Connection) -> Result<Option<Job>> {
+fn claim_job_tx(tx: &Connection, owner: &str) -> Result<Option<Job>> {
     let job = tx
         .query_row(
             "SELECT id, kind, document_id, payload, attempts FROM jobs
@@ -833,8 +835,8 @@ fn claim_job_tx(tx: &Connection) -> Result<Option<Job>> {
         .optional()?;
     if let Some(j) = &job {
         tx.execute(
-            "UPDATE jobs SET state = 'running', attempts = attempts + 1, updated_at = ?1 WHERE id = ?2",
-            params![now_ms(), j.id],
+            "UPDATE jobs SET state = 'running', attempts = attempts + 1, updated_at = ?1, claimed_by = ?3 WHERE id = ?2",
+            params![now_ms(), j.id, owner],
         )?;
     }
     Ok(job)
@@ -861,9 +863,19 @@ pub fn fail_job(c: &Connection, id: Id, error: &str) -> Result<()> {
     Ok(())
 }
 
-/// After a crash or restart, jobs that were mid-flight go back to the queue.
-pub fn requeue_running_jobs(c: &Connection) -> Result<usize> {
-    Ok(c.execute("UPDATE jobs SET state = 'queued' WHERE state = 'running'", [])?)
+/// After a crash or restart, jobs that were mid-flight go back to the queue — except those
+/// another computer sharing the vault (`alive`) is still working on.
+pub fn requeue_running_jobs(c: &Connection, owner: &str, alive: &[String]) -> Result<usize> {
+    let mut n = 0;
+    let mut st = c.prepare("SELECT id, claimed_by FROM jobs WHERE state = 'running'")?;
+    let rows: Vec<(Id, Option<String>)> = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<std::result::Result<_, _>>()?;
+    for (id, by) in rows {
+        let theirs = by.as_deref().is_some_and(|b| b != owner && alive.iter().any(|a| a == b));
+        if !theirs {
+            n += c.execute("UPDATE jobs SET state = 'queued', claimed_by = NULL WHERE id = ?1 AND state = 'running'", params![id])?;
+        }
+    }
+    Ok(n)
 }
 
 pub fn next_job_due(c: &Connection) -> Result<Option<i64>> {

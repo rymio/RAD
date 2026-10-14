@@ -151,3 +151,162 @@ pub fn fs_open(path: String) -> CmdResult<()> {
 pub fn fs_reveal(path: String) -> CmdResult<()> {
     tauri_plugin_opener::reveal_item_in_dir(&path).map_err(|e| CmdError::new("io", e.to_string()))
 }
+
+// ------------------------------------------------------------------ moving the vault
+
+fn with_suffix(p: &Path, suffix: &str) -> PathBuf {
+    PathBuf::from(format!("{}{suffix}", p.display()))
+}
+
+/// Moves a closed vault file to `to`, with any journal file SQLite left next to it. On the
+/// same volume this is a rename; otherwise a copy that is read back and compared before the
+/// original is deleted. Progress goes out as `rad-vault-move` events.
+pub async fn move_vault(app: &tauri::AppHandle, from: &Path, to: &Path) -> CmdResult<()> {
+    use tauri::Emitter;
+    let (app, from, to) = (app.clone(), from.to_path_buf(), to.to_path_buf());
+    tokio::task::spawn_blocking(move || {
+        move_files(&from, &to, true, &|done, total| {
+            let _ = app.emit("rad-vault-move", json!({"done": done, "total": total}));
+        })
+    })
+    .await
+    .map_err(|e| CmdError::new("io", e.to_string()))?
+}
+
+/// `rename` false forces the copy path (tests).
+fn move_files(from: &Path, to: &Path, rename: bool, progress: &dyn Fn(u64, u64)) -> CmdResult<()> {
+    // The shared-memory index is rebuilt on open; empty journals are leftovers.
+    let _ = std::fs::remove_file(with_suffix(from, "-shm"));
+    let mut files = vec![(from.to_path_buf(), to.to_path_buf())];
+    for s in ["-wal", "-journal"] {
+        let f = with_suffix(from, s);
+        match std::fs::metadata(&f) {
+            Ok(m) if m.len() > 0 => files.push((f, with_suffix(to, s))),
+            Ok(_) => {
+                let _ = std::fs::remove_file(&f);
+            }
+            Err(_) => {}
+        }
+    }
+    let total: u64 = files.iter().filter_map(|(f, _)| std::fs::metadata(f).ok()).map(|m| m.len()).sum();
+
+    if rename && std::fs::rename(from, to).is_ok() {
+        for (a, b) in &files[1..] {
+            std::fs::rename(a, b).or_else(|_| std::fs::copy(a, b).map(|_| ()).and_then(|_| std::fs::remove_file(a))).map_err(io)?;
+        }
+    } else {
+        // Another volume (an external disk, a network share): copy, verify, then delete.
+        let mut done = 0u64;
+        let mut copied: Vec<PathBuf> = Vec::new();
+        for (a, b) in &files {
+            if let Err(e) = copy_verified(a, b, &mut done, total, progress) {
+                for c in &copied {
+                    let _ = std::fs::remove_file(c);
+                }
+                return Err(e);
+            }
+            copied.push(b.clone());
+        }
+        for (a, _) in &files {
+            let _ = std::fs::remove_file(a);
+        }
+    }
+    // This computer's (already withdrawn) session folder stays behind otherwise.
+    let _ = std::fs::remove_dir_all(rad_server::vault_presence::dir(from));
+    progress(total, total);
+    Ok(())
+}
+
+fn copy_verified(from: &Path, to: &Path, done: &mut u64, total: u64, progress: &dyn Fn(u64, u64)) -> CmdResult<()> {
+    use std::io::{Read, Write};
+    let before = std::fs::metadata(from).map_err(io)?;
+    let tmp = with_suffix(to, ".moving");
+    let mut src = std::fs::File::open(from).map_err(io)?;
+    let mut dst = std::fs::File::create(&tmp).map_err(io)?;
+    let mut hasher = blake3::Hasher::new();
+    let mut buf = vec![0u8; 4 << 20];
+    let mut last = 0u64;
+    let result = (|| -> CmdResult<()> {
+        loop {
+            let n = src.read(&mut buf).map_err(io)?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+            dst.write_all(&buf[..n]).map_err(io)?;
+            *done += n as u64;
+            if *done - last >= 16 << 20 {
+                last = *done;
+                progress(*done, total);
+            }
+        }
+        dst.sync_all().map_err(io)?;
+        // Read the copy back: it must be byte-for-byte the original.
+        let mut check = blake3::Hasher::new();
+        let mut f = std::fs::File::open(&tmp).map_err(io)?;
+        loop {
+            let n = f.read(&mut buf).map_err(io)?;
+            if n == 0 {
+                break;
+            }
+            check.update(&buf[..n]);
+        }
+        if check.finalize() != hasher.finalize() {
+            return Err(CmdError::new("io", "The copy didn't match the original, so nothing was moved. Check the destination disk and try again."));
+        }
+        let after = std::fs::metadata(from).map_err(io)?;
+        if after.len() != before.len() || after.modified().ok() != before.modified().ok() {
+            return Err(CmdError::new("io", "The vault changed while it was being copied, so nothing was moved. Try again."));
+        }
+        std::fs::rename(&tmp, to).map_err(io)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn vault_with_journal(dir: &Path) -> (PathBuf, Vec<u8>, Vec<u8>) {
+        let v = dir.join("Personal.radvault");
+        let body: Vec<u8> = (0..(9 << 20)).map(|i| (i * 31 % 251) as u8).collect();
+        let wal = b"leftover wal".to_vec();
+        std::fs::write(&v, &body).unwrap();
+        std::fs::write(with_suffix(&v, "-wal"), &wal).unwrap();
+        std::fs::write(with_suffix(&v, "-shm"), b"index").unwrap();
+        std::fs::create_dir_all(rad_server::vault_presence::dir(&v)).unwrap();
+        (v, body, wal)
+    }
+
+    #[test]
+    fn move_by_rename_and_by_verified_copy() {
+        for rename in [true, false] {
+            let td = tempfile::tempdir().unwrap();
+            let (src, dst) = (td.path().join("icloud"), td.path().join("nas"));
+            std::fs::create_dir_all(&src).unwrap();
+            std::fs::create_dir_all(&dst).unwrap();
+            let (from, body, wal) = vault_with_journal(&src);
+            let to = dst.join("Personal.radvault");
+            let seen = std::sync::Mutex::new(Vec::new());
+            move_files(&from, &to, rename, &|d, t| seen.lock().unwrap().push((d, t))).unwrap();
+            assert_eq!(std::fs::read(&to).unwrap(), body);
+            assert_eq!(std::fs::read(with_suffix(&to, "-wal")).unwrap(), wal, "a leftover WAL travels with the vault");
+            assert!(!from.exists() && !with_suffix(&from, "-wal").exists() && !with_suffix(&from, "-shm").exists());
+            assert!(!rad_server::vault_presence::dir(&from).exists());
+            assert!(!with_suffix(&to, ".moving").exists());
+            assert_eq!(seen.lock().unwrap().last().copied(), Some((body.len() as u64 + wal.len() as u64, body.len() as u64 + wal.len() as u64)));
+        }
+    }
+
+    #[test]
+    fn failed_copy_keeps_the_original() {
+        let td = tempfile::tempdir().unwrap();
+        let (from, body, _) = vault_with_journal(td.path());
+        let to = td.path().join("missing-folder").join("Personal.radvault");
+        assert!(move_files(&from, &to, false, &|_, _| {}).is_err());
+        assert_eq!(std::fs::read(&from).unwrap(), body);
+    }
+}

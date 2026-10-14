@@ -77,9 +77,12 @@
       {:else}
         <p class="where"><Server size={13} /> {store.config?.server_name ?? 'RAD server'} · {store.status?.device?.name ?? store.config?.device_name}</p>
       {/if}
+      {#if store.vaultMove}
+        <div class="moving"><Loader size={13} class="spin" /> Moving the vault… {store.vaultMove.total ? Math.floor((store.vaultMove.done / store.vaultMove.total) * 100) : 0}%</div>
+      {/if}
       <form onsubmit={unlock} class:shake>
-        <input bind:this={input} class="input lg pass" type="password" bind:value={pass} placeholder="Passphrase" autocomplete="current-password" disabled={busy} />
-        <button class="btn primary lg go" disabled={busy || !pass} aria-label="Unlock">
+        <input bind:this={input} class="input lg pass" type="password" bind:value={pass} placeholder="Passphrase" autocomplete="current-password" disabled={busy || !!store.vaultMove} />
+        <button class="btn primary lg go" disabled={busy || !pass || !!store.vaultMove} aria-label="Unlock">
           {#if busy}<Loader size={17} class="spin" />{:else}<ArrowRight size={17} />{/if}
         </button>
       </form>
@@ -220,5 +223,14 @@
   }
   textarea {
     text-align: left;
+  }
+  .moving {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin: -4px 0 12px;
+    font-size: 13px;
+    color: var(--accent);
   }
 </style>
