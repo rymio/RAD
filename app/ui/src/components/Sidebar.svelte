@@ -6,7 +6,7 @@
   import Logo from './Logo.svelte';
   import Menu from './Menu.svelte';
   import Modal from './Modal.svelte';
-  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe } from '@lucide/svelte';
+  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, PanelLeftClose } from '@lucide/svelte';
 
   let newProjectOpen = $state(false);
   let npName = $state('');
@@ -82,6 +82,7 @@
       <span class="vname truncate">RAD</span>
       <span class="locked" title="Encrypted vault — unlocked"><Lock size={11} /></span>
     </div>
+    <button class="icon-btn no-drag" title="Hide sidebar (⌘\)" onclick={() => store.toggleSidebar()}><PanelLeftClose size={17} /></button>
     <button class="icon-btn no-drag" title="New chat (⌘N)" onclick={() => store.newChat()}><SquarePen size={17} /></button>
   </div>
 
@@ -92,6 +93,12 @@
   <div class="scroll">
     <button class="item web" class:active={store.route.kind === 'browser'} onclick={() => store.navigate({ kind: 'browser' })}>
       <Globe size={15} /> <span class="spacer">Web Browser</span>
+    </button>
+    <button class="item web" class:active={store.route.kind === 'terminal'} onclick={() => store.navigate({ kind: 'terminal' })}>
+      <SquareTerminal size={15} /> <span class="spacer">Terminal</span>
+    </button>
+    <button class="item web" class:active={store.route.kind === 'files'} onclick={() => store.navigate({ kind: 'files' })}>
+      <FolderOpen size={15} /> <span class="spacer">Files</span>
     </button>
     <div class="sect">
       <div class="sect-h">

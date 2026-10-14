@@ -51,6 +51,7 @@ export type ChatStreamEvent =
   | { type: 'status'; text: string }
   | { type: 'sources'; citations: Citation[] }
   | { type: 'delta'; text: string }
+  | { type: 'action'; action: AgentAction }
   | { type: 'done'; message: Message }
   | { type: 'error'; message: string }
   | { type: 'stopped' };
@@ -100,13 +101,28 @@ export interface ClientConfig {
   auto_lock_minutes: number; lock_on_sleep: boolean; close_to_tray: boolean; hide_dock_icon: boolean;
   hotkey_quick_ask: string; hotkey_screenshot: string; hotkey_lock: string; screenshot_project_id: Id | null;
   theme: 'system' | 'light' | 'dark' | 'oled' | string; accent: string; tray_hint_shown: boolean; launched_before: boolean;
+  sidebar_collapsed: boolean;
+  tts_enabled: boolean; tts_auto_read: boolean; tts_voice: string; tts_speed: number; tts_volume: number;
+  tts_temperature: number; tts_top_p: number; tts_top_k: number; tts_repetition_penalty: number;
 }
 
 export type Route =
   | { kind: 'chat'; id: Id | null }
   | { kind: 'project'; id: Id; doc?: Id }
   | { kind: 'settings'; tab?: string }
-  | { kind: 'browser' };
+  | { kind: 'browser' }
+  | { kind: 'terminal' }
+  | { kind: 'files' };
+
+/** Something the assistant asks the app to do (see crates/rad-server/src/agent.rs). */
+export interface AgentAction { kind: 'ssh' | 'open_url' | 'terminal' | string; host?: string; user?: string; port?: number; identity_file?: string; url?: string }
+export interface Bookmark { title: string; url: string }
+export interface SshHost { host: string; user?: string; port?: number; identity_file?: string; last_used?: number }
+export interface TermInfo { id: number; title: string; kind: 'local' | 'ssh' | string; exited: string | null }
+export interface FsEntry { name: string; path: string; is_dir: boolean; size: number; modified: number; hidden: boolean }
+export interface FsListing { path: string; parent: string | null; entries: FsEntry[] }
+export interface FsPlace { name: string; path: string; icon: string }
+export type FsPreview = { kind: 'image'; mime: string; data: string } | { kind: 'text'; text: string; truncated: boolean } | { kind: 'other'; size: number };
 
 /** An image sent with one message only (e.g. a browser screenshot); base64 data. */
 export interface InlineImage { mime: string; data: string }

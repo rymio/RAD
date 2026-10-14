@@ -6,7 +6,7 @@
   import { toUrl, hostOf } from '../lib/web';
   import type { BrowserState, BrowserTab } from '../lib/types';
   import BrowserChat from './BrowserChat.svelte';
-  import { ArrowLeft, ArrowRight, RotateCw, Plus, X, Lock, Globe, Camera, FileDown, Loader, MessageSquare, ZoomIn, ZoomOut, Home, TriangleAlert } from '@lucide/svelte';
+  import { ArrowLeft, ArrowRight, RotateCw, Plus, X, Lock, Globe, Camera, FileDown, Loader, MessageSquare, ZoomIn, ZoomOut, Home, TriangleAlert, Star } from '@lucide/svelte';
 
   const HOME = 'https://servo.org';
 
@@ -30,6 +30,25 @@
   let canvasCss = $state({ w: 0, h: 0 });
 
   const tab = $derived(tabs.find((t) => t.id === active) ?? null);
+  const bookmarked = $derived(!!tab?.url && store.bookmarks.some((b) => b.url === tab.url));
+
+  function toggleBookmark() {
+    if (!tab?.url) return;
+    if (bookmarked) store.saveBookmarks(store.bookmarks.filter((b) => b.url !== tab.url));
+    else {
+      store.saveBookmarks([...store.bookmarks, { title: tab.title || hostOf(tab.url) || tab.url, url: tab.url }]);
+      store.toast('success', 'Added to favourites', tab.title || tab.url, 2200);
+    }
+  }
+
+  // Pages the assistant opened ("open servo.org").
+  $effect(() => {
+    const url = store.pendingBrowserUrl;
+    if (!url || engine === 'starting') return;
+    store.pendingBrowserUrl = null;
+    if (engine === 'running' && tabs.length) send({ cmd: 'new_tab', url });
+    else go(url);
+  });
   const secure = $derived(tab?.url.startsWith('https://') ?? false);
 
   $effect(() => {
@@ -234,6 +253,9 @@
     const mod = isMac ? e.metaKey : e.ctrlKey;
     if (!mod) return e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') ? (send({ cmd: e.key === 'ArrowLeft' ? 'back' : 'forward' }), true) : false;
     switch (e.key.toLowerCase()) {
+      case 'd':
+        toggleBookmark();
+        return true;
       case 'l':
         address?.focus();
         address?.select();
@@ -368,6 +390,9 @@
         onkeydown={(e) => { if (e.key === 'Escape') { editingAddress = false; addressText = tab?.url ?? ''; address?.blur(); } }}
       />
       {#if tab && tab.zoom !== 1}<button type="button" class="zoom" title="Reset zoom (⌘0)" onclick={() => zoom(null)}>{Math.round(tab.zoom * 100)}%</button>{/if}
+      <button type="button" class="star" class:on={bookmarked} title={bookmarked ? 'Remove from favourites' : 'Add to favourites (⌘D)'} disabled={!tab?.url} onclick={toggleBookmark}>
+        <Star size={15} fill={bookmarked ? 'currentColor' : 'none'} />
+      </button>
     </form>
     <button class="icon-btn" title="Zoom out (⌘−)" disabled={!tab} onclick={() => zoom(-0.1)}><ZoomOut size={16} /></button>
     <button class="icon-btn" title="Zoom in (⌘+)" disabled={!tab} onclick={() => zoom(0.1)}><ZoomIn size={16} /></button>
@@ -380,6 +405,17 @@
     </button>
     <button class="icon-btn" class:active={chatOpen} title="Ask AI about this page" onclick={() => (chatOpen = !chatOpen)}><MessageSquare size={16} /></button>
   </div>
+
+  {#if store.bookmarks.length}
+    <div class="favs">
+      {#each store.bookmarks as b (b.url)}
+        <button class="fav" title={b.url} onclick={() => go(b.url)}
+          oncontextmenu={(e) => { e.preventDefault(); store.saveBookmarks(store.bookmarks.filter((x) => x.url !== b.url)); }}>
+          <Globe size={12} /><span class="truncate">{b.title}</span>
+        </button>
+      {/each}
+    </div>
+  {/if}
 
   <!-- Page -->
   <div class="viewport" bind:this={viewport}>
@@ -406,7 +442,7 @@
           <TriangleAlert size={22} />
           <strong>{engine === 'missing' ? 'The browser engine isn’t installed' : 'The browser engine stopped'}</strong>
           <p>{engineError || 'Something went wrong while rendering.'}</p>
-          {#if engine === 'missing'}<code>./scripts/build-browser.sh</code>{/if}
+
           <button class="btn primary sm" onclick={() => start(tab?.url || HOME)}>{engine === 'missing' ? 'Try again' : 'Restart'}</button>
         </div>
       </div>
@@ -469,7 +505,7 @@
     align-items: flex-end;
     gap: 2px;
     height: 40px;
-    padding: 6px 10px 0;
+    padding: 6px 10px 0 calc(10px + var(--lead));
     background: var(--bg-sidebar);
     border-bottom: 1px solid var(--border);
     overflow: hidden;
@@ -569,6 +605,55 @@
     font: inherit;
     font-size: 13px;
   }
+  .star {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-3);
+  }
+  .star:hover:not(:disabled) {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+  .star.on {
+    color: #f5b301;
+  }
+  .favs {
+    flex: none;
+    display: flex;
+    gap: 2px;
+    height: 32px;
+    align-items: center;
+    padding: 0 10px;
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .fav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 180px;
+    height: 24px;
+    padding: 0 9px;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-2);
+    font-size: 12.5px;
+    flex: none;
+  }
+  .fav:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+  .fav :global(svg) {
+    flex: none;
+    color: var(--text-3);
+  }
   .zoom {
     border: none;
     border-radius: 999px;
@@ -649,13 +734,6 @@
   .notice p {
     margin: 0;
     font-size: 13px;
-  }
-  .notice code {
-    font-family: var(--mono);
-    font-size: 12.5px;
-    padding: 4px 8px;
-    border-radius: var(--r-xs);
-    background: var(--code-bg);
   }
   .dialog-wrap {
     position: absolute;

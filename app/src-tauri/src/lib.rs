@@ -5,10 +5,13 @@ mod capture;
 mod client;
 mod commands;
 mod config;
+mod files;
 mod events;
 mod protocol;
 mod secrets;
+mod terminal;
 mod tray;
+mod tts;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -278,6 +281,8 @@ pub fn run() {
                 embedded: tokio::sync::Mutex::new(None),
             });
             app.manage(browser::Browser::default());
+            app.manage(terminal::Terminals::default());
+            app.manage(tts::Tts::default());
             let handle = app.handle().clone();
             tray::build(&handle)?;
             register_hotkeys(&handle);
@@ -335,6 +340,24 @@ pub fn run() {
             browser::browser_snapshot,
             browser::browser_save_screenshot,
             browser::browser_save_page,
+            terminal::term_open,
+            terminal::term_list,
+            terminal::term_attach,
+            terminal::term_detach,
+            terminal::term_write,
+            terminal::term_resize,
+            terminal::term_close,
+            files::fs_places,
+            files::fs_list,
+            files::fs_preview,
+            files::fs_open,
+            files::fs_reveal,
+            tts::tts_status,
+            tts::tts_download,
+            tts::tts_remove,
+            tts::tts_speak,
+            tts::tts_add_voice,
+            tts::tts_delete_voice,
         ])
         .build(tauri::generate_context!())
         .expect("error while building RAD")
@@ -345,6 +368,8 @@ pub fn run() {
             if let tauri::RunEvent::Exit = ev {
                 // Drop the session — and in standalone mode lock the vault and checkpoint it.
                 app.state::<browser::Browser>().stop();
+                app.state::<terminal::Terminals>().close_all();
+                app.state::<tts::Tts>().stop();
                 let st = app.state::<App>();
                 st.client.set_session(None);
                 let emb = tauri::async_runtime::block_on(async { st.embedded.lock().await.take() });

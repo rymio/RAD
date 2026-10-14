@@ -764,6 +764,17 @@ pub fn save_settings(c: &Connection, s: &Settings) -> Result<()> {
     Ok(())
 }
 
+/// Small per-vault app data (browser favourites, saved SSH hosts…), JSON under `app:<key>`.
+pub fn app_data(c: &Connection, key: &str) -> Result<serde_json::Value> {
+    let raw: Option<String> = c.query_row("SELECT value FROM settings WHERE key = ?1", params![format!("app:{key}")], |r| r.get(0)).optional()?;
+    Ok(raw.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(serde_json::Value::Null))
+}
+
+pub fn set_app_data(c: &Connection, key: &str, v: &serde_json::Value) -> Result<()> {
+    c.execute("INSERT OR REPLACE INTO settings(key, value) VALUES (?1, ?2)", params![format!("app:{key}"), serde_json::to_string(v)?])?;
+    Ok(())
+}
+
 // ------------------------------------------------------------------ jobs
 
 #[derive(Debug, Clone)]

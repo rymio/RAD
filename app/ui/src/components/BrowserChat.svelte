@@ -5,7 +5,7 @@
   import { hostOf, pageContext, wantsScreenshot, type ShotMode } from '../lib/web';
   import type { BrowserSnapshot, BrowserTab, Chat, Citation, Message } from '../lib/types';
   import MessageItem from './MessageItem.svelte';
-  import { ArrowUp, Square, FileText, Eye, EyeOff, BookOpen, MessagesSquare, SquarePen, ExternalLink, ChevronDown, ChevronUp } from '@lucide/svelte';
+  import { ArrowUp, Square, FileText, Eye, EyeOff, BookOpen, MessagesSquare, SquarePen, ExternalLink, ChevronDown, ChevronUp, Minus, Plus, Sparkles } from '@lucide/svelte';
 
   let { page, onlink }: { page: BrowserTab | null; onlink: (href: string) => void } = $props();
 
@@ -15,8 +15,32 @@
   let sendText = $state(true);
   let shot = $state<ShotMode>('auto');
   let useVault = $state(false);
-  let expanded = $state(true);
-  let height = $state(260);
+  const saved = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('rad-browser-chat') ?? '{}');
+    } catch {
+      return {};
+    }
+  })();
+  /** Collapsed: one slim bar, the page gets the rest of the window. */
+  let collapsed = $state<boolean>(saved.collapsed ?? false);
+  let height = $state<number>(saved.height ?? 260);
+  $effect(() => {
+    try {
+      localStorage.setItem('rad-browser-chat', JSON.stringify({ collapsed, height }));
+    } catch {
+      /* private mode */
+    }
+  });
+  const maxHeight = () => Math.round(window.innerHeight * 0.7);
+  function grow(by: number) {
+    height = Math.max(120, Math.min(maxHeight(), height + by));
+  }
+  async function expand() {
+    collapsed = false;
+    await tick();
+    input?.focus();
+  }
   let looking = $state('');
 
   const chatId = $derived(store.browserChatId);
@@ -83,7 +107,6 @@
     if (!q || streaming || looking) return;
     text = '';
     autosize();
-    expanded = true;
     try {
       const id = await ensureChat();
       let snap: BrowserSnapshot = {};
@@ -137,7 +160,7 @@
   function startResize(e: PointerEvent) {
     const y0 = e.clientY;
     const h0 = height;
-    const move = (m: PointerEvent) => (height = Math.max(120, Math.min(window.innerHeight * 0.7, h0 + (y0 - m.clientY))));
+    const move = (m: PointerEvent) => (height = Math.max(120, Math.min(maxHeight(), h0 + (y0 - m.clientY))));
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
@@ -147,8 +170,17 @@
   }
 </script>
 
+{#if collapsed}
+  <section class="bchat slim">
+    <button class="ask" onclick={expand}>
+      <Sparkles size={14} />
+      <span class="truncate">{streaming || looking ? 'Answering…' : page ? `Ask AI about ${hostOf(page.url) || 'this page'}…` : 'Ask AI…'}</span>
+    </button>
+    <button class="icon-btn sm" title="Show chat" onclick={expand}><ChevronUp size={15} /></button>
+  </section>
+{:else}
 <section class="bchat">
-  {#if hasThread && expanded}
+  {#if hasThread}
     <div class="grip" role="separator" aria-orientation="horizontal" onpointerdown={startResize}></div>
     <div class="thread" bind:this={scroller} style="height:{height}px">
       {#each messages as m (m.id)}
@@ -179,17 +211,17 @@
       {/if}
       <button class="icon-btn sm" title="New conversation" onclick={newChat} disabled={!chatId}><SquarePen size={14} /></button>
       {#if hasThread}
-        <button class="icon-btn sm" title={expanded ? 'Hide conversation' : 'Show conversation'} onclick={() => (expanded = !expanded)}>
-          {#if expanded}<ChevronDown size={15} />{:else}<ChevronUp size={15} />{/if}
-        </button>
+        <button class="icon-btn sm" title="Smaller chat" disabled={height <= 120} onclick={() => grow(-80)}><Minus size={14} /></button>
+        <button class="icon-btn sm" title="Bigger chat" onclick={() => grow(80)}><Plus size={14} /></button>
       {/if}
+      <button class="icon-btn sm" title="Collapse chat" onclick={() => (collapsed = true)}><ChevronDown size={15} /></button>
     </div>
     <div class="input-row">
       <textarea
         bind:this={input}
         bind:value={text}
         rows="1"
-        placeholder={page ? `Ask about ${hostOf(page.url) || 'this page'}…` : 'Ask anything…'}
+        placeholder={page ? `Ask about ${hostOf(page.url) || 'this page'} — or “open ssh to …”` : 'Ask anything…'}
         onkeydown={onKey}
         oninput={autosize}
       ></textarea>
@@ -201,6 +233,7 @@
     </div>
   </div>
 </section>
+{/if}
 
 <style>
   .bchat {
@@ -209,6 +242,36 @@
     flex-direction: column;
     border-top: 1px solid var(--border);
     background: var(--surface);
+  }
+  .bchat.slim {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    height: 40px;
+    padding: 0 10px 0 14px;
+  }
+  .ask {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 28px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--text-3);
+    font-size: 13px;
+    text-align: left;
+  }
+  .ask:hover {
+    border-color: var(--border-strong);
+    color: var(--text-2);
+  }
+  .ask :global(svg) {
+    color: var(--accent);
+    flex: none;
   }
   .grip {
     height: 6px;

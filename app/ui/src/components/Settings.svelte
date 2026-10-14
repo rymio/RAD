@@ -10,15 +10,17 @@
   import ModelPicker from './ModelPicker.svelte';
   import Modal from './Modal.svelte';
   import RecoveryKit from './RecoveryKit.svelte';
+  import VoiceSettings from './VoiceSettings.svelte';
   import {
     SlidersHorizontal, Palette, Cpu, Search, Brain, MonitorSmartphone, ShieldCheck, Server, Plus, Trash2, Plug, Loader,
-    Check, Download, KeyRound, HardDriveDownload, Lock, Wrench, Sun, Moon, Monitor, Circle, CircleAlert, FolderOpen,
+    Check, Download, KeyRound, HardDriveDownload, Lock, Wrench, Sun, Moon, Monitor, Circle, CircleAlert, FolderOpen, AudioLines,
   } from '@lucide/svelte';
 
   const tabs = [
     { id: 'general', label: 'General', icon: SlidersHorizontal },
     { id: 'appearance', label: 'Appearance', icon: Palette },
     { id: 'models', label: 'Models', icon: Cpu },
+    { id: 'voice', label: 'Voice', icon: AudioLines },
     { id: 'retrieval', label: 'Answers & search', icon: Search },
     { id: 'memories', label: 'Memories', icon: Brain },
     { id: 'devices', label: 'Devices', icon: MonitorSmartphone },
@@ -465,6 +467,18 @@
           </div>
         {/if}
 
+          <div class="provs">
+            <button class="card prov tts" onclick={() => (tab = 'voice')}>
+              <div class="ph">
+                <div class="pn spacer">
+                  <div class="st">MioTTS-0.1B <span class="pill">Text to speech</span></div>
+                  <div class="sd">Reads answers aloud on this computer — English and Japanese, preset or cloned voices. Set up under Voice.</div>
+                </div>
+                <AudioLines size={16} />
+              </div>
+            </button>
+          </div>
+
         <h3>Model roles</h3>
         {#if s}
           <div class="group">
@@ -478,6 +492,8 @@
             {/each}
           </div>
         {/if}
+      {:else if tab === 'voice'}
+        <VoiceSettings />
       {:else if tab === 'retrieval' && s}
         <h2>Answers & search</h2>
         <div class="group">
@@ -699,7 +715,7 @@
     height: var(--titlebar-h);
     display: flex;
     align-items: center;
-    padding: 0 26px;
+    padding: 0 26px 0 calc(26px + var(--lead));
     border-bottom: 1px solid var(--border);
   }
   header h1 {
@@ -750,57 +766,57 @@
     padding: 26px 34px 60px;
     max-width: 920px;
   }
-  h2 {
+  .pane :global(h2) {
     margin: 0 0 18px;
     font-size: 22px;
     letter-spacing: -0.02em;
   }
-  h3 {
+  .pane :global(h3) {
     margin: 28px 0 10px;
     font-size: 13px;
     font-weight: 650;
     color: var(--text-2);
   }
-  .lead {
+  .pane :global(.lead) {
     color: var(--text-2);
     margin: -6px 0 18px;
     line-height: 1.6;
   }
-  code {
+  .pane :global(code) {
     font-family: var(--mono);
     font-size: 0.9em;
     background: var(--surface-3);
     padding: 1px 5px;
     border-radius: 5px;
   }
-  .group {
+  .pane :global(.group) {
     border: 1px solid var(--border);
     border-radius: var(--r-lg);
     background: var(--surface);
     margin-bottom: 14px;
   }
-  .srow {
+  .pane :global(.srow) {
     display: flex;
     align-items: center;
     gap: 16px;
     padding: 13px 16px;
     border-bottom: 1px solid var(--border);
   }
-  .srow:last-child {
+  .pane :global(.srow:last-child) {
     border-bottom: none;
   }
-  .srow > div:first-child:not(.spacer) {
+  .pane :global(.srow > div:first-child:not(.spacer)) {
     flex: 1;
     min-width: 0;
   }
-  .srow :global(svg) {
+  .pane :global(.srow svg) {
     color: var(--text-3);
     flex: none;
   }
   .srow.btns {
     gap: 8px;
   }
-  .st {
+  .pane :global(.st) {
     font-weight: 550;
     font-size: 13.5px;
     display: flex;
@@ -808,7 +824,7 @@
     gap: 6px;
     flex-wrap: wrap;
   }
-  .sd {
+  .pane :global(.sd) {
     font-size: 12.5px;
     color: var(--text-3);
     margin-top: 2px;
@@ -923,26 +939,32 @@
     flex-direction: column;
     gap: 10px;
   }
-  .prov {
+  .tts {
+    width: 100%;
+    text-align: left;
+    color: inherit;
+    font: inherit;
+  }
+  .pane :global(.prov) {
     padding: 14px 14px 14px 16px;
   }
   .prov.off {
     opacity: 0.65;
   }
-  .ph {
+  .pane :global(.ph) {
     display: flex;
     align-items: center;
     gap: 10px;
   }
-  .pn {
+  .pane :global(.pn) {
     min-width: 0;
   }
-  .test {
+  .pane :global(.test) {
     margin-top: 10px;
     font-size: 12.5px;
     color: var(--success);
   }
-  .test.bad {
+  .pane :global(.test.bad) {
     color: var(--danger);
   }
   .pull {
@@ -950,14 +972,14 @@
     gap: 8px;
     margin-top: 12px;
   }
-  .progress {
+  .pane :global(.progress) {
     height: 5px;
     border-radius: 3px;
     background: var(--surface-3);
     margin-top: 10px;
     overflow: hidden;
   }
-  .progress div {
+  .pane :global(.progress div) {
     height: 100%;
     background: var(--accent);
     transition: width 300ms var(--ease);

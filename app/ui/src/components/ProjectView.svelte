@@ -339,7 +339,7 @@
     align-items: center;
     gap: 12px;
     height: var(--titlebar-h);
-    padding: 0 14px 0 26px;
+    padding: 0 14px 0 calc(26px + var(--lead));
     border-bottom: 1px solid var(--border);
   }
   .ptitle {

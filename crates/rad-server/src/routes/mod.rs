@@ -70,6 +70,7 @@ pub fn router(state: Shared) -> Router {
         .route("/v1/settings", get(admin::get_settings).put(admin::put_settings))
         .route("/v1/memories", get(admin::list_memories).post(admin::create_memory))
         .route("/v1/memories/{id}", axum::routing::patch(admin::update_memory).delete(admin::delete_memory))
+        .route("/v1/app-data/{key}", get(admin::get_app_data).put(admin::put_app_data))
         .route("/v1/devices", get(admin::list_devices))
         .route("/v1/devices/{id}", delete(admin::revoke_device))
         .route("/v1/devices/pairing-code", post(admin::pairing_code))

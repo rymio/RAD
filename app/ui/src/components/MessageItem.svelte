@@ -5,7 +5,8 @@
   import { anchorLabel, docKind } from '../lib/util';
   import type { Citation, Message } from '../lib/types';
   import DocIcon from './DocIcon.svelte';
-  import { Copy, Check, RotateCcw, Pencil, CircleAlert, Sparkles } from '@lucide/svelte';
+  import { Copy, Check, RotateCcw, Pencil, CircleAlert, Sparkles, Volume2, Square, Loader } from '@lucide/svelte';
+  import { speech } from '../lib/speech.svelte';
 
   let {
     message,
@@ -65,6 +66,12 @@
       if (onlink) return onlink(a.href);
       import('@tauri-apps/plugin-opener').then((m) => m.openUrl(a.href));
     }
+  }
+
+  const speakId = $derived(`m${message.id}`);
+  function readAloud() {
+    if (speech.speaking === speakId) return speech.stop();
+    if (store.config) speech.speak(speakId, message.content, store.config).catch((e) => store.error(e, 'Couldn’t read this aloud'));
   }
 
   async function copy() {
@@ -143,6 +150,11 @@
       {#if !streaming && message.content}
         <div class="tools">
           <button class="icon-btn sm" title="Copy" onclick={copy}>{#if copied}<Check size={13} />{:else}<Copy size={13} />{/if}</button>
+          {#if store.config?.tts_enabled && message.content.trim()}
+            <button class="icon-btn sm" title={speech.speaking === speakId ? 'Stop reading' : 'Read aloud'} onclick={readAloud}>
+              {#if speech.speaking === speakId && speech.loading}<Loader size={13} class="spin" />{:else if speech.speaking === speakId}<Square size={12} />{:else}<Volume2 size={13} />{/if}
+            </button>
+          {/if}
           {#if isLast && onregenerate}<button class="icon-btn sm" title="Regenerate" onclick={onregenerate}><RotateCcw size={13} /></button>{/if}
           {#if message.model}<span class="meta">{store.modelLabel({ provider_id: 0, model: message.model })}{message.tokens_out ? ` · ${message.tokens_out} tokens` : ''}</span>{/if}
         </div>

@@ -435,8 +435,28 @@ pub enum ChatStreamEvent {
     Status { text: String },
     Sources { citations: Vec<Citation> },
     Delta { text: String },
+    /// The message asked RAD to do something (open an SSH session, a web page…); the app carries it out.
+    Action { action: AgentAction },
     Done { message: Message },
     Error { message: String },
+}
+
+/// Something the assistant asks the app to do for the user.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct AgentAction {
+    /// `ssh` (terminal session to `host`), `open_url` (RAD's browser) or `terminal` (local shell).
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    /// Private key file for SSH, e.g. `~/.ssh/id_ed25519`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 // ---------------------------------------------------------------- search

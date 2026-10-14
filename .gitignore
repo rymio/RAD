@@ -7,3 +7,5 @@ node_modules
 /models
 /browser/rad-browser/target
 /app/src-tauri/binaries
+/tts/mio-tts-cpp
+/tts/bin

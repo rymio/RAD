@@ -83,6 +83,26 @@ export const rad = {
   browserSnapshot: (text: boolean, image: boolean) => call<T.BrowserSnapshot>('browser_snapshot', { text, image }),
   browserSaveScreenshot: (projectId?: T.Id) => call<T.UploadResponse>('browser_save_screenshot', { projectId: projectId ?? null }),
   browserSavePage: (projectId?: T.Id) => call<T.UploadResponse>('browser_save_page', { projectId: projectId ?? null }),
+
+  termOpen: (args: { kind: 'local' | 'ssh'; host?: string; user?: string; port?: number; identity_file?: string; cols: number; rows: number }) =>
+    call<T.TermInfo>('term_open', { args }),
+  termList: () => call<T.TermInfo[]>('term_list'),
+  /** Streams output: ArrayBuffer chunks, or `{ exit }` when the session ends. Replays scrollback first. */
+  termAttach(id: number, onData: (d: ArrayBuffer | { exit: string }) => void) {
+    const ch = new Channel<ArrayBuffer | { exit: string }>();
+    ch.onmessage = onData;
+    return call<void>('term_attach', { id, onData: ch });
+  },
+  termDetach: (id: number) => call<void>('term_detach', { id }),
+  termWrite: (id: number, data: string) => call<void>('term_write', { id, data }),
+  termResize: (id: number, cols: number, rows: number) => call<void>('term_resize', { id, cols, rows }),
+  termClose: (id: number) => call<void>('term_close', { id }),
+
+  fsPlaces: () => call<T.FsPlace[]>('fs_places'),
+  fsList: (path?: string) => call<T.FsListing>('fs_list', { path: path ?? null }),
+  fsPreview: (path: string) => call<T.FsPreview>('fs_preview', { path }),
+  fsOpen: (path: string) => call<void>('fs_open', { path }),
+  fsReveal: (path: string) => call<void>('fs_reveal', { path }),
 };
 
 let platformName = '';

@@ -42,6 +42,9 @@ pub async fn update_provider(State(state): State<Shared>, a: Authed, Path(id): P
         }
         let p = repo::update_provider(c, id, &input)?;
         st.changed(c, "provider", id, "update");
+        if !p.enabled {
+            models::heal_settings(st, c)?;
+        }
         Ok(Json(p.public()))
     })
     .await
@@ -53,16 +56,9 @@ pub async fn delete_provider(State(state): State<Shared>, a: Authed, Path(id): P
             return Err(ApiErr::bad_request("the built-in engine can't be removed — switch it off instead"));
         }
         repo::delete_provider(c, id)?;
-        // Drop settings that pointed at this provider.
-        let mut s = repo::settings(c)?;
-        for slot in [&mut s.chat_model, &mut s.rewrite_model, &mut s.vision_model, &mut s.embedding_model, &mut s.transcription_model] {
-            if slot.as_ref().is_some_and(|m| m.provider_id == id) {
-                *slot = None;
-            }
-        }
-        repo::save_settings(c, &s)?;
         st.changed(c, "provider", id, "delete");
-        st.changed(c, "settings", 0, "update");
+        // Settings that pointed at this provider move to the built-in engine where possible.
+        models::heal_settings(st, c)?;
         Ok(StatusCode::NO_CONTENT)
     })
     .await
@@ -229,6 +225,33 @@ pub async fn put_settings(State(state): State<Shared>, a: Authed, Json(mut s): J
         }
         st.changed(c, "settings", 0, "update");
         Ok(Json(s))
+    })
+    .await
+}
+
+// ------------------------------------------------------------------ app data
+
+fn app_key(key: &str) -> ApiResult<()> {
+    if key.is_empty() || key.len() > 40 || !key.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_') {
+        return Err(ApiErr::bad_request("invalid key"));
+    }
+    Ok(())
+}
+
+pub async fn get_app_data(State(state): State<Shared>, a: Authed, Path(key): Path<String>) -> ApiResult<Json<serde_json::Value>> {
+    app_key(&key)?;
+    db_vault(a.vault, &state, move |_, c| Ok(Json(repo::app_data(c, &key)?))).await
+}
+
+pub async fn put_app_data(State(state): State<Shared>, a: Authed, Path(key): Path<String>, Json(v): Json<serde_json::Value>) -> ApiResult<Json<serde_json::Value>> {
+    app_key(&key)?;
+    if serde_json::to_vec(&v).map(|b| b.len()).unwrap_or(0) > 1 << 20 {
+        return Err(ApiErr::bad_request("too large"));
+    }
+    db_vault(a.vault, &state, move |st, c| {
+        repo::set_app_data(c, &key, &v)?;
+        st.changed(c, "app_data", 0, &key);
+        Ok(Json(v))
     })
     .await
 }

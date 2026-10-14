@@ -15,25 +15,36 @@
   let { items, align = 'right', trigger, width = 210 }: { items: (MenuItem | null)[]; align?: 'left' | 'right'; trigger: Snippet<[() => void]>; width?: number } = $props();
   let open = $state(false);
   let el: HTMLDivElement | undefined = $state();
-  let up = $state(false);
+  let pos = $state('');
 
   function toggle() {
     open = !open;
     if (open && el) {
+      // Placed against the trigger, opening upwards when there's no room below.
       const r = el.getBoundingClientRect();
-      up = r.bottom + 260 > window.innerHeight;
+      const up = r.bottom + 260 > window.innerHeight && r.top > 260;
+      const v = up ? `bottom:${window.innerHeight - r.top + 6}px` : `top:${r.bottom + 6}px`;
+      const h = align === 'right' ? `right:${Math.max(8, window.innerWidth - r.right)}px` : `left:${Math.max(8, r.left)}px`;
+      pos = `${v};${h}`;
     }
+  }
+
+  /** Renders the menu at the top of the page, so cards and panels (which have their own
+   *  stacking contexts from transforms and animations) can never paint over it. */
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return { destroy: () => node.remove() };
   }
 </script>
 
-<svelte:window onkeydown={(e) => e.key === 'Escape' && (open = false)} />
+<svelte:window onkeydown={(e) => e.key === 'Escape' && (open = false)} onresize={() => (open = false)} />
 
 <div class="menu-wrap" bind:this={el}>
   {@render trigger(toggle)}
   {#if open}
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-    <div class="scrim" onclick={() => (open = false)}></div>
-    <div class="menu {align}" class:up style="width:{width}px" role="menu">
+    <div class="scrim" use:portal onclick={() => (open = false)} onwheel={() => (open = false)}></div>
+    <div class="menu" use:portal style="width:{width}px;{pos}" role="menu">
       {#each items as it}
         {#if it === null}
           <div class="sep"></div>
@@ -57,12 +68,11 @@
   .scrim {
     position: fixed;
     inset: 0;
-    z-index: 90;
+    z-index: 900;
   }
   .menu {
-    position: absolute;
-    top: calc(100% + 6px);
-    z-index: 100;
+    position: fixed;
+    z-index: 1000;
     padding: 5px;
     border-radius: var(--r);
     background: var(--glass);
@@ -71,16 +81,6 @@
     border: 1px solid var(--border-strong);
     box-shadow: var(--shadow-lg);
     animation: pop 140ms var(--ease) both;
-  }
-  .menu.up {
-    top: auto;
-    bottom: calc(100% + 6px);
-  }
-  .menu.right {
-    right: 0;
-  }
-  .menu.left {
-    left: 0;
   }
   .item {
     display: flex;

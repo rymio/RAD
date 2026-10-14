@@ -263,7 +263,7 @@
     align-items: center;
     gap: 12px;
     height: var(--titlebar-h);
-    padding: 0 14px 0 22px;
+    padding: 0 14px 0 calc(22px + var(--lead));
     border-bottom: 1px solid var(--border);
   }
   .title {

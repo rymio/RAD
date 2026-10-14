@@ -14,6 +14,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+use crate::agent;
 use crate::auth::Authed;
 use crate::error::{ApiErr, ApiResult};
 use crate::models;
@@ -301,6 +302,26 @@ async fn rewrite_query(state: &Shared, p: &Prepared) -> String {
 async fn generate(state: Shared, vault: Arc<Vault>, p: Prepared, tx: mpsc::Sender<ChatStreamEvent>) {
     let _ = tx.send(ChatStreamEvent::UserMessage { message: p.user_msg.clone() }).await;
 
+    // ---- "open ssh to coursemat.au": do it instead of talking about it
+    if p.images.is_empty() && agent::looks_like_action(&p.user_msg.content) {
+        let _ = tx.send(ChatStreamEvent::Status { text: "Working out what to do…".into() }).await;
+        if let Some(plan) = agent::plan(&state, &vault, &p.settings, &p.memories, &p.model, &p.conn, &p.user_msg.content).await {
+            let mut reply = plan.reply;
+            if let (Some(text), Some(host)) = (plan.remember, plan.action.host.clone()) {
+                if agent::remember(&state, &vault, host, text).await {
+                    reply.push_str(" I've remembered these details for next time.");
+                }
+            }
+            if !plan.citations.is_empty() {
+                let _ = tx.send(ChatStreamEvent::Sources { citations: plan.citations.clone() }).await;
+            }
+            let _ = tx.send(ChatStreamEvent::Action { action: plan.action }).await;
+            let _ = tx.send(ChatStreamEvent::Delta { text: reply.clone() }).await;
+            finish(&state, vault, p.chat.id, p.model.model.clone(), reply, plan.citations, None, None, None, &tx).await;
+            return;
+        }
+    }
+
     // ---- retrieval
     let mut scope = p.chat.scope.projects.clone();
     let mentioned = mentioned_projects(&p.user_msg.content, &p.projects);
@@ -400,10 +421,25 @@ async fn generate(state: Shared, vault: Arc<Vault>, p: Prepared, tx: mpsc::Sende
         if referenced.is_empty() { citations.clone() } else { referenced }
     };
 
-    let chat_id = p.chat.id;
-    let model_name = p.model.model.clone();
+    finish(&state, vault, p.chat.id, p.model.model.clone(), answer, used_cites, error, tin, tout, &tx).await;
+}
+
+/// Stores the assistant's message and reports it (or the error) to the client.
+#[allow(clippy::too_many_arguments)]
+async fn finish(
+    state: &Shared,
+    vault: Arc<Vault>,
+    chat_id: Id,
+    model_name: String,
+    answer: String,
+    used_cites: Vec<Citation>,
+    error: Option<String>,
+    tin: Option<i64>,
+    tout: Option<i64>,
+    tx: &mpsc::Sender<ChatStreamEvent>,
+) {
     let st = state.clone();
-    let saved = db_vault(vault, &state, move |_, c| {
+    let saved = db_vault(vault, state, move |_, c| {
         let m = repo::add_message(
             c,
             &NewMessage {

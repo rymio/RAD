@@ -28,6 +28,18 @@ pub struct ClientConfig {
     pub accent: String,
     pub tray_hint_shown: bool,
     pub launched_before: bool,
+    /// The sidebar is hidden (full-width views).
+    pub sidebar_collapsed: bool,
+    /// Text to speech (MioTTS): on/off, read answers aloud, and the voice's parameters.
+    pub tts_enabled: bool,
+    pub tts_auto_read: bool,
+    pub tts_voice: String,
+    pub tts_speed: f32,
+    pub tts_volume: f32,
+    pub tts_temperature: f32,
+    pub tts_top_p: f32,
+    pub tts_top_k: u32,
+    pub tts_repetition_penalty: f32,
 }
 
 impl Default for ClientConfig {
@@ -51,6 +63,16 @@ impl Default for ClientConfig {
             accent: "#7c6cf2".into(),
             tray_hint_shown: false,
             launched_before: false,
+            sidebar_collapsed: false,
+            tts_enabled: false,
+            tts_auto_read: false,
+            tts_voice: "en_female".into(),
+            tts_speed: 1.0,
+            tts_volume: 1.0,
+            tts_temperature: 0.8,
+            tts_top_p: 1.0,
+            tts_top_k: 50,
+            tts_repetition_penalty: 1.0,
         }
     }
 }

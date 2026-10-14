@@ -198,10 +198,13 @@ impl Browser {
 
     fn resize(&self, w: u32, h: u32, scale: f32) {
         let size = PhysicalSize::new(w.max(1), h.max(1));
-        self.rc.resize(size);
         self.scale.set(scale);
-        for t in self.tabs.borrow().iter() {
+        // Servo resizes the shared surface and re-lays out every tab sharing it. Resizing the
+        // surface ourselves first would make Servo see "no change" and keep the old layout.
+        if let Some(t) = self.tabs.borrow().first() {
             t.webview.resize(size);
+        }
+        for t in self.tabs.borrow().iter() {
             t.webview.set_hidpi_scale_factor(Scale::new(scale));
         }
         self.last_frame.borrow_mut().clear();

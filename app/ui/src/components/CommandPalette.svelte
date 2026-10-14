@@ -4,7 +4,7 @@
   import { anchorLabel, debounce, docKind } from '../lib/util';
   import type { Citation } from '../lib/types';
   import DocIcon from './DocIcon.svelte';
-  import { Search, MessageSquare, SquarePen, Settings, Lock, StickyNote, Camera, Loader, CornerDownLeft, Globe } from '@lucide/svelte';
+  import { Search, MessageSquare, SquarePen, Settings, Lock, StickyNote, Camera, Loader, CornerDownLeft, Globe, SquareTerminal, FolderOpen } from '@lucide/svelte';
   import { rad } from '../lib/api';
 
   type Item = { id: string; group: string; label: string; sub?: string; icon?: any; color?: string; doc?: Citation; run: () => void };
@@ -55,6 +55,9 @@
     const actions: Item[] = [
       { id: 'a-new', group: 'Actions', label: 'New chat', icon: SquarePen, run: () => store.newChat() },
       { id: 'a-web', group: 'Actions', label: 'Web Browser', icon: Globe, run: () => store.navigate({ kind: 'browser' }) },
+      { id: 'a-term', group: 'Actions', label: 'Terminal', icon: SquareTerminal, run: () => store.navigate({ kind: 'terminal' }) },
+      { id: 'a-files', group: 'Actions', label: 'Files', icon: FolderOpen, run: () => store.navigate({ kind: 'files' }) },
+      { id: 'a-sidebar', group: 'Actions', label: 'Toggle sidebar', icon: Globe, run: () => store.toggleSidebar() },
       { id: 'a-settings', group: 'Actions', label: 'Settings', icon: Settings, run: () => store.navigate({ kind: 'settings' }) },
       { id: 'a-shot', group: 'Actions', label: 'Capture screenshot', icon: Camera, run: () => rad.captureScreenshot().then((r) => r && store.toast('success', 'Screenshot added')) },
       { id: 'a-lock', group: 'Actions', label: 'Lock RAD', icon: Lock, run: () => store.lock() },

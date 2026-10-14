@@ -42,6 +42,10 @@
     const onAttach = (e: Event) => {
       attachments = [...attachments, ...((e as CustomEvent).detail as Document[])];
     };
+    if (store.pendingAttachments.length) {
+      attachments = [...attachments, ...store.pendingAttachments];
+      store.pendingAttachments = [];
+    }
     window.addEventListener('rad-attach', onAttach);
     return () => window.removeEventListener('rad-attach', onAttach);
   });

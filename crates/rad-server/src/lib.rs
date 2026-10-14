@@ -1,6 +1,7 @@
 //! rad-server as a library: the standalone server binary and the RAD desktop app's
 //! standalone mode both run exactly this code.
 
+mod agent;
 mod auth;
 mod backup;
 mod content;

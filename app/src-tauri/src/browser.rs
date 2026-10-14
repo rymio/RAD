@@ -159,7 +159,14 @@ fn engine_path(app: &AppHandle) -> Option<PathBuf> {
 
 fn spawn(app: &AppHandle, b: &Browser, w: u32, h: u32, scale: f64, url: &str) -> CmdResult<()> {
     let path = engine_path(app).ok_or_else(|| {
-        CmdError::new("browser_missing", "The web browser engine isn't installed. Build it with ./scripts/build-browser.sh, then reopen the browser.")
+        CmdError::new(
+            "browser_missing",
+            if cfg!(debug_assertions) {
+                "The web browser engine isn't built yet. Run ./scripts/build-browser.sh, then reopen the browser."
+            } else {
+                "This copy of RAD was built without the web browser engine. Rebuild it with ./scripts/build-app.sh and reinstall."
+            },
+        )
     })?;
     let mut child = Command::new(&path)
         .args(["--width", &w.to_string(), "--height", &h.to_string(), "--scale", &scale.to_string(), "--url", url])

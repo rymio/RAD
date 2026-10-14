@@ -1,7 +1,8 @@
-import { listen } from '@tauri-apps/api/event';
+import { listen, emitTo } from '@tauri-apps/api/event';
 import { api, rad as bridge, RadError } from './api';
 import type * as T from './types';
 import { debounce } from './util';
+import { speech } from './speech.svelte';
 
 export type Phase = 'boot' | 'connect' | 'pair' | 'create' | 'recovery-kit' | 'unlock' | 'app';
 
@@ -46,6 +47,14 @@ class Store {
   drafts = $state<Record<number, Draft>>({});
   /** The conversation docked under the web browser. */
   browserChatId = $state<number | null>(null);
+  /** Kept in the vault: browser favourites and SSH hosts. */
+  bookmarks = $state<T.Bookmark[]>([]);
+  sshHosts = $state<T.SshHost[]>([]);
+  /** Requests for views that may not be open yet (from agent actions, Files…). */
+  pendingTerminal = $state<T.AgentAction | null>(null);
+  pendingBrowserUrl = $state<string | null>(null);
+  pendingAttachments = $state<T.Document[]>([]);
+  private quick = false;
 
   private toastId = 0;
   private listening = false;
@@ -84,6 +93,7 @@ class Store {
 
   /** `quick`: the Quick Ask window only reads state; the main window owns the connection. */
   async boot(quick = false) {
+    this.quick = quick;
     this.config = await bridge.config();
     this.applyTheme();
     this.listen();
@@ -144,6 +154,51 @@ class Store {
     this.memories = memories as T.Memory[];
     this.health = health as T.ProviderHealth[];
     this.jobs = jobs as T.JobSummary;
+    this.loadAppData('bookmarks');
+    this.loadAppData('ssh_hosts');
+  }
+
+  async loadAppData(key: 'bookmarks' | 'ssh_hosts') {
+    const v = await api.get<any>(`/v1/app-data/${key}`).catch(() => null);
+    if (key === 'bookmarks') this.bookmarks = Array.isArray(v) ? v : [];
+    else this.sshHosts = Array.isArray(v) ? v : [];
+  }
+
+  async saveBookmarks(list: T.Bookmark[]) {
+    this.bookmarks = list;
+    await api.put('/v1/app-data/bookmarks', list).catch((e) => this.error(e, 'Couldn’t save favourites'));
+  }
+
+  /** Remembers an SSH host for the Terminal's quick-connect list (most recent first). */
+  async rememberSshHost(h: T.SshHost) {
+    const same = (x: T.SshHost) => x.host === h.host && (x.user ?? '') === (h.user ?? '') && (x.port ?? 22) === (h.port ?? 22);
+    const list = [{ ...h, last_used: Date.now() }, ...this.sshHosts.filter((x) => !same(x))].slice(0, 30);
+    this.sshHosts = list;
+    await api.put('/v1/app-data/ssh_hosts', list).catch(() => {});
+  }
+
+  /** Carries out what the assistant asked for. Quick Ask hands it to the main window. */
+  async runAction(a: T.AgentAction) {
+    if (this.quick) {
+      await bridge.openMain();
+      await emitTo('main', 'rad-agent-action', a);
+      return;
+    }
+    if (a.kind === 'open_url' && a.url) {
+      this.pendingBrowserUrl = a.url;
+      this.route = { kind: 'browser' };
+    } else if (a.kind === 'ssh' || a.kind === 'terminal') {
+      this.pendingTerminal = a;
+      this.route = { kind: 'terminal' };
+    }
+  }
+
+  get sidebarCollapsed() {
+    return !!this.config?.sidebar_collapsed;
+  }
+
+  toggleSidebar() {
+    this.saveConfig({ sidebar_collapsed: !this.sidebarCollapsed });
   }
 
   reloadProjects = debounce(async () => {
@@ -194,6 +249,9 @@ class Store {
           case 'memory':
             this.reloadMemories();
             break;
+          case 'app_data':
+            if (ev.op === 'bookmarks' || ev.op === 'ssh_hosts') this.loadAppData(ev.op);
+            break;
         }
         break;
       case 'document_status':
@@ -220,6 +278,7 @@ class Store {
       }
     });
     await listen<boolean>('rad-connection', (e) => (this.online = e.payload));
+    await listen<T.AgentAction>('rad-agent-action', (e) => this.runAction(e.payload));
     await listen('rad-resync', () => {
       if (this.phase === 'app') this.loadAll();
     });
@@ -262,6 +321,7 @@ class Store {
     const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     root.dataset.theme = pref === 'system' ? (dark ? 'dark' : 'light') : pref;
     if (c?.accent) root.style.setProperty('--accent', c.accent);
+    root.classList.toggle('sb-collapsed', !!c?.sidebar_collapsed);
   }
 
   async saveConfig(patch: Partial<T.ClientConfig>) {
@@ -344,6 +404,9 @@ class Store {
             d.content += ev.text;
             d.status = '';
             break;
+          case 'action':
+            this.runAction(ev.action);
+            break;
           case 'done':
             final = ev.message;
             break;
@@ -366,6 +429,10 @@ class Store {
     if (final && d?.user) {
       this.messages[chatId] = [...(this.messages[chatId] ?? []), d.user, final];
       delete this.drafts[chatId];
+      const answer = final as T.Message;
+      if (this.config?.tts_enabled && this.config.tts_auto_read && !answer.error && answer.content.trim()) {
+        speech.speak(`m${answer.id}`, answer.content, this.config).catch((e) => this.error(e, 'Couldn’t read the answer aloud'));
+      }
     } else {
       await this.loadChat(chatId).catch(() => {});
       if (this.drafts[chatId] && !this.drafts[chatId].error) delete this.drafts[chatId];

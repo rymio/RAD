@@ -59,7 +59,31 @@ Notes:
 - Servo is still pre-1.0, so some sites don't render perfectly yet.
 - The engine runs as a separate process (`rad-browser`) because Servo pins its own SQLite and ICU, which clash with the vault's. A page that crashes it can't take the vault down with it.
 
+The ☆ in the address bar adds a page to **Favourites**, which are kept encrypted in your vault and shown under the toolbar. Right-click a favourite to remove it. The chat collapses to a single line (⌄), and − / + change its height.
+
 Build the engine once with `./scripts/build-browser.sh`. The first build compiles Servo and takes a few minutes. `cargo tauri dev` then finds it automatically; for a bundle, use `cargo tauri build --config app/src-tauri/tauri.browser.conf.json`.
+
+## Terminal, Files and actions from chat
+
+- **Terminal.** Local shells and SSH sessions in tabs, built on xterm.js (the terminal component VS Code uses) and a real pseudo-terminal. Sessions keep running, with their scrollback, while you look at something else. **SSH…** connects with a host, user, port and key file. Recent servers are kept in your vault; passwords are typed into the session and never stored.
+- **Files.** Browse this computer, preview images and text, then **Add to vault** (pick a project) or **Ask AI about these**, which attaches them to a new chat.
+- **Actions from any chat.** Ask “open ssh to coursemat.au”, “open servo.org” or “open a terminal” in any chat, including Quick Ask and the browser's chat, and RAD does it.
+  - For SSH, RAD searches your vault for the host's details (user, port, key file), opens the session in **Terminal**, cites the note it used, and remembers the details as a long-term memory, so next time no search is needed.
+  - Host and user names are validated, and SSH is started directly, never through a shell.
+- **Hide the sidebar** with ⌘\ for a full-width view.
+
+## Voice (text to speech)
+
+**Settings → Voice** downloads **MioTTS-0.1B** (about 510 MB, checksum-verified), which then reads answers aloud on this computer, in English and Japanese.
+
+- **Voices:** four preset voices, or your own voice made from a 5–20 s recording (this needs an extra 94 MB WavLM model).
+- **Parameters:** speed, volume, expressiveness (temperature), top-p, top-k and repetition penalty.
+- **Reading:** a speaker button appears on every answer, or turn on **Read answers aloud automatically**. Long answers are read sentence by sentence while the next one is prepared.
+- **Privacy:** audio is made in memory and never written to disk.
+
+The engine is [mio-tts-cpp](https://github.com/mmnga/mio-tts-cpp) (MIT; llama.cpp + ggml). Build it once with `./scripts/build-tts.sh`. To build the installable app with both the browser and voice engines inside it, run `./scripts/build-app.sh`. An installed RAD only finds engines bundled inside it, so a plain `cargo tauri build` produces an app without them.
+
+Licences: MioTTS-0.1B is under the Falcon-LLM licence, MioCodec is MIT, and WavLM is CC BY-SA 3.0.
 
 ## Quick start
 
@@ -119,7 +143,7 @@ CLI helpers:
 ```bash
 ./scripts/fetch-models.sh  # built-in embedding model → models/ (bundled into the app; git-ignored)
 cd app/ui && npm ci && cd ..
-cargo tauri build          # .dmg/.app, .msi/.exe, .AppImage/.deb/.rpm
+cargo tauri build          # .dmg/.app, .msi/.exe, .AppImage/.deb/.rpm — or ./scripts/build-app.sh to include the browser and voice engines
 # development: cargo tauri dev
 ```
 
@@ -164,6 +188,7 @@ crates/rad-server   axum server: auth, unlock, uploads, jobs, RAG, live sync (SS
 app/src-tauri       desktop shell: tray, hotkeys, screenshots, rad:// file protocol, keychain
 app/ui              Svelte 5 interface
 browser/rad-browser web browser engine: Servo rendering offscreen, driven by the app (its own Cargo workspace)
+tts/                text-to-speech engine build (mio-tts-cpp, fetched and built by scripts/build-tts.sh)
 deploy/             Dockerfile, docker-compose
 config/             Ubuntu deployment: nginx (HTTPS) site, systemd unit + env, certbot hook — see config/README.md
 ```

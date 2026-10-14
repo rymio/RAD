@@ -9,8 +9,10 @@
   import ProjectView from './ProjectView.svelte';
   import Settings from './Settings.svelte';
   import BrowserView from './BrowserView.svelte';
+  import TerminalView from './TerminalView.svelte';
+  import FilesView from './FilesView.svelte';
   import CommandPalette from './CommandPalette.svelte';
-  import { UploadCloud } from '@lucide/svelte';
+  import { UploadCloud, PanelLeftOpen } from '@lucide/svelte';
 
   let dragging = $state(false);
 
@@ -48,11 +50,11 @@
     getCurrentWebview()
       .onDragDropEvent((ev) => {
         const p = ev.payload;
-        if (p.type === 'enter' || p.type === 'over') dragging = store.route.kind !== 'browser';
+        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'terminal', 'files'].includes(store.route.kind);
         else if (p.type === 'leave') dragging = false;
         else if (p.type === 'drop') {
           dragging = false;
-          if (store.route.kind === 'browser') return;
+          if (['browser', 'terminal', 'files'].includes(store.route.kind)) return;
           uploadTo(p.paths);
         }
       })
@@ -72,6 +74,9 @@
     } else if (mod && e.key === ',') {
       e.preventDefault();
       store.navigate({ kind: 'settings' });
+    } else if (mod && e.key === '\\') {
+      e.preventDefault();
+      store.toggleSidebar();
     } else if (mod && e.shiftKey && e.key.toLowerCase() === 'l') {
       e.preventDefault();
       store.lock();
@@ -82,7 +87,11 @@
 <svelte:window onkeydown={onKey} />
 
 <div class="shell">
-  <Sidebar />
+  {#if store.sidebarCollapsed}
+    <button class="icon-btn sb-open no-drag" class:mac={document.documentElement.dataset.os === 'macos'} title="Show sidebar (⌘\)" onclick={() => store.toggleSidebar()}><PanelLeftOpen size={17} /></button>
+  {:else}
+    <Sidebar />
+  {/if}
   <main>
     {#if store.route.kind === 'chat'}
       {#key store.route.id}<ChatView chatId={store.route.id} />{/key}
@@ -92,6 +101,10 @@
       <Settings />
     {:else if store.route.kind === 'browser'}
       <BrowserView />
+    {:else if store.route.kind === 'terminal'}
+      <TerminalView />
+    {:else if store.route.kind === 'files'}
+      <FilesView />
     {/if}
   </main>
   {#if dragging}
@@ -110,6 +123,18 @@
   .shell {
     display: flex;
     height: 100%;
+  }
+  .sb-open {
+    position: fixed;
+    z-index: 60;
+    top: 6px;
+    left: 8px;
+  }
+  .sb-open.mac {
+    left: 78px;
+  }
+  .shell:has(.sb-open) main {
+    border-left: none;
   }
   main {
     flex: 1;

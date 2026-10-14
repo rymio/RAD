@@ -354,8 +354,17 @@ async fn ingest_document(state: &Shared, vault: &Arc<Vault>, doc_id: Id) -> JRes
 
 /// Embeds every chunk of a document with the configured embedding model.
 async fn embed_document(state: &Shared, vault: &Arc<Vault>, doc_id: Id) -> JResult<bool> {
-    let settings = blocking(vault, settings_of).await?;
-    let Some(m) = settings.embedding_model.clone() else { return Ok(false) };
+    let st = state.clone();
+    let picked = blocking(vault, move |c| {
+        let m = settings_of(c)?.embedding_model;
+        if m.as_ref().is_some_and(|m| models::resolve(c, m).is_err()) {
+            models::heal_settings(&st, c)?;
+            return Ok(settings_of(c)?.embedding_model);
+        }
+        Ok(m)
+    })
+    .await?;
+    let Some(m) = picked else { return Ok(false) };
     let m2 = m.clone();
     let conn = blocking(vault, move |c| Ok(models::resolve(c, &m2))).await?.map_err(JobError::from)?;
     let rows = blocking(vault, move |c| repo::chunks_for_embedding(c, doc_id)).await?;

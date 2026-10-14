@@ -28,6 +28,8 @@
   --sidebar-w: 268px;
   --panel-w: 400px;
   --titlebar-h: 52px;
+  /* Room for the window buttons and the sidebar toggle when the sidebar is hidden. */
+  --lead: 0px;
 
   color-scheme: light;
   --bg: #f6f6f9;
@@ -864,4 +866,11 @@ button.chip:hover {
 :root[data-theme='dark'] .hljs-title.function_,
 :root[data-theme='oled'] .hljs-title.function_ {
   color: #93c5fd;
+}
+
+html.sb-collapsed {
+  --lead: 44px;
+}
+html.sb-collapsed[data-os='macos'] {
+  --lead: 112px;
 }
