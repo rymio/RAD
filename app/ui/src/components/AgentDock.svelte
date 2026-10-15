@@ -18,6 +18,8 @@
   let transferring = $state(false);
 
   const tasks = $derived(TASKS[agent.kind]);
+  /** A command is waiting for Run / Skip. */
+  const waiting = $derived(agent.items.some((i) => i.kind === 'cmd' && i.status === 'waiting'));
   const title = $derived(agent.kind === 'ssh' ? 'Server agent' : agent.kind === 'local' ? 'Shell agent' : 'Sandbox agent');
   const where = $derived(agent.kind === 'ssh' ? `on ${agent.name}` : agent.kind === 'local' ? 'on this computer' : `in ${agent.name}`);
   const f = $derived(agent.facts);
@@ -272,7 +274,15 @@
           </div>
         {/if}
       {/each}
-      {#if agent.busy && agent.status}<div class="status"><Loader size={12} class="spin" /> {agent.status}</div>{/if}
+      {#if agent.busy && agent.status}
+        <div class="status">
+          <Loader size={12} class="spin" /> {agent.status}
+          {#if waiting}
+            <button class="btn sm primary" onclick={() => agent.approve(true)}><Play size={12} /> Run</button>
+            <button class="btn sm ghost" onclick={() => agent.approve(false)}>Skip</button>
+          {/if}
+        </div>
+      {/if}
     </div>
 
     <div class="input-row">
@@ -470,6 +480,11 @@
   .sub code {
     font-family: var(--mono);
     font-size: 11.5px;
+  }
+  /* A full thread scrolls; its entries must keep their size (the command cards clip their
+     content, so they would otherwise shrink to nothing). */
+  .thread > :global(*) {
+    flex-shrink: 0;
   }
   .cmd {
     border: 1px solid var(--border);

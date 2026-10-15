@@ -7,7 +7,7 @@
   import Logo from './Logo.svelte';
   import Menu from './Menu.svelte';
   import Modal from './Modal.svelte';
-  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard } from '@lucide/svelte';
+  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp } from '@lucide/svelte';
 
   let newProjectOpen = $state(false);
   let npName = $state('');
@@ -196,6 +196,7 @@
     <div class="status">
       {#if store.online}<span class="dot {health.cls}"></span>{:else}<CloudOff size={14} color="var(--danger)" />{/if}
       <span class="truncate spacer" title={health.text}>{health.text}</span>
+      <button class="icon-btn" title="About RAD" onclick={() => (store.aboutOpen = true)}><CircleHelp size={16} /></button>
       <button class="icon-btn" title="Settings (⌘,)" class:active={store.route.kind === 'settings'} onclick={() => store.navigate({ kind: 'settings' })}><Settings size={16} /></button>
       <button class="icon-btn" title="Lock (⌘⇧L)" onclick={() => store.lock()}><Lock size={16} /></button>
     </div>

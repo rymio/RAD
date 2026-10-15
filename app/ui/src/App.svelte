@@ -6,6 +6,7 @@
   import Shell from './components/Shell.svelte';
   import QuickAsk from './components/QuickAsk.svelte';
   import Toasts from './components/Toasts.svelte';
+  import About from './components/About.svelte';
   import Logo from './components/Logo.svelte';
 
   let { view }: { view: string } = $props();
@@ -27,6 +28,7 @@
   <Onboarding />
 {/if}
 <Toasts />
+{#if view !== 'quick'}<About />{/if}
 
 <style>
   .boot {

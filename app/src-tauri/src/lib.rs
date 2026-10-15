@@ -59,6 +59,24 @@ impl App {
 
 // ------------------------------------------------------------------ windows
 
+/// The macOS menu bar: the standard menus, with Help → About RAD (the app's own About page).
+#[cfg(target_os = "macos")]
+fn app_menu(app: &AppHandle) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem, MenuItemKind, HELP_SUBMENU_ID};
+    let menu = Menu::default(app)?;
+    if let Some(MenuItemKind::Submenu(help)) = menu.get(HELP_SUBMENU_ID) {
+        help.append(&MenuItem::with_id(app, "about", "About RAD", true, None::<&str>)?)?;
+    }
+    app.set_menu(menu)?;
+    app.on_menu_event(|app, ev| {
+        if ev.id().as_ref() == "about" {
+            show_main(app);
+            let _ = app.emit_to("main", "show-about", ());
+        }
+    });
+    Ok(())
+}
+
 pub fn main_window(app: &AppHandle) -> tauri::WebviewWindow {
     if let Some(w) = app.get_webview_window("main") {
         return w;
@@ -293,6 +311,8 @@ pub fn run() {
             app.manage(media::Media::default());
             let handle = app.handle().clone();
             tray::build(&handle)?;
+            #[cfg(target_os = "macos")]
+            app_menu(&handle)?;
             register_hotkeys(&handle);
             spawn_idle_watch(handle.clone());
 

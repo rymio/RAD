@@ -37,6 +37,7 @@ class Store {
   toasts = $state<Toast[]>([]);
   pendingRecoveryKey = $state<string | null>(null);
   paletteOpen = $state(false);
+  aboutOpen = $state(false);
   /** Bumped on remote changes so open views refetch. */
   rev = $state({ docs: {} as Record<number, number>, chat: {} as Record<number, number>, any: 0 });
   /** Live document status updates. */
