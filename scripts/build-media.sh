@@ -31,6 +31,11 @@ case "$(uname -s)" in
     rm -f "$out/plugins/libmacosx_plugin.dylib"
     # Only look for libVLC next to the engine, never in an installed VLC.app.
     install_name_tool -delete_rpath "$vlc/lib" "$out/rad-media" 2>/dev/null || true
+    # VLC.app came from a download: without this, macOS checks every one of the ~340 libraries
+    # the first time each is loaded, and the engine can take a minute to start.
+    xattr -dr com.apple.quarantine "$out" 2>/dev/null || true
+    # libVLC's plugin cache: starts then load only the plugins they need.
+    VLC_PLUGIN_PATH="$PWD/$out/plugins" "$out/rad-media" --gen-cache
     ;;
   Linux)
     cargo build --release
