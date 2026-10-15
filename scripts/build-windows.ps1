@@ -1,13 +1,15 @@
 <#
 Builds the RAD desktop app for Windows 10/11 (x64 or ARM64) with its engines inside the installer:
   - the web browser engine (Servo)        -> scripts/build-browser.sh   (skip: -NoBrowser)
+  - the Chromium engine (CEF)             -> scripts/build-chromium.sh  (skip: -NoChromium)
   - the text-to-speech engine (MioTTS)    -> scripts/build-tts.sh
   - the Linux sandbox engine is macOS-only for now and is left out.
 Result: target\release\bundle\nsis\RAD_<version>_x64-setup.exe (and \msi\*.msi with -Bundles nsis,msi)
 
   powershell -ExecutionPolicy Bypass -File scripts\build-windows.ps1 -InstallDeps   first time (winget)
   powershell -ExecutionPolicy Bypass -File scripts\build-windows.ps1                 later builds
-  ... -NoBrowser            quicker: RAD without the built-in browser
+  ... -NoBrowser            quicker: RAD without the built-in (Servo) browser
+  ... -NoChromium           RAD without the Chromium browser (~300 MB smaller)
   ... -Bundles nsis,msi     also the .msi (default: nsis)
 
 The engine scripts are bash; they run in Git for Windows' bash (not WSL's), which also
@@ -17,6 +19,7 @@ engine build has very deep paths.
 param(
     [switch]$InstallDeps,
     [switch]$NoBrowser,
+    [switch]$NoChromium,
     [string]$Bundles = "nsis",
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$TauriArgs = @()
 )
@@ -90,6 +93,7 @@ function Run-Bash($script) {
 }
 Run-Bash "./scripts/fetch-models.sh"
 if (-not $NoBrowser) { Run-Bash "./scripts/build-browser.sh $host_triple" }
+if (-not $NoChromium) { Run-Bash "./scripts/build-chromium.sh" }
 Run-Bash "./scripts/build-tts.sh $host_triple"
 
 # Bundle whichever engines are built (Tauri adds the target triple and .exe itself).
@@ -103,7 +107,16 @@ $cfg = Join-Path $root "target\rad-bundle.conf.json"
 # Written by hand: Windows PowerShell 5.1's ConvertTo-Json and Set-Content add surprises
 # (single-item arrays, a BOM) that Tauri's config parser rejects.
 $list = ($bins | ForEach-Object { '"' + $_ + '"' }) -join ","
-[IO.File]::WriteAllText($cfg, "{""bundle"":{""externalBin"":[$list]}}")
+# The Chromium engine is a folder (rad-chromium.exe + CEF's DLLs and data); it ships as a resource.
+$resources = ""
+$built = @($bins)
+$chromiumDir = Join-Path $root "browser\rad-chromium\target\bundle\rad-chromium"
+if (-not $NoChromium -and (Test-Path (Join-Path $chromiumDir "rad-chromium.exe"))) {
+    $src = ($chromiumDir -replace '\\', '/') + "/**/*"
+    $resources = ",""resources"":{""$src"":""rad-chromium/""}"
+    $built += "rad-chromium"
+}
+[IO.File]::WriteAllText($cfg, "{""bundle"":{""externalBin"":[$list]$resources}}")
 
 # ------------------------------------------------------------------ app
 Push-Location app\ui
@@ -116,5 +129,5 @@ Pop-Location
 if ($code) { exit $code }
 
 Write-Host ""
-Write-Host "Built with: $(if ($bins) { $bins -join ', ' } else { 'no engines' })"
+Write-Host "Built with: $(if ($built) { $built -join ', ' } else { 'no engines' })"
 Get-ChildItem target\release\bundle\nsis\*.exe, target\release\bundle\msi\*.msi -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.FullName)" }

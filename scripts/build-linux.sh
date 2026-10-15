@@ -2,13 +2,15 @@
 # Builds the RAD desktop app for Linux (Ubuntu 22.04 / 24.04, x86_64 or arm64) with its engines
 # inside the package:
 #   - the web browser engine (Servo)        → scripts/build-browser.sh   (skip: --no-browser)
+#   - the Chromium engine (CEF)             → scripts/build-chromium.sh  (skip: --no-chromium)
 #   - the text-to-speech engine (MioTTS)    → scripts/build-tts.sh
 #   - the Linux sandbox engine is macOS-only for now and is left out.
 # Result: target/release/bundle/{deb,appimage}/…
 #
 #   ./scripts/build-linux.sh --install-deps     first time: installs the Ubuntu packages (sudo)
 #   ./scripts/build-linux.sh                    later builds (incremental)
-#   ./scripts/build-linux.sh --no-browser       quicker: RAD without the built-in browser
+#   ./scripts/build-linux.sh --no-browser       quicker: RAD without the built-in (Servo) browser
+#   ./scripts/build-linux.sh --no-chromium      RAD without the Chromium browser (~300 MB smaller)
 #   ./scripts/build-linux.sh --bundles deb      only the .deb (default: deb,appimage)
 # Other arguments go to `cargo tauri build`.
 set -euo pipefail
@@ -17,12 +19,14 @@ cd "$(dirname "$0")/.."
 
 install_deps=0
 browser=1
+chromium=1
 args=()
 have_bundles=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --install-deps) install_deps=1 ;;
     --no-browser) browser=0 ;;
+    --no-chromium) chromium=0 ;;
     --bundles|-b) have_bundles=1; args+=("$1" "$2"); shift ;;
     *) args+=("$1") ;;
   esac
@@ -75,6 +79,7 @@ triple="$(rustc -vV | sed -n 's/^host: //p')"
 # ------------------------------------------------------------------ models and engines
 ./scripts/fetch-models.sh
 [[ $browser == 1 ]] && ./scripts/build-browser.sh "$triple"
+[[ $chromium == 1 ]] && ./scripts/build-chromium.sh
 ./scripts/build-tts.sh "$triple"
 
 # Bundle whichever engines are built for this platform. Engines from an earlier build with
@@ -84,16 +89,23 @@ for b in rad-browser mio-tts-server; do
   [[ $b == rad-browser && $browser == 0 ]] && continue
   [[ -f "app/src-tauri/binaries/$b-$triple" ]] && bins+=("\"binaries/$b\"")
 done
+# The Chromium engine is a folder (executable + CEF libraries); it ships as a resource.
+resources=""
+built=("${bins[@]}")
+if [[ $chromium == 1 && -d browser/rad-chromium/target/bundle/rad-chromium ]]; then
+  resources=",\"resources\":{\"$PWD/browser/rad-chromium/target/bundle/rad-chromium/**/*\":\"rad-chromium/\"}"
+  built+=("rad-chromium")
+fi
 cfg="$PWD/target/rad-bundle.conf.json"
 mkdir -p target
-(IFS=,; echo "{\"bundle\":{\"externalBin\":[${bins[*]:-}]}}") > "$cfg"
+(IFS=,; echo "{\"bundle\":{\"externalBin\":[${bins[*]:-}]$resources}}") > "$cfg"
 
 # ------------------------------------------------------------------ app
 (cd app/ui && { [[ -d node_modules ]] || npm ci; })
 (cd app && cargo tauri build --config "$cfg" "${args[@]}")
 
 echo
-echo "Built with: ${bins[*]:-no engines}"
+echo "Built with: ${built[*]:-no engines}"
 for f in target/release/bundle/deb/*.deb target/release/bundle/appimage/*.AppImage target/release/bundle/rpm/*.rpm; do
   [[ -f "$f" ]] && echo "  $PWD/$f"
 done

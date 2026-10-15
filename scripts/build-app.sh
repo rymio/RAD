@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds the RAD desktop app with its engines inside the bundle:
 #   - the web browser engine (Servo)        → scripts/build-browser.sh
+#   - the Chromium engine (CEF)             → scripts/build-chromium.sh (skip: RAD_NO_CHROMIUM=1)
 #   - the text-to-speech engine (MioTTS)    → scripts/build-tts.sh
 #   - the Linux sandbox engine (libkrun)    → scripts/build-sandbox.sh (macOS on Apple Silicon)
 # All are incremental, so re-running is quick. Extra arguments go to `cargo tauri build`
@@ -15,6 +16,7 @@ cd "$(dirname "$0")/.."
 triple="$(rustc -vV | sed -n 's/^host: //p')"
 
 ./scripts/build-browser.sh "$triple"
+[[ "${RAD_NO_CHROMIUM:-}" == 1 ]] || ./scripts/build-chromium.sh
 ./scripts/build-tts.sh "$triple"
 ./scripts/build-sandbox.sh "$triple"
 
@@ -61,6 +63,21 @@ fi
 (cd app && cargo tauri build --config "$cfg" ${args[@]+"${args[@]}"})
 
 app="target/release/bundle/macos/RAD.app"
+chromium="browser/rad-chromium/target/bundle/rad-chromium.app"
+if [[ -d "$app" && -d "$chromium" && "${RAD_NO_CHROMIUM:-}" != 1 ]]; then
+  # The Chromium engine is an app of its own (CEF framework + helper apps); it goes where macOS
+  # expects nested apps, and is signed inside-out like everything else.
+  rm -rf "$app/Contents/Helpers/rad-chromium.app"
+  mkdir -p "$app/Contents/Helpers"
+  ditto "$chromium" "$app/Contents/Helpers/rad-chromium.app"
+  identity="${APPLE_SIGNING_IDENTITY:--}"
+  ents=browser/rad-chromium/entitlements.plist
+  cef="$app/Contents/Helpers/rad-chromium.app/Contents/Frameworks"
+  for f in "$cef/Chromium Embedded Framework.framework/Libraries/"*.dylib; do [[ -f "$f" ]] && codesign --force --sign "$identity" "$f"; done
+  codesign --force --sign "$identity" "$cef/Chromium Embedded Framework.framework"
+  for h in "$cef/"*Helper*.app; do codesign --force --sign "$identity" --entitlements "$ents" "$h"; done
+  codesign --force --sign "$identity" --entitlements "$ents" "$app/Contents/Helpers/rad-chromium.app"
+fi
 if [[ -d "$app" ]]; then
   # Without a signing identity Tauri leaves the bundle unsealed. Sign it inside-out — libraries,
   # helpers (the sandbox launcher with its hypervisor entitlement), then the app — so the
@@ -93,5 +110,6 @@ if [[ $want_dmg == 1 && -d "$app" ]]; then
 fi
 
 echo
+[[ -d "$app/Contents/Helpers/rad-chromium.app" ]] && bins+=("rad-chromium")
 echo "Built with: ${bins[*]:-no engines}"
 echo "On macOS: quit RAD, then replace /Applications/RAD.app with $PWD/$app"
