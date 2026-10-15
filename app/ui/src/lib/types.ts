@@ -125,15 +125,37 @@ export interface VaultSharing {
   sessions: { machine: string; this: boolean; since: number; last_seen: number }[];
 }
 
+/** The media players (libVLC engine, one process each): Music plays sound only. */
+export type MediaPlayerKind = 'music' | 'video';
+export type MediaState = 'idle' | 'opening' | 'buffering' | 'playing' | 'paused' | 'stopped' | 'ended' | 'error';
+export interface MediaStatus {
+  state: MediaState; has_media: boolean; time: number; length: number; seekable: boolean; rate: number;
+  volume: number; muted: boolean; video: [number, number] | null; aspect: number | null;
+}
+export interface MediaMeta { title: string | null; artist: string | null; album: string | null; genre: string | null; date: string | null; track: string | null; now_playing: string | null }
+export interface MediaTrackInfo { id: number; name: string }
+export interface MediaTracks { audio: MediaTrackInfo[]; audio_current: number; spu: MediaTrackInfo[]; spu_current: number }
+export interface EqPreset { name: string; preamp: number; bands: number[] }
+export interface EqInfo { freqs: number[]; presets: EqPreset[] }
+/** Where a playlist entry plays from: a file on this computer or a file in the vault. */
+export type MediaSource = { kind: 'file'; path: string } | { kind: 'vault'; id: Id };
+export interface MediaItem { key: string; src: MediaSource; title: string; artist?: string | null; album?: string | null; duration?: number }
+
+/** The built-in browsers: Servo ("Web Browser") and Chromium (CEF). */
+export type BrowserEngine = 'servo' | 'chromium';
+
 export type Route =
   | { kind: 'chat'; id: Id | null }
   | { kind: 'project'; id: Id; doc?: Id }
   | { kind: 'settings'; tab?: string }
   | { kind: 'browser' }
+  | { kind: 'chromium' }
   | { kind: 'terminal' }
   | { kind: 'files' }
   | { kind: 'calendar' }
-  | { kind: 'email' };
+  | { kind: 'email' }
+  | { kind: 'music' }
+  | { kind: 'video' };
 
 /** Something the assistant asks the app to do (see crates/rad-server/src/agent.rs). */
 export interface AgentAction { kind: 'ssh' | 'open_url' | 'terminal' | string; host?: string; user?: string; port?: number; identity_file?: string; url?: string }

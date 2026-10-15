@@ -12,3 +12,5 @@ node_modules
 /sandbox/work
 /sandbox/bin
 /app/src-tauri/frameworks
+/browser/rad-chromium/target
+/media/rad-media/target

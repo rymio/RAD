@@ -2,6 +2,7 @@
 # Builds the RAD desktop app with its engines inside the bundle:
 #   - the web browser engine (Servo)        → scripts/build-browser.sh
 #   - the Chromium engine (CEF)             → scripts/build-chromium.sh (skip: RAD_NO_CHROMIUM=1)
+#   - the media engine (libVLC, Music/Video) → scripts/build-media.sh   (skip: RAD_NO_MEDIA=1; needs VLC)
 #   - the text-to-speech engine (MioTTS)    → scripts/build-tts.sh
 #   - the Linux sandbox engine (libkrun)    → scripts/build-sandbox.sh (macOS on Apple Silicon)
 # All are incremental, so re-running is quick. Extra arguments go to `cargo tauri build`
@@ -17,6 +18,8 @@ triple="$(rustc -vV | sed -n 's/^host: //p')"
 
 ./scripts/build-browser.sh "$triple"
 [[ "${RAD_NO_CHROMIUM:-}" == 1 ]] || ./scripts/build-chromium.sh
+# Without VLC installed the app is still built; Music and Video then say the engine is missing.
+[[ "${RAD_NO_MEDIA:-}" == 1 ]] || ./scripts/build-media.sh || echo "warning: building without the media engine (Music, Video)" >&2
 ./scripts/build-tts.sh "$triple"
 ./scripts/build-sandbox.sh "$triple"
 
@@ -78,6 +81,17 @@ if [[ -d "$app" && -d "$chromium" && "${RAD_NO_CHROMIUM:-}" != 1 ]]; then
   for h in "$cef/"*Helper*.app; do codesign --force --sign "$identity" --entitlements "$ents" "$h"; done
   codesign --force --sign "$identity" --entitlements "$ents" "$app/Contents/Helpers/rad-chromium.app"
 fi
+media=media/rad-media/target/bundle/rad-media
+if [[ -d "$app" && -x "$media/rad-media" && "${RAD_NO_MEDIA:-}" != 1 ]]; then
+  # The media engine with libVLC and its plugins, signed with the app's identity (macOS only
+  # loads libraries signed like the process that loads them).
+  rm -rf "$app/Contents/Helpers/rad-media"
+  mkdir -p "$app/Contents/Helpers"
+  ditto "$media" "$app/Contents/Helpers/rad-media"
+  identity="${APPLE_SIGNING_IDENTITY:--}"
+  find "$app/Contents/Helpers/rad-media" -name '*.dylib' -type f -print0 | xargs -0 codesign --force --sign "$identity"
+  codesign --force --sign "$identity" "$app/Contents/Helpers/rad-media/rad-media"
+fi
 if [[ -d "$app" ]]; then
   # Without a signing identity Tauri leaves the bundle unsealed. Sign it inside-out — libraries,
   # helpers (the sandbox launcher with its hypervisor entitlement), then the app — so the
@@ -111,5 +125,6 @@ fi
 
 echo
 [[ -d "$app/Contents/Helpers/rad-chromium.app" ]] && bins+=("rad-chromium")
+[[ -d "$app/Contents/Helpers/rad-media" ]] && bins+=("rad-media")
 echo "Built with: ${bins[*]:-no engines}"
 echo "On macOS: quit RAD, then replace /Applications/RAD.app with $PWD/$app"

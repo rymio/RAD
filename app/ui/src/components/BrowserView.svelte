@@ -4,11 +4,14 @@
   import { rad, RadError } from '../lib/api';
   import { store } from '../lib/state.svelte';
   import { toUrl, hostOf } from '../lib/web';
-  import type { BrowserState, BrowserTab } from '../lib/types';
+  import type { BrowserEngine, BrowserState, BrowserTab } from '../lib/types';
   import BrowserChat from './BrowserChat.svelte';
-  import { ArrowLeft, ArrowRight, RotateCw, Plus, X, Lock, Globe, Camera, FileDown, Loader, MessageSquare, ZoomIn, ZoomOut, Home, TriangleAlert, Star } from '@lucide/svelte';
+  import { ArrowLeft, ArrowRight, RotateCw, Plus, X, Lock, Globe, Camera, FileDown, Loader, MessageSquare, ZoomIn, ZoomOut, Home, TriangleAlert, Star, Download, FolderOpen, FolderInput, Check } from '@lucide/svelte';
 
-  const HOME = 'https://servo.org';
+  /** Which engine renders this view: Servo ("Web Browser") or Chromium. */
+  let { kind = 'servo' }: { kind?: BrowserEngine } = $props();
+  const HOME = $derived(kind === 'chromium' ? 'https://www.google.com' : 'https://servo.org');
+  const engineName = $derived(kind === 'chromium' ? 'Chromium' : 'browser');
 
   let viewport: HTMLDivElement | undefined = $state();
   let canvas: HTMLCanvasElement | undefined = $state();
@@ -28,6 +31,8 @@
   let dialog = $state<{ control: number; kind: string; message: string; value: string; host: string } | null>(null);
   let select = $state<{ control: number; options: any[]; selected: number[]; x: number; y: number; w: number } | null>(null);
   let canvasCss = $state({ w: 0, h: 0 });
+  /** Chromium saves downloads to the Downloads folder; they can then go into the vault. */
+  let downloads = $state<{ id: number; name: string; path: string; received: number; total: number; state: string; vault?: 'saving' | 'saved' }[]>([]);
 
   const tab = $derived(tabs.find((t) => t.id === active) ?? null);
   const bookmarked = $derived(!!tab?.url && store.bookmarks.some((b) => b.url === tab.url));
@@ -43,8 +48,9 @@
 
   // Pages the assistant opened ("open servo.org").
   $effect(() => {
+    // The assistant opens pages in the Web Browser (Servo).
     const url = store.pendingBrowserUrl;
-    if (!url || engine === 'starting') return;
+    if (kind !== 'servo' || !url || engine === 'starting') return;
     store.pendingBrowserUrl = null;
     if (engine === 'running' && tabs.length) send({ cmd: 'new_tab', url });
     else go(url);
@@ -56,7 +62,7 @@
   });
 
   const dpr = () => window.devicePixelRatio || 1;
-  const send = (cmd: Record<string, unknown>) => rad.browserSend(cmd).catch(() => {});
+  const send = (cmd: Record<string, unknown>) => rad.browserSend(kind, cmd).catch(() => {});
 
   // ------------------------------------------------------------ frames
 
@@ -71,7 +77,7 @@
     try {
       do {
         again = false;
-        draw(await rad.browserFrame());
+        draw(await rad.browserFrame(kind));
       } while (again);
     } catch {
       /* engine gone; the 'exited' event explains */
@@ -107,7 +113,7 @@
     engine = 'starting';
     const { w, h } = viewportSize();
     try {
-      const st = await rad.browserStart(w, h, dpr(), url);
+      const st = await rad.browserStart(kind, w, h, dpr(), url);
       if (st) applyState(st);
       engine = 'running';
       send({ cmd: 'theme', theme: document.documentElement.dataset.theme === 'light' ? 'light' : 'dark' });
@@ -144,8 +150,17 @@
         if (select?.control === ev.control) select = null;
         break;
       case 'error':
-        store.toast('error', 'Browser', ev.message);
+        store.toast('error', kind === 'chromium' ? 'Chromium' : 'Browser', ev.message);
         break;
+      case 'download': {
+        const d = { id: ev.id, name: ev.name, path: ev.path, received: ev.received, total: ev.total, state: ev.state };
+        const i = downloads.findIndex((x) => x.id === ev.id);
+        if (i >= 0) downloads[i] = { ...downloads[i], ...d };
+        else downloads = [d, ...downloads].slice(0, 5);
+        if (ev.state === 'done') store.toast('success', 'Downloaded', ev.name, 2500);
+        else if (ev.state === 'failed') store.toast('error', 'Download failed', ev.name);
+        break;
+      }
       case 'crashed':
         store.toast('error', 'The page crashed', ev.reason);
         break;
@@ -162,8 +177,9 @@
 
   onMount(() => {
     const un: Array<() => void> = [];
-    listen('browser-frame', () => pull()).then((u) => un.push(u));
-    listen<any>('browser-event', (e) => onEvent(e.payload)).then((u) => un.push(u));
+    // Both engines share these events; each view follows its own.
+    listen<string>('browser-frame', (e) => e.payload === kind && pull()).then((u) => un.push(u));
+    listen<any>('browser-event', (e) => (e.payload.engine ?? 'servo') === kind && onEvent(e.payload)).then((u) => un.push(u));
     start();
 
     let t: ReturnType<typeof setTimeout> | undefined;
@@ -334,19 +350,40 @@
 
   // ------------------------------------------------------------ vault
 
-  async function save(kind: 'shot' | 'page') {
-    if (saving) return;
-    saving = kind;
+  function formatSize(n: number) {
+    return n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+  }
+
+  async function saveDownload(id: number) {
+    const d = downloads.find((x) => x.id === id);
+    if (!d) return;
+    d.vault = 'saving';
     try {
       const inbox = await store.inboxProject();
-      const r = kind === 'shot' ? await rad.browserSaveScreenshot(inbox.id) : await rad.browserSavePage(inbox.id);
+      const res = await rad.uploadPaths(inbox.id, [d.path]);
+      const err = res.find((r: any) => 'error' in r) as any;
+      if (err) throw new Error(err.error);
+      d.vault = 'saved';
+      store.toast('success', 'Saved to your vault', `${d.name} — in ${inbox.name}. Indexed for chat and search.`);
+    } catch (e) {
+      d.vault = undefined;
+      store.error(e, 'Couldn’t add the file to your vault');
+    }
+  }
+
+  async function save(what: 'shot' | 'page') {
+    if (saving) return;
+    saving = what;
+    try {
+      const inbox = await store.inboxProject();
+      const r = what === 'shot' ? await rad.browserSaveScreenshot(kind, inbox.id) : await rad.browserSavePage(kind, inbox.id);
       store.toast(
         'success',
-        kind === 'shot' ? 'Screenshot saved to your vault' : 'Page saved to your vault',
-        `${r.document.title} — in ${inbox.name}. ${kind === 'shot' ? 'The vision model will describe it for search.' : 'Indexed for chat and search.'}`,
+        what === 'shot' ? 'Screenshot saved to your vault' : 'Page saved to your vault',
+        `${r.document.title} — in ${inbox.name}. ${what === 'shot' ? 'The vision model will describe it for search.' : 'Indexed for chat and search.'}`,
       );
     } catch (e) {
-      store.error(e, kind === 'shot' ? 'Screenshot failed' : 'Saving the page failed');
+      store.error(e, what === 'shot' ? 'Screenshot failed' : 'Saving the page failed');
     } finally {
       saving = null;
     }
@@ -440,7 +477,7 @@
       <div class="notice">
         <div class="card">
           <TriangleAlert size={22} />
-          <strong>{engine === 'missing' ? 'The browser engine isn’t installed' : 'The browser engine stopped'}</strong>
+          <strong>{engine === 'missing' ? `The ${engineName} engine isn’t installed` : `The ${engineName} engine stopped`}</strong>
           <p>{engineError || 'Something went wrong while rendering.'}</p>
 
           <button class="btn primary sm" onclick={() => start(tab?.url || HOME)}>{engine === 'missing' ? 'Try again' : 'Restart'}</button>
@@ -487,8 +524,34 @@
     {/if}
   </div>
 
+  {#if downloads.length}
+    <div class="downloads">
+      {#each downloads as d (d.id)}
+        <div class="dl">
+          <Download size={14} />
+          <div class="dl-main">
+            <span class="truncate" title={d.path}>{d.name}</span>
+            {#if d.state === 'progress' || d.state === 'started'}
+              <div class="dl-bar"><div style="width:{d.total > 0 ? Math.round((d.received / d.total) * 100) : 30}%"></div></div>
+            {:else}
+              <span class="dl-sub">{d.state === 'done' ? formatSize(d.received) : d.state === 'canceled' ? 'Canceled' : 'Failed'}</span>
+            {/if}
+          </div>
+          {#if d.state === 'done'}
+            <button class="icon-btn sm" title="Show in folder" onclick={() => rad.fsReveal(d.path)}><FolderOpen size={14} /></button>
+            <button class="btn sm" disabled={!!d.vault} onclick={() => saveDownload(d.id)} title="Add this file to your vault (encrypted, indexed for chat)">
+              {#if d.vault === 'saving'}<Loader size={13} class="spin" />{:else if d.vault === 'saved'}<Check size={13} />{:else}<FolderInput size={13} />{/if}
+              {d.vault === 'saved' ? 'In vault' : 'Save to vault'}
+            </button>
+          {/if}
+          <button class="icon-btn sm" title="Dismiss" onclick={() => (downloads = downloads.filter((x) => x.id !== d.id))}><X size={13} /></button>
+        </div>
+      {/each}
+    </div>
+  {/if}
+
   {#if chatOpen}
-    <BrowserChat page={tab} onlink={(href) => go(href)} />
+    <BrowserChat page={tab} engine={kind} onlink={(href) => go(href)} />
   {/if}
 </div>
 
@@ -809,5 +872,49 @@
     font-size: 11.5px;
     font-weight: 650;
     color: var(--text-3);
+  }
+  .downloads {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 10px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .dl {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--text-2);
+  }
+  .dl > :global(svg) {
+    color: var(--accent);
+    flex: none;
+  }
+  .dl-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .dl-sub {
+    color: var(--text-3);
+    flex: none;
+  }
+  .dl-bar {
+    flex: 1;
+    max-width: 220px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--surface-2);
+    overflow: hidden;
+  }
+  .dl-bar div {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.2s;
   }
 </style>

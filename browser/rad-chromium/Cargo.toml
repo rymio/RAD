@@ -1,0 +1,53 @@
+[package]
+name = "rad-chromium"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Robert <robert@rymtechsystems.com>"]
+description = "RAD Chromium engine: an offscreen CEF (Chromium Embedded Framework) instance driven over stdin/stdout, speaking the same protocol as rad-browser"
+default-run = "rad-chromium"
+
+# CEF ships its own copies of many libraries (ICU, SQLite…), so like rad-browser the engine is
+# its own workspace and runs as a separate process next to the app.
+[workspace]
+
+[[bin]]
+name = "rad-chromium"
+path = "src/main.rs"
+
+# macOS: CEF's sub-processes (GPU, renderer, network…) run from separate helper apps.
+[[bin]]
+name = "rad-chromium-helper"
+path = "src/bin/helper.rs"
+
+# Lays out the runnable engine (CEF framework/libraries + helpers) under target/bundle.
+[[bin]]
+name = "rad-chromium-bundle"
+path = "src/bin/bundle.rs"
+
+[package.metadata.cef.bundle]
+helper_name = "rad-chromium-helper"
+
+[dependencies]
+cef = { version = "=154.5.0", default-features = false, features = ["build-util"] }
+serde_json = "1"
+crossbeam-channel = "0.5"
+log = "0.4"
+env_logger = "0.11"
+semver = "1"
+plist = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# The Chromium sandbox: on macOS the helpers start it themselves.
+[target.'cfg(target_os = "macos")'.dependencies]
+cef = { version = "=154.5.0", default-features = false, features = ["build-util", "sandbox"] }
+objc2 = "0.6.3"
+objc2-foundation = "0.3.2"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSApplication", "NSEvent", "NSResponder", "NSRunningApplication"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true

@@ -3,11 +3,11 @@
   import { api, rad } from '../lib/api';
   import { store } from '../lib/state.svelte';
   import { hostOf, pageContext, wantsScreenshot, type ShotMode } from '../lib/web';
-  import type { BrowserSnapshot, BrowserTab, Chat, Citation, Message } from '../lib/types';
+  import type { BrowserEngine, BrowserSnapshot, BrowserTab, Chat, Citation, Message } from '../lib/types';
   import MessageItem from './MessageItem.svelte';
   import { ArrowUp, Square, FileText, Eye, EyeOff, BookOpen, MessagesSquare, SquarePen, ExternalLink, ChevronDown, ChevronUp, Minus, Plus, Sparkles } from '@lucide/svelte';
 
-  let { page, onlink }: { page: BrowserTab | null; onlink: (href: string) => void } = $props();
+  let { page, onlink, engine = 'servo' }: { page: BrowserTab | null; onlink: (href: string) => void; engine?: BrowserEngine } = $props();
 
   let text = $state('');
   let input: HTMLTextAreaElement | undefined = $state();
@@ -43,7 +43,7 @@
   }
   let looking = $state('');
 
-  const chatId = $derived(store.browserChatId);
+  const chatId = $derived(store.browserChatIds[engine]);
   const chat = $derived(chatId ? store.chats.find((c) => c.id === chatId) : null);
   const messages = $derived(chatId ? (store.messages[chatId] ?? []) : []);
   const draft = $derived(chatId ? store.drafts[chatId] : undefined);
@@ -56,7 +56,7 @@
   });
 
   $effect(() => {
-    if (chatId && !store.messages[chatId] && !store.drafts[chatId]) store.loadChat(chatId).catch(() => (store.browserChatId = null));
+    if (chatId && !store.messages[chatId] && !store.drafts[chatId]) store.loadChat(chatId).catch(() => (store.browserChatIds[engine] = null));
   });
 
   const draftAssistant = $derived<Message | null>(
@@ -98,7 +98,7 @@
     const c = await api.post<Chat>('/v1/chats', { title: host ? `Web · ${host}` : 'Web browsing', mode: useVault ? 'rag' : 'chat_only' });
     store.chats = [c, ...store.chats];
     store.messages[c.id] = [];
-    store.browserChatId = c.id;
+    store.browserChatIds[engine] = c.id;
     return c.id;
   }
 
@@ -112,10 +112,10 @@
       let snap: BrowserSnapshot = {};
       if (page && (sendText || shot !== 'off')) {
         looking = 'Reading the page…';
-        snap = await rad.browserSnapshot(sendText || shot === 'auto', false).catch(() => ({}));
+        snap = await rad.browserSnapshot(engine, sendText || shot === 'auto', false).catch(() => ({}));
         if (wantsScreenshot(shot, q, snap.page, hasVision)) {
           looking = 'Looking at the page…';
-          const img = await rad.browserSnapshot(false, true).catch((e) => (store.error(e, 'Couldn’t take a screenshot'), {} as BrowserSnapshot));
+          const img = await rad.browserSnapshot(engine, false, true).catch((e) => (store.error(e, 'Couldn’t take a screenshot'), {} as BrowserSnapshot));
           snap.image = img.image;
         }
       }
@@ -134,7 +134,7 @@
   }
 
   function newChat() {
-    store.browserChatId = null;
+    store.browserChatIds[engine] = null;
     text = '';
     input?.focus();
   }

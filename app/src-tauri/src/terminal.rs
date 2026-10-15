@@ -37,6 +37,57 @@ struct Session {
     out: Mutex<Option<Channel<InvokeResponseBody>>>,
     /// A sandbox's private network; stopped with the session.
     net: Mutex<Option<crate::sandbox::Net>>,
+    /// How to reach an SSH session's server again (for the agent, uploads and downloads).
+    ssh: Option<SshTarget>,
+}
+
+/// An SSH session's server. The terminal's connection is shared (OpenSSH `ControlMaster`), so
+/// the agent's commands and file transfers reuse it without asking for a password again.
+#[derive(Debug, Clone)]
+pub struct SshTarget {
+    /// `user@host` or `host`.
+    pub target: String,
+    pub port: Option<u16>,
+    pub identity: Option<String>,
+    /// The shared connection's socket (not on Windows, whose OpenSSH can't share connections).
+    pub control: Option<std::path::PathBuf>,
+}
+
+impl SshTarget {
+    /// Options shared by ssh and scp (`port_flag`: `-p` for ssh, `-P` for scp).
+    pub fn options(&self, port_flag: &str) -> Vec<String> {
+        let mut v = Vec::new();
+        if let Some(p) = self.port.filter(|p| *p != 22) {
+            v.extend([port_flag.to_string(), p.to_string()]);
+        }
+        if let Some(k) = &self.identity {
+            v.extend(["-i".to_string(), k.clone()]);
+        }
+        if let Some(c) = &self.control {
+            v.extend(["-o".to_string(), format!("ControlPath={}", c.join("%C").display())]);
+        }
+        v
+    }
+}
+
+/// Where shared SSH connections keep their sockets: ~/.ssh/rad-cm (private). Socket paths are
+/// limited to ~104 bytes and ssh adds 58 (`/` + a 40-character hash + a temporary suffix), so
+/// a very long home folder means no sharing.
+fn control_dir() -> Option<std::path::PathBuf> {
+    if cfg!(windows) {
+        return None;
+    }
+    let d = home()?.join(".ssh").join("rad-cm");
+    if d.as_os_str().len() > 44 {
+        return None;
+    }
+    std::fs::create_dir_all(&d).ok()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o700)).ok()?;
+    }
+    Some(d)
 }
 
 #[derive(Default)]
@@ -46,6 +97,31 @@ pub struct Terminals {
 }
 
 impl Terminals {
+    /// What the agent works on in a session: its kind and, for SSH, the server.
+    pub fn agent_target(&self, id: u32) -> CmdResult<(String, Option<SshTarget>)> {
+        let s = self.get(id)?;
+        let i = s.info.lock().unwrap();
+        if i.exited.is_some() {
+            return Err(CmdError::new("terminal", "This terminal has closed — open it again"));
+        }
+        Ok((i.kind.clone(), s.ssh.clone()))
+    }
+
+    /// Shows output in a session's terminal (and its scrollback) without sending it to the shell.
+    pub fn show(&self, id: u32, bytes: &[u8]) {
+        let Ok(s) = self.get(id) else { return };
+        {
+            let mut h = s.history.lock().unwrap();
+            h.extend(bytes);
+            let extra = h.len().saturating_sub(HISTORY);
+            h.drain(..extra);
+        }
+        let out = s.out.lock().unwrap();
+        if let Some(ch) = out.as_ref() {
+            let _ = ch.send(InvokeResponseBody::Raw(bytes.to_vec()));
+        }
+    }
+
     fn get(&self, id: u32) -> CmdResult<Arc<Session>> {
         self.sessions.lock().unwrap().get(&id).cloned().ok_or_else(|| CmdError::new("not_found", "That terminal is closed"))
     }
@@ -98,7 +174,7 @@ fn home() -> Option<std::path::PathBuf> {
     std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(Into::into)
 }
 
-fn command(a: &OpenArgs) -> CmdResult<(CommandBuilder, String)> {
+fn command(a: &OpenArgs, control: Option<&std::path::Path>) -> CmdResult<(CommandBuilder, String, Option<SshTarget>)> {
     match a.kind.as_str() {
         "ssh" => {
             let host = a.host.as_deref().map(str::trim).filter(|h| host_ok(h)).ok_or_else(|| CmdError::new("bad_request", "Enter a valid host name"))?;
@@ -106,24 +182,24 @@ fn command(a: &OpenArgs) -> CmdResult<(CommandBuilder, String)> {
             if user.is_some_and(|u| !user_ok(u)) {
                 return Err(CmdError::new("bad_request", "That user name isn't valid"));
             }
-            let mut cmd = CommandBuilder::new("ssh");
-            if let Some(p) = a.port.filter(|p| *p != 22) {
-                cmd.args(["-p", &p.to_string()]);
-            }
-            if let Some(k) = a.identity_file.as_deref().map(str::trim).filter(|k| !k.is_empty()) {
-                let k = match (k.strip_prefix("~/"), home()) {
-                    (Some(rest), Some(h)) => h.join(rest).display().to_string(),
-                    _ => k.to_string(),
-                };
-                cmd.args(["-i", &k]);
-            }
+            let identity = a.identity_file.as_deref().map(str::trim).filter(|k| !k.is_empty()).map(|k| match (k.strip_prefix("~/"), home()) {
+                (Some(rest), Some(h)) => h.join(rest).display().to_string(),
+                _ => k.to_string(),
+            });
             let target = match user {
                 Some(u) => format!("{u}@{host}"),
                 None => host.to_string(),
             };
+            let t = SshTarget { target: target.clone(), port: a.port, identity, control: control.map(Into::into) };
+            let mut cmd = CommandBuilder::new("ssh");
+            cmd.args(t.options("-p"));
+            if t.control.is_some() {
+                // This terminal's connection is the one the agent and file transfers reuse.
+                cmd.args(["-o", "ControlMaster=auto", "-o", "ControlPersist=60"]);
+            }
             // `--` ends options: nothing after it can be read as an ssh flag.
             cmd.args(["--", &target]);
-            Ok((cmd, target))
+            Ok((cmd, target, Some(t)))
         }
         _ => {
             let shell = if cfg!(windows) {
@@ -136,7 +212,7 @@ fn command(a: &OpenArgs) -> CmdResult<(CommandBuilder, String)> {
                 cmd.arg("-l");
             }
             let title = std::path::Path::new(&shell).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(shell.clone());
-            Ok((cmd, title))
+            Ok((cmd, title, None))
         }
     }
 }
@@ -145,6 +221,7 @@ fn command(a: &OpenArgs) -> CmdResult<(CommandBuilder, String)> {
 pub async fn term_open(app: AppHandle, t: State<'_, Terminals>, args: OpenArgs) -> CmdResult<TermInfo> {
     let mut net = None;
     let mut sandbox = None;
+    let mut ssh = None;
     let (mut cmd, title) = if args.kind == "sandbox" {
         let id = args.sandbox.clone().ok_or_else(|| CmdError::new("bad_request", "Choose a sandbox"))?;
         if let Some(open) = t.sandbox_session(&id) {
@@ -167,7 +244,10 @@ pub async fn term_open(app: AppHandle, t: State<'_, Terminals>, args: OpenArgs) 
         sandbox = Some(id);
         (l.cmd, l.title)
     } else {
-        command(&args)?
+        let control = if args.kind == "ssh" { control_dir() } else { None };
+        let (cmd, title, target) = command(&args, control.as_deref())?;
+        ssh = target;
+        (cmd, title)
     };
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
@@ -191,6 +271,7 @@ pub async fn term_open(app: AppHandle, t: State<'_, Terminals>, args: OpenArgs) 
         history: Mutex::new(VecDeque::new()),
         out: Mutex::new(None),
         net: Mutex::new(net),
+        ssh,
     });
     t.sessions.lock().unwrap().insert(id, s.clone());
     std::thread::spawn(move || {
@@ -336,13 +417,17 @@ mod tests {
 
     #[test]
     fn ssh_command_is_safe() {
-        let (cmd, title) = command(&args("coursemat.au", "deploy", 2222, "/k/id")).unwrap();
+        let (cmd, title, _) = command(&args("coursemat.au", "deploy", 2222, "/k/id"), None).unwrap();
         let argv: Vec<String> = cmd.get_argv().iter().map(|a| a.to_string_lossy().into_owned()).collect();
         assert_eq!(argv, ["ssh", "-p", "2222", "-i", "/k/id", "--", "deploy@coursemat.au"]);
         assert_eq!(title, "deploy@coursemat.au");
-        assert!(command(&args("-oProxyCommand=evil", "", 22, "")).is_err());
-        assert!(command(&args("host.example", "$(id)", 22, "")).is_err());
-        assert!(command(&args("a.b;rm -rf ~", "", 22, "")).is_err());
+        let (cmd, _, t) = command(&args("coursemat.au", "", 22, ""), Some(std::path::Path::new("/h/.ssh/rad-cm"))).unwrap();
+        let argv: Vec<String> = cmd.get_argv().iter().map(|a| a.to_string_lossy().into_owned()).collect();
+        assert_eq!(argv, ["ssh", "-o", "ControlPath=/h/.ssh/rad-cm/%C", "-o", "ControlMaster=auto", "-o", "ControlPersist=60", "--", "coursemat.au"]);
+        assert_eq!(t.unwrap().options("-P"), ["-o", "ControlPath=/h/.ssh/rad-cm/%C"]);
+        assert!(command(&args("-oProxyCommand=evil", "", 22, ""), None).is_err());
+        assert!(command(&args("host.example", "$(id)", 22, ""), None).is_err());
+        assert!(command(&args("a.b;rm -rf ~", "", 22, ""), None).is_err());
     }
 
     #[cfg(unix)]

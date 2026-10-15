@@ -46,7 +46,8 @@ class Store {
   messages = $state<Record<number, T.Message[]>>({});
   drafts = $state<Record<number, Draft>>({});
   /** The conversation docked under the web browser. */
-  browserChatId = $state<number | null>(null);
+  /** The conversation beside each browser engine. */
+  browserChatIds = $state<Record<T.BrowserEngine, number | null>>({ servo: null, chromium: null });
   /** Kept in the vault: browser favourites and SSH hosts. */
   bookmarks = $state<T.Bookmark[]>([]);
   sshHosts = $state<T.SshHost[]>([]);

@@ -9,8 +9,9 @@
   import { store } from '../lib/state.svelte';
   import type { SandboxInfo, SshHost, TermInfo } from '../lib/types';
   import SandboxManager from './SandboxManager.svelte';
-  import SandboxChat from './SandboxChat.svelte';
-  import { agentFor } from '../lib/sandboxAgent.svelte';
+  import AgentDock from './AgentDock.svelte';
+  import { agentFor } from '../lib/termAgent.svelte';
+  import { platform } from '../lib/api';
   import Modal from './Modal.svelte';
   import { Plus, X, SquareTerminal, Server, KeyRound, Trash2, Box } from '@lucide/svelte';
 
@@ -43,11 +44,18 @@
   /** Name and distro of each sandbox, for the agent dock. */
   let sbMeta = $state<Record<string, { name: string; distro: string }>>({});
   const activeSession = $derived(sessions.find((s) => s.id === active) ?? null);
+  /** The AI agent for the active tab: in a sandbox, on an SSH server, or in a local shell. */
   const agent = $derived.by(() => {
     const s = activeSession;
-    if (!s || s.kind !== 'sandbox' || s.exited || !s.sandbox) return null;
-    const m = sbMeta[s.sandbox];
-    return agentFor(s.id, m?.name ?? s.title, m?.distro ?? 'Linux');
+    if (!s || s.exited) return null;
+    if (s.kind === 'sandbox') {
+      if (!s.sandbox) return null;
+      const m = sbMeta[s.sandbox];
+      return agentFor(s.id, 'sandbox', m?.name ?? s.title, m?.distro ?? 'Linux');
+    }
+    if (s.kind === 'ssh') return agentFor(s.id, 'ssh', s.title);
+    if (s.kind === 'local' && platform() !== 'windows') return agentFor(s.id, 'local', s.title);
+    return null;
   });
 
   async function refresh() {
@@ -306,7 +314,7 @@
     {/if}
   </div>
   {#if agent}
-    {#key agent}<SandboxChat {agent} />{/key}
+    {#key agent}<AgentDock {agent} />{/key}
   {/if}
 </div>
 

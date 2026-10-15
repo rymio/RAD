@@ -13,6 +13,8 @@
   import FilesView from './FilesView.svelte';
   import CalendarView from './CalendarView.svelte';
   import EmailView from './EmailView.svelte';
+  import MusicView from './MusicView.svelte';
+  import VideoView from './VideoView.svelte';
   import CommandPalette from './CommandPalette.svelte';
   import { UploadCloud, PanelLeftOpen } from '@lucide/svelte';
 
@@ -52,11 +54,11 @@
     getCurrentWebview()
       .onDragDropEvent((ev) => {
         const p = ev.payload;
-        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'terminal', 'files', 'calendar', 'email'].includes(store.route.kind);
+        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'terminal', 'files', 'calendar', 'email', 'music', 'video'].includes(store.route.kind);
         else if (p.type === 'leave') dragging = false;
         else if (p.type === 'drop') {
           dragging = false;
-          if (['browser', 'terminal', 'files', 'calendar', 'email'].includes(store.route.kind)) return;
+          if (['browser', 'chromium', 'terminal', 'files', 'calendar', 'email', 'music', 'video'].includes(store.route.kind)) return;
           uploadTo(p.paths);
         }
       })
@@ -103,6 +105,8 @@
       <Settings />
     {:else if store.route.kind === 'browser'}
       <BrowserView />
+    {:else if store.route.kind === 'chromium'}
+      <BrowserView kind="chromium" />
     {:else if store.route.kind === 'terminal'}
       <TerminalView />
     {:else if store.route.kind === 'files'}
@@ -111,6 +115,10 @@
       <CalendarView />
     {:else if store.route.kind === 'email'}
       <EmailView />
+    {:else if store.route.kind === 'music'}
+      <MusicView />
+    {:else if store.route.kind === 'video'}
+      <VideoView />
     {/if}
   </main>
   {#if dragging}

@@ -1,12 +1,13 @@
 <script lang="ts">
   import { store } from '../lib/state.svelte';
+  import { musicEngine } from '../lib/media.svelte';
   import { api } from '../lib/api';
   import { dayBucket, PROJECT_COLORS } from '../lib/util';
   import type { Chat } from '../lib/types';
   import Logo from './Logo.svelte';
   import Menu from './Menu.svelte';
   import Modal from './Modal.svelte';
-  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, PanelLeftClose } from '@lucide/svelte';
+  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard } from '@lucide/svelte';
 
   let newProjectOpen = $state(false);
   let npName = $state('');
@@ -94,6 +95,9 @@
     <button class="item web" class:active={store.route.kind === 'browser'} onclick={() => store.navigate({ kind: 'browser' })}>
       <Globe size={15} /> <span class="spacer">Web Browser</span>
     </button>
+    <button class="item web" class:active={store.route.kind === 'chromium'} onclick={() => store.navigate({ kind: 'chromium' })}>
+      <Compass size={15} /> <span class="spacer">Chromium</span>
+    </button>
     <button class="item web" class:active={store.route.kind === 'terminal'} onclick={() => store.navigate({ kind: 'terminal' })}>
       <SquareTerminal size={15} /> <span class="spacer">Terminal</span>
     </button>
@@ -105,6 +109,13 @@
     </button>
     <button class="item web" class:active={store.route.kind === 'email'} onclick={() => store.navigate({ kind: 'email' })}>
       <Mail size={15} /> <span class="spacer">Email</span>
+    </button>
+    <button class="item web" class:active={store.route.kind === 'music'} onclick={() => store.navigate({ kind: 'music' })}>
+      <Music size={15} /> <span class="spacer">Music</span>
+      {#if musicEngine.status.state === 'playing'}<span class="playing" title="Playing"><i></i><i></i><i></i></span>{/if}
+    </button>
+    <button class="item web" class:active={store.route.kind === 'video'} onclick={() => store.navigate({ kind: 'video' })}>
+      <Clapperboard size={15} /> <span class="spacer">Video</span>
     </button>
     <div class="sect">
       <div class="sect-h">
@@ -417,5 +428,36 @@
   .sw.sel {
     border-color: var(--surface);
     box-shadow: 0 0 0 2px var(--text);
+  }
+  /* Music is playing: three bouncing bars. */
+  .playing {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 11px;
+  }
+  .playing i {
+    width: 2px;
+    height: 100%;
+    background: var(--accent);
+    border-radius: 1px;
+    animation: bars 0.9s ease-in-out infinite alternate;
+  }
+  .playing i:nth-child(2) {
+    animation-delay: -0.3s;
+  }
+  .playing i:nth-child(3) {
+    animation-delay: -0.6s;
+  }
+  @keyframes bars {
+    from {
+      transform: scaleY(0.3);
+    }
+    to {
+      transform: scaleY(1);
+    }
+  }
+  .playing i {
+    transform-origin: bottom;
   }
 </style>

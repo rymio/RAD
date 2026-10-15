@@ -9,8 +9,9 @@ members = [
     "crates/rad-server",
     "app/src-tauri",
 ]
-# The web browser engine (Servo) is its own workspace: see browser/rad-browser.
-exclude = ["browser"]
+# The web browser engines and the media engine (libVLC) are their own workspaces: see
+# browser/rad-browser, browser/rad-chromium and media/rad-media.
+exclude = ["browser", "media"]
 
 [workspace.package]
 version = "0.1.0"

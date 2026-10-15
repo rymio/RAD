@@ -1,0 +1,21 @@
+[package]
+name = "rad-media"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Robert <robert@rymtechsystems.com>"]
+description = "RAD media engine: libVLC (vlc-rs) driven over stdin/stdout, for the Music and Video views"
+
+# libVLC is a system library (on macOS taken from VLC.app), so like the browser engines this is
+# its own workspace and runs as a separate process next to the app: RAD itself never links it.
+[workspace]
+
+[dependencies]
+vlc-rs = "0.3"
+serde_json = "1"
+libc = "0.2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true

@@ -7,11 +7,13 @@ mod commands;
 mod config;
 mod files;
 mod mail;
+mod media;
 mod events;
 mod protocol;
 mod sandbox;
 mod secrets;
 mod terminal;
+mod term_agent;
 mod tray;
 mod tts;
 
@@ -282,11 +284,13 @@ pub fn run() {
                 events_task: Mutex::new(None),
                 embedded: tokio::sync::Mutex::new(None),
             });
-            app.manage(browser::Browser::default());
+            app.manage(browser::Browsers::default());
             app.manage(terminal::Terminals::default());
+            app.manage(term_agent::Agents::default());
             app.manage(tts::Tts::default());
             app.manage(sandbox::Sandboxes::default());
             app.manage(mail::Mail::default());
+            app.manage(media::Media::default());
             let handle = app.handle().clone();
             tray::build(&handle)?;
             register_hotkeys(&handle);
@@ -353,6 +357,11 @@ pub fn run() {
             terminal::term_resize,
             terminal::term_close,
             terminal::sandbox_exec,
+            term_agent::agent_exec,
+            term_agent::agent_cancel,
+            term_agent::agent_set_sudo,
+            term_agent::ssh_upload,
+            term_agent::ssh_download,
             files::fs_places,
             files::fs_list,
             files::fs_preview,
@@ -365,6 +374,11 @@ pub fn run() {
             mail::mail_list,
             mail::mail_read,
             mail::mail_set_flags,
+            media::media_start,
+            media::media_stop,
+            media::media_send,
+            media::media_frame,
+            media::media_vault_url,
             tts::tts_status,
             tts::tts_download,
             tts::tts_remove,
@@ -387,7 +401,8 @@ pub fn run() {
             }
             if let tauri::RunEvent::Exit = ev {
                 // Drop the session — and in standalone mode lock the vault and checkpoint it.
-                app.state::<browser::Browser>().stop();
+                app.state::<browser::Browsers>().stop();
+                app.state::<media::Media>().stop();
                 app.state::<terminal::Terminals>().close_all();
                 app.state::<tts::Tts>().stop();
                 let st = app.state::<App>();

@@ -72,17 +72,19 @@ export const rad = {
   captureScreenshot: (projectId?: T.Id) => call<T.UploadResponse | null>('capture_screenshot', { projectId: projectId ?? null }),
   exportDocument: (documentId: T.Id, dest: string) => call<void>('export_document', { documentId, dest }),
 
-  browserStart: (width: number, height: number, scale: number, url?: string) =>
-    call<T.BrowserState | null>('browser_start', { width, height, scale, url: url ?? null }),
-  browserStop: () => call<void>('browser_stop'),
-  browserSend: (cmd: Record<string, unknown>) => call<void>('browser_send', { cmd }),
-  /** Changed rows of the page: `[w, h, y0, rows]` (u32 LE), then RGBA. */
-  browserFrame: () => invoke<ArrayBuffer>('browser_frame'),
-  browserEval: (script: string) => call<unknown>('browser_eval', { script }),
-  browserScrape: (maxChars?: number) => call<T.PageScrape>('browser_scrape', { maxChars: maxChars ?? null }),
-  browserSnapshot: (text: boolean, image: boolean) => call<T.BrowserSnapshot>('browser_snapshot', { text, image }),
-  browserSaveScreenshot: (projectId?: T.Id) => call<T.UploadResponse>('browser_save_screenshot', { projectId: projectId ?? null }),
-  browserSavePage: (projectId?: T.Id) => call<T.UploadResponse>('browser_save_page', { projectId: projectId ?? null }),
+  /** `engine`: 'servo' (Web Browser) or 'chromium' (CEF); each has its own process and tabs. */
+  browserStart: (engine: T.BrowserEngine, width: number, height: number, scale: number, url?: string) =>
+    call<T.BrowserState | null>('browser_start', { engine, width, height, scale, url: url ?? null }),
+  browserStop: (engine: T.BrowserEngine) => call<void>('browser_stop', { engine }),
+  browserSend: (engine: T.BrowserEngine, cmd: Record<string, unknown>) => call<void>('browser_send', { engine, cmd }),
+  /** Raw bytes: [w, h, y0, rows] (u32 LE) then RGBA rows. */
+  browserFrame: (engine: T.BrowserEngine) => invoke<ArrayBuffer>('browser_frame', { engine }),
+  browserEval: (engine: T.BrowserEngine, script: string) => call<unknown>('browser_eval', { engine, script }),
+  browserScrape: (engine: T.BrowserEngine, maxChars?: number) => call<T.PageScrape>('browser_scrape', { engine, maxChars: maxChars ?? null }),
+  browserSnapshot: (engine: T.BrowserEngine, text: boolean, image: boolean) => call<T.BrowserSnapshot>('browser_snapshot', { engine, text, image }),
+  browserSaveScreenshot: (engine: T.BrowserEngine, projectId?: T.Id) =>
+    call<T.UploadResponse>('browser_save_screenshot', { engine, projectId: projectId ?? null }),
+  browserSavePage: (engine: T.BrowserEngine, projectId?: T.Id) => call<T.UploadResponse>('browser_save_page', { engine, projectId: projectId ?? null }),
 
   termOpen: (args: {
     kind: 'local' | 'ssh' | 'sandbox'; host?: string; user?: string; port?: number; identity_file?: string;
@@ -107,6 +109,16 @@ export const rad = {
   /** One model reply for a conversation the app keeps itself (nothing is stored). */
   assist: (system: string, messages: { role: 'user' | 'assistant'; content: string }[]) =>
     req<{ content: string; model: string }>('POST', '/v1/assist', { system, messages }),
+  /** The terminal agent on an SSH server or this computer: runs one command (shown in the terminal unless `quiet`). */
+  agentExec: (id: number, command: string, timeoutSecs?: number, quiet = false) =>
+    call<{ exit_code: number | null; output: string; truncated: boolean; timed_out: boolean; cancelled: boolean; cwd: string | null }>('agent_exec', { id, command, timeoutSecs: timeoutSecs ?? null, quiet }),
+  agentCancel: (id: number) => call<void>('agent_cancel', { id }),
+  /** Kept in memory for that terminal only; `null` forgets it. */
+  agentSetSudo: (id: number, password: string | null) => call<void>('agent_set_sudo', { id, password }),
+  /** Copies local files to the server (into `dest`, the agent's folder, or home); returns where. */
+  sshUpload: (id: number, paths: string[], dest?: string) => call<string>('ssh_upload', { id, paths, dest: dest ?? null }),
+  /** Copies a file from the server into Downloads; returns the local path. */
+  sshDownload: (id: number, remote: string) => call<string>('ssh_download', { id, remote }),
   sandboxStatus: () => call<T.SandboxStatus>('sandbox_status'),
   sandboxCreate: (args: { name: string; distro: string; cpus: number; mem_mb: number; disk_gb: number; network: boolean }) =>
     call<T.SandboxInfo>('sandbox_create', { args }),
@@ -124,6 +136,15 @@ export const rad = {
   fsPreview: (path: string) => call<T.FsPreview>('fs_preview', { path }),
   fsOpen: (path: string) => call<void>('fs_open', { path }),
   fsReveal: (path: string) => call<void>('fs_reveal', { path }),
+
+  /** The Music/Video engine: returns the latest `ready`/`status`/`meta`/`tracks` events when it was already running. */
+  mediaStart: (player: T.MediaPlayerKind) => call<Record<string, any> | null>('media_start', { player }),
+  mediaStop: (player: T.MediaPlayerKind) => call<void>('media_stop', { player }),
+  mediaSend: (player: T.MediaPlayerKind, cmd: Record<string, unknown>) => call<void>('media_send', { player, cmd }),
+  /** Raw bytes: [w, h, 0, h] (u32 LE) then RGBA; w = 0 when there's no new picture. */
+  mediaFrame: (player: T.MediaPlayerKind) => invoke<ArrayBuffer>('media_frame', { player }),
+  /** A loopback address the engine streams a vault file from. */
+  mediaVaultUrl: (documentId: T.Id) => call<string>('media_vault_url', { documentId }),
 
   mailTest: (account: T.EmailAccount, password: string) => call<number>('mail_test', { account, password }),
   mailSetPassword: (account: T.EmailAccount, password: string | null) => call<void>('mail_set_password', { account, password }),

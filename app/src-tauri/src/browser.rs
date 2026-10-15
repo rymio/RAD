@@ -1,6 +1,10 @@
-//! The built-in web browser. Pages are rendered by Servo in a separate engine process
-//! (`rad-browser`, see `browser/rad-browser`) and shown in the main window as frames, so the
-//! app always has the exact pixels on screen: for the vision model, screenshots and scraping.
+//! The built-in web browsers. Pages are rendered in a separate engine process and shown in the
+//! main window as frames, so the app always has the exact pixels on screen: for the vision
+//! model, screenshots and scraping. Two engines speak the same protocol:
+//!   - Servo (`rad-browser`, see `browser/rad-browser`): private, nothing is kept;
+//!   - Chromium (`rad-chromium`, CEF, see `browser/rad-chromium`): for sites Servo can't run
+//!     yet (YouTube…); keeps a profile (sign-ins) and saves downloads.
+//! Each engine has its own process, tabs and state; commands name the engine.
 
 use std::collections::HashMap;
 use std::io::{BufRead, Read, Write};
@@ -19,6 +23,25 @@ use tokio::sync::oneshot;
 use crate::client::{CmdError, CmdResult};
 
 const BIN: &str = if cfg!(windows) { "rad-browser.exe" } else { "rad-browser" };
+const CHROMIUM_BIN: &str = if cfg!(windows) { "rad-chromium.exe" } else { "rad-chromium" };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    Servo,
+    Chromium,
+}
+
+impl Kind {
+    fn parse(s: Option<&str>) -> Kind {
+        if s == Some("chromium") { Kind::Chromium } else { Kind::Servo }
+    }
+    fn name(self) -> &'static str {
+        match self {
+            Kind::Servo => "servo",
+            Kind::Chromium => "chromium",
+        }
+    }
+}
 /// Longest side of a screenshot sent to a vision model (the server re-checks this).
 const VISION_MAX_SIDE: u32 = 1568;
 /// Page text sent to the model with a question.
@@ -38,8 +61,8 @@ struct Engine {
     stdin: ChildStdin,
 }
 
-#[derive(Default)]
 pub struct Browser {
+    kind: Kind,
     engine: Mutex<Option<Engine>>,
     frame: Arc<Mutex<Frame>>,
     frame_signalled: Arc<AtomicBool>,
@@ -49,7 +72,45 @@ pub struct Browser {
     state: Arc<Mutex<Value>>,
 }
 
+/// Both engines, each with its own process and tabs.
+pub struct Browsers {
+    servo: Browser,
+    chromium: Browser,
+}
+
+impl Default for Browsers {
+    fn default() -> Self {
+        Browsers { servo: Browser::new(Kind::Servo), chromium: Browser::new(Kind::Chromium) }
+    }
+}
+
+impl Browsers {
+    fn get(&self, engine: Option<&str>) -> &Browser {
+        match Kind::parse(engine) {
+            Kind::Servo => &self.servo,
+            Kind::Chromium => &self.chromium,
+        }
+    }
+
+    pub fn stop(&self) {
+        self.servo.stop();
+        self.chromium.stop();
+    }
+}
+
 impl Browser {
+    fn new(kind: Kind) -> Browser {
+        Browser {
+            kind,
+            engine: Mutex::new(None),
+            frame: Arc::default(),
+            frame_signalled: Arc::default(),
+            evals: Arc::default(),
+            next_eval: AtomicU64::new(0),
+            state: Arc::default(),
+        }
+    }
+
     pub fn stop(&self) {
         if let Some(mut e) = self.engine.lock().unwrap().take() {
             let _ = e.child.kill();
@@ -136,9 +197,40 @@ const SCRAPE_JS: &str = r#"(() => {
   });
 })()"#;
 
-/// Finds the engine: next to the app (bundled sidecar), in the app's resources, or — in
+fn engine_path(app: &AppHandle, kind: Kind) -> Option<PathBuf> {
+    match kind {
+        Kind::Servo => servo_path(app),
+        Kind::Chromium => chromium_path(app),
+    }
+}
+
+/// The Chromium engine is a folder (macOS: an app) with CEF next to it: in the app bundle
+/// (macOS `Contents/Helpers`, elsewhere the resources), or — in development — where
+/// `scripts/build-chromium.sh` lays it out. `RAD_CHROMIUM_BIN` overrides these.
+fn chromium_path(app: &AppHandle) -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(p) = std::env::var("RAD_CHROMIUM_BIN") {
+        candidates.push(p.into());
+    }
+    let inside_mac_app = |dir: &std::path::Path| dir.join("rad-chromium.app/Contents/MacOS").join(CHROMIUM_BIN);
+    if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(PathBuf::from)) {
+        candidates.push(inside_mac_app(&dir.join("../Helpers")));
+        candidates.push(dir.join("rad-chromium").join(CHROMIUM_BIN));
+    }
+    if let Ok(dir) = app.path().resource_dir() {
+        candidates.push(dir.join("rad-chromium").join(CHROMIUM_BIN));
+    }
+    if cfg!(debug_assertions) {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../browser/rad-chromium/target/bundle");
+        candidates.push(inside_mac_app(&root));
+        candidates.push(root.join("rad-chromium").join(CHROMIUM_BIN));
+    }
+    candidates.into_iter().find(|p| p.is_file())
+}
+
+/// Finds the Servo engine: next to the app (bundled sidecar), in the app's resources, or — in
 /// development — in the engine's own build folder. `RAD_BROWSER_BIN` overrides all of these.
-fn engine_path(app: &AppHandle) -> Option<PathBuf> {
+fn servo_path(app: &AppHandle) -> Option<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Ok(p) = std::env::var("RAD_BROWSER_BIN") {
         candidates.push(p.into());
@@ -158,18 +250,33 @@ fn engine_path(app: &AppHandle) -> Option<PathBuf> {
 }
 
 fn spawn(app: &AppHandle, b: &Browser, w: u32, h: u32, scale: f64, url: &str) -> CmdResult<()> {
-    let path = engine_path(app).ok_or_else(|| {
+    let path = engine_path(app, b.kind).ok_or_else(|| {
         CmdError::new(
             "browser_missing",
-            if cfg!(debug_assertions) {
-                "The web browser engine isn't built yet. Run ./scripts/build-browser.sh, then reopen the browser."
-            } else {
-                "This copy of RAD was built without the web browser engine. Rebuild it with ./scripts/build-app.sh and reinstall."
+            match (b.kind, cfg!(debug_assertions)) {
+                (Kind::Servo, true) => "The web browser engine isn't built yet. Run ./scripts/build-browser.sh, then reopen the browser.",
+                (Kind::Chromium, true) => "The Chromium engine isn't built yet. Run ./scripts/build-chromium.sh, then reopen Chromium.",
+                _ => "This copy of RAD was built without this browser engine. Rebuild it with ./scripts/build-app.sh and reinstall.",
             },
         )
     })?;
-    let mut child = Command::new(&path)
-        .args(["--width", &w.to_string(), "--height", &h.to_string(), "--scale", &scale.to_string(), "--url", url])
+    let mut cmd = Command::new(&path);
+    cmd.args(["--width", &w.to_string(), "--height", &h.to_string(), "--scale", &scale.to_string(), "--url", url]);
+    if b.kind == Kind::Chromium {
+        // Sign-ins and site settings persist here (private to this user); downloads go to
+        // the user's Downloads folder.
+        let profile = app.path().app_data_dir().map(|d| d.join("chromium-profile")).map_err(|e| CmdError::new("browser", e.to_string()))?;
+        let downloads = app.path().download_dir().unwrap_or_else(|_| profile.join("Downloads"));
+        cmd.arg("--profile").arg(&profile).arg("--downloads").arg(&downloads);
+        // CEF's libraries sit next to the engine on Linux.
+        if cfg!(target_os = "linux") {
+            if let Some(dir) = path.parent() {
+                let old = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
+                cmd.env("LD_LIBRARY_PATH", if old.is_empty() { dir.display().to_string() } else { format!("{}:{old}", dir.display()) });
+            }
+        }
+    }
+    let mut child = cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -183,16 +290,18 @@ fn spawn(app: &AppHandle, b: &Browser, w: u32, h: u32, scale: f64, url: &str) ->
             tracing::debug!(target: "rad_browser", "{line}");
         }
     });
+    let kind = b.kind;
     *b.frame.lock().unwrap() = Frame::default();
     let (frame, signalled, evals, state) = (b.frame.clone(), b.frame_signalled.clone(), b.evals.clone(), b.state.clone());
     let app2 = app.clone();
-    std::thread::spawn(move || read_engine(app2, stdout, frame, signalled, evals, state));
+    std::thread::spawn(move || read_engine(app2, kind, stdout, frame, signalled, evals, state));
     *b.engine.lock().unwrap() = Some(Engine { child, stdin });
     Ok(())
 }
 
 fn read_engine(
     app: AppHandle,
+    kind: Kind,
     stdout: std::process::ChildStdout,
     frame: Arc<Mutex<Frame>>,
     signalled: Arc<AtomicBool>,
@@ -210,7 +319,8 @@ fn read_engine(
         }
         match head[0] {
             1 => {
-                let Ok(v) = serde_json::from_slice::<Value>(&buf) else { continue };
+                let Ok(mut v) = serde_json::from_slice::<Value>(&buf) else { continue };
+                v["engine"] = json!(kind.name());
                 if v["type"] == "eval" {
                     if let Some(tx) = v["id"].as_u64().and_then(|id| evals.lock().unwrap().remove(&id)) {
                         let _ = tx.send(v);
@@ -241,7 +351,7 @@ fn read_engine(
                 }
                 // One notification until the UI pulls; frames in between are merged.
                 if !signalled.swap(true, Ordering::AcqRel) {
-                    let _ = app.emit_to("main", "browser-frame", ());
+                    let _ = app.emit_to("main", "browser-frame", kind.name());
                 }
             }
             _ => {}
@@ -249,14 +359,15 @@ fn read_engine(
     }
     evals.lock().unwrap().clear();
     *state.lock().unwrap() = Value::Null;
-    let _ = app.emit_to("main", "browser-event", json!({"type": "exited"}));
+    let _ = app.emit_to("main", "browser-event", json!({"type": "exited", "engine": kind.name()}));
 }
 
 // ------------------------------------------------------------------ commands
 
 /// Starts the engine (or re-attaches to it) at the viewport's size in device pixels.
 #[tauri::command]
-pub fn browser_start(app: AppHandle, b: State<'_, Browser>, width: u32, height: u32, scale: f64, url: Option<String>) -> CmdResult<Value> {
+pub fn browser_start(app: AppHandle, bs: State<'_, Browsers>, engine: Option<String>, width: u32, height: u32, scale: f64, url: Option<String>) -> CmdResult<Value> {
+    let b = bs.get(engine.as_deref());
     let (w, h) = (width.max(1), height.max(1));
     if b.running() {
         // A fresh view: hand it the whole current frame, then follow the engine as usual.
@@ -269,21 +380,23 @@ pub fn browser_start(app: AppHandle, b: State<'_, Browser>, width: u32, height: 
         if let Some(u) = url {
             b.send(&json!({"cmd": "load", "url": u}))?;
         }
-        let _ = app.emit_to("main", "browser-frame", ());
+        let _ = app.emit_to("main", "browser-frame", b.kind.name());
         return Ok(b.state.lock().unwrap().clone());
     }
-    spawn(&app, &b, w, h, scale, url.as_deref().unwrap_or("https://servo.org"))?;
+    let home = if b.kind == Kind::Chromium { "https://www.google.com" } else { "https://servo.org" };
+    spawn(&app, b, w, h, scale, url.as_deref().unwrap_or(home))?;
     Ok(Value::Null)
 }
 
 #[tauri::command]
-pub fn browser_stop(b: State<'_, Browser>) {
-    b.stop();
+pub fn browser_stop(bs: State<'_, Browsers>, engine: Option<String>) {
+    bs.get(engine.as_deref()).stop();
 }
 
 /// Forwards a command to the engine (navigation, input, tabs, dialogs…).
 #[tauri::command]
-pub fn browser_send(b: State<'_, Browser>, cmd: Value) -> CmdResult<()> {
+pub fn browser_send(bs: State<'_, Browsers>, engine: Option<String>, cmd: Value) -> CmdResult<()> {
+    let b = bs.get(engine.as_deref());
     if cmd["cmd"] == "eval" {
         return Err(CmdError::new("bad_request", "use browser_eval"));
     }
@@ -292,7 +405,8 @@ pub fn browser_send(b: State<'_, Browser>, cmd: Value) -> CmdResult<()> {
 
 /// The rows that changed since the last call: `[w, h, y0, rows]` (u32 LE) followed by RGBA.
 #[tauri::command]
-pub fn browser_frame(b: State<'_, Browser>) -> Response {
+pub fn browser_frame(bs: State<'_, Browsers>, engine: Option<String>) -> Response {
+    let b = bs.get(engine.as_deref());
     let mut f = b.frame.lock().unwrap();
     b.frame_signalled.store(false, Ordering::Release);
     let Some((y0, y1)) = f.dirty.take() else {
@@ -309,19 +423,20 @@ pub fn browser_frame(b: State<'_, Browser>) -> Response {
 }
 
 #[tauri::command]
-pub async fn browser_eval(b: State<'_, Browser>, script: String) -> CmdResult<Value> {
-    b.eval(&script).await
+pub async fn browser_eval(bs: State<'_, Browsers>, engine: Option<String>, script: String) -> CmdResult<Value> {
+    bs.get(engine.as_deref()).eval(&script).await
 }
 
 #[tauri::command]
-pub async fn browser_scrape(b: State<'_, Browser>, max_chars: Option<usize>) -> CmdResult<Value> {
-    b.scrape(max_chars.unwrap_or(CONTEXT_CHARS)).await
+pub async fn browser_scrape(bs: State<'_, Browsers>, engine: Option<String>, max_chars: Option<usize>) -> CmdResult<Value> {
+    bs.get(engine.as_deref()).scrape(max_chars.unwrap_or(CONTEXT_CHARS)).await
 }
 
 /// What the AI gets to see with a question: the page's text and/or a screenshot
 /// (JPEG, base64), as requested.
 #[tauri::command]
-pub async fn browser_snapshot(b: State<'_, Browser>, text: bool, image: bool) -> CmdResult<Value> {
+pub async fn browser_snapshot(bs: State<'_, Browsers>, engine: Option<String>, text: bool, image: bool) -> CmdResult<Value> {
+    let b = bs.get(engine.as_deref());
     let mut out = json!({});
     if text {
         match b.scrape(CONTEXT_CHARS).await {
@@ -358,7 +473,8 @@ fn file_title(page: &Value) -> String {
 
 /// Saves what's on screen into the vault as a screenshot (captioned by the vision model).
 #[tauri::command]
-pub async fn browser_save_screenshot(app: AppHandle, b: State<'_, Browser>, project_id: Option<i64>) -> CmdResult<Value> {
+pub async fn browser_save_screenshot(app: AppHandle, bs: State<'_, Browsers>, engine: Option<String>, project_id: Option<i64>) -> CmdResult<Value> {
+    let b = bs.get(engine.as_deref());
     let project = crate::capture::target_project(&app, project_id).await?;
     let title = b.scrape(200).await.map(|p| file_title(&p)).unwrap_or_else(|_| "Web page".into());
     let img = b.image()?;
@@ -375,7 +491,8 @@ pub async fn browser_save_screenshot(app: AppHandle, b: State<'_, Browser>, proj
 
 /// Saves the page's text into the vault as a Markdown document, with its address.
 #[tauri::command]
-pub async fn browser_save_page(app: AppHandle, b: State<'_, Browser>, project_id: Option<i64>) -> CmdResult<Value> {
+pub async fn browser_save_page(app: AppHandle, bs: State<'_, Browsers>, engine: Option<String>, project_id: Option<i64>) -> CmdResult<Value> {
+    let b = bs.get(engine.as_deref());
     let project = crate::capture::target_project(&app, project_id).await?;
     let page = b.scrape(2_000_000).await?;
     let title = file_title(&page);
