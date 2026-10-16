@@ -92,6 +92,19 @@ if [[ -d "$app" && -x "$media/rad-media" && "${RAD_NO_MEDIA:-}" != 1 ]]; then
   find "$app/Contents/Helpers/rad-media" -name '*.dylib' -type f -print0 | xargs -0 codesign --force --sign "$identity"
   codesign --force --sign "$identity" "$app/Contents/Helpers/rad-media/rad-media"
 fi
+rymnet=rymnet/target/release
+if [[ -d "$app" && -x "$rymnet/rymwin" && "${RAD_NO_RYMNET:-}" != 1 ]]; then
+  # The Rymnet programs (RYMNET and RYMWIN views): rymwin, rymnetd, rym and rymsh, signed with the app's identity.
+  rm -rf "$app/Contents/Helpers/rymnet"
+  mkdir -p "$app/Contents/Helpers/rymnet"
+  identity="${APPLE_SIGNING_IDENTITY:--}"
+  for b in rym rymnetd rymwin rymsh; do
+    cp "$rymnet/$b" "$app/Contents/Helpers/rymnet/"
+    codesign --force --sign "$identity" "$app/Contents/Helpers/rymnet/$b"
+  done
+  # rymwin's PDF Reader looks for libpdfium next to it.
+  for f in "$rymnet"/libpdfium.dylib; do [[ -f "$f" ]] && cp "$f" "$app/Contents/Helpers/rymnet/" && codesign --force --sign "$identity" "$app/Contents/Helpers/rymnet/libpdfium.dylib"; done
+fi
 if [[ -d "$app" ]]; then
   # Without a signing identity Tauri leaves the bundle unsealed. Sign it inside-out — libraries,
   # helpers (the sandbox launcher with its hypervisor entitlement), then the app — so the
@@ -126,5 +139,6 @@ fi
 echo
 [[ -d "$app/Contents/Helpers/rad-chromium.app" ]] && bins+=("rad-chromium")
 [[ -d "$app/Contents/Helpers/rad-media" ]] && bins+=("rad-media")
+[[ -d "$app/Contents/Helpers/rymnet" ]] && bins+=("rymnet")
 echo "Built with: ${bins[*]:-no engines}"
 echo "On macOS: quit RAD, then replace /Applications/RAD.app with $PWD/$app"
