@@ -5,6 +5,8 @@
 //!   - Chromium (`rad-chromium`, CEF, see `browser/rad-chromium`): for sites Servo can't run
 //!     yet (YouTube…); keeps a profile (sign-ins) and saves downloads.
 //! Each engine has its own process, tabs and state; commands name the engine.
+//! RYMWIN (the Rymnet Desktop, `rymwin --embed`, see `rymnet/`) runs through the same pipe as a
+//! third "engine": no tabs or pages, just its desktop's frames and the user's input.
 
 use std::collections::HashMap;
 use std::io::{BufRead, Read, Write};
@@ -29,16 +31,22 @@ const CHROMIUM_BIN: &str = if cfg!(windows) { "rad-chromium.exe" } else { "rad-c
 pub enum Kind {
     Servo,
     Chromium,
+    Rymwin,
 }
 
 impl Kind {
     fn parse(s: Option<&str>) -> Kind {
-        if s == Some("chromium") { Kind::Chromium } else { Kind::Servo }
+        match s {
+            Some("chromium") => Kind::Chromium,
+            Some("rymwin") => Kind::Rymwin,
+            _ => Kind::Servo,
+        }
     }
     fn name(self) -> &'static str {
         match self {
             Kind::Servo => "servo",
             Kind::Chromium => "chromium",
+            Kind::Rymwin => "rymwin",
         }
     }
 }
@@ -76,11 +84,12 @@ pub struct Browser {
 pub struct Browsers {
     servo: Browser,
     chromium: Browser,
+    rymwin: Browser,
 }
 
 impl Default for Browsers {
     fn default() -> Self {
-        Browsers { servo: Browser::new(Kind::Servo), chromium: Browser::new(Kind::Chromium) }
+        Browsers { servo: Browser::new(Kind::Servo), chromium: Browser::new(Kind::Chromium), rymwin: Browser::new(Kind::Rymwin) }
     }
 }
 
@@ -89,12 +98,24 @@ impl Browsers {
         match Kind::parse(engine) {
             Kind::Servo => &self.servo,
             Kind::Chromium => &self.chromium,
+            Kind::Rymwin => &self.rymwin,
         }
+    }
+
+    /// The embedded Rymnet Desktop is running.
+    pub fn rymwin_running(&self) -> bool {
+        self.rymwin.running()
+    }
+
+    /// Sends a command to the embedded Rymnet Desktop.
+    pub fn rymwin_send(&self, cmd: &Value) -> CmdResult<()> {
+        self.rymwin.send(cmd)
     }
 
     pub fn stop(&self) {
         self.servo.stop();
         self.chromium.stop();
+        self.rymwin.stop();
     }
 }
 
@@ -201,6 +222,7 @@ fn engine_path(app: &AppHandle, kind: Kind) -> Option<PathBuf> {
     match kind {
         Kind::Servo => servo_path(app),
         Kind::Chromium => chromium_path(app),
+        Kind::Rymwin => crate::rymnet::bin_dir(app).map(|d| d.join(crate::rymnet::exe("rymwin"))).filter(|p| p.is_file()),
     }
 }
 
@@ -256,18 +278,35 @@ fn spawn(app: &AppHandle, b: &Browser, w: u32, h: u32, scale: f64, url: &str) ->
             match (b.kind, cfg!(debug_assertions)) {
                 (Kind::Servo, true) => "The web browser engine isn't built yet. Run ./scripts/build-browser.sh, then reopen the browser.",
                 (Kind::Chromium, true) => "The Chromium engine isn't built yet. Run ./scripts/build-chromium.sh, then reopen Chromium.",
+                (Kind::Rymwin, true) => "RYMWIN isn't built yet. Run ./scripts/build-rymnet.sh, then reopen RYMWIN.",
                 _ => "This copy of RAD was built without this browser engine. Rebuild it with ./scripts/build-app.sh and reinstall.",
             },
         )
     })?;
     let mut cmd = Command::new(&path);
-    cmd.args(["--width", &w.to_string(), "--height", &h.to_string(), "--scale", &scale.to_string(), "--url", url]);
+    cmd.args(["--width", &w.to_string(), "--height", &h.to_string(), "--scale", &scale.to_string()]);
+    if b.kind == Kind::Rymwin {
+        // The desktop needs this computer's node identity; run from its own folder so it
+        // finds a bundled libpdfium next to it.
+        crate::rymnet::ensure_identity(app)?;
+        cmd.arg("--embed");
+        crate::rymnet::vpn_env_std(&mut cmd);
+        if let Some(dir) = path.parent() {
+            cmd.current_dir(dir);
+        }
+    } else {
+        cmd.args(["--url", url]);
+    }
     if b.kind == Kind::Chromium {
         // Sign-ins and site settings persist here (private to this user); downloads go to
         // the user's Downloads folder.
         let profile = app.path().app_data_dir().map(|d| d.join("chromium-profile")).map_err(|e| CmdError::new("browser", e.to_string()))?;
         let downloads = app.path().download_dir().unwrap_or_else(|_| profile.join("Downloads"));
         cmd.arg("--profile").arg(&profile).arg("--downloads").arg(&downloads);
+        // RAD's VPN: every request (and name lookup) through its SOCKS5 proxy.
+        if let Some(socks) = rad_tunnel::route::socks_for(rad_tunnel::route::Scope::Browsers) {
+            cmd.arg(format!("--proxy-server=socks5://{socks}"));
+        }
         // CEF's libraries sit next to the engine on Linux.
         if cfg!(target_os = "linux") {
             if let Some(dir) = path.parent() {
@@ -330,6 +369,12 @@ fn read_engine(
                 if v["type"] == "state" {
                     *state.lock().unwrap() = v.clone();
                 }
+                if kind == Kind::Rymwin && v["type"] == "copy" {
+                    if let Some(text) = v["text"].as_str() {
+                        let _ = arboard::Clipboard::new().and_then(|mut c| c.set_text(text.to_string()));
+                    }
+                    continue;
+                }
                 let _ = app.emit_to("main", "browser-event", v);
             }
             2 if buf.len() >= 16 => {
@@ -362,6 +407,13 @@ fn read_engine(
     let _ = app.emit_to("main", "browser-event", json!({"type": "exited", "engine": kind.name()}));
 }
 
+/// The VPN went on or off, or its choices changed: Chromium only reads its proxy at start, so
+/// stop it (the view restarts it, now with or without the proxy). RYMWIN restarts the same way.
+pub fn vpn_changed(app: &AppHandle) {
+    let bs = app.state::<Browsers>();
+    bs.chromium.stop();
+}
+
 // ------------------------------------------------------------------ commands
 
 /// Starts the engine (or re-attaches to it) at the viewport's size in device pixels.
@@ -377,13 +429,13 @@ pub fn browser_start(app: AppHandle, bs: State<'_, Browsers>, engine: Option<Str
         }
         b.frame_signalled.store(false, Ordering::Release);
         b.send(&json!({"cmd": "resize", "w": w, "h": h, "scale": scale}))?;
-        if let Some(u) = url {
+        if let Some(u) = url.filter(|_| b.kind != Kind::Rymwin) {
             b.send(&json!({"cmd": "load", "url": u}))?;
         }
         let _ = app.emit_to("main", "browser-frame", b.kind.name());
         return Ok(b.state.lock().unwrap().clone());
     }
-    let home = if b.kind == Kind::Chromium { "https://www.google.com" } else { "https://servo.org" };
+    let home = "https://rymtech.net";
     spawn(&app, b, w, h, scale, url.as_deref().unwrap_or(home))?;
     Ok(Value::Null)
 }

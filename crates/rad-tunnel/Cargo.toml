@@ -1,0 +1,18 @@
+[package]
+name = "rad-tunnel"
+description = "RAD's own VPN: WireGuard in user space (boringtun) with an in-process TCP/IP stack (smoltcp), offered to RAD as a local SOCKS5 proxy — no admin rights, no system VPN"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+base64.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+reqwest.workspace = true
+boringtun = { version = "0.7.1", default-features = false }
+smoltcp = { version = "0.12", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "proto-ipv6", "proto-dns", "socket-tcp", "socket-udp", "socket-dns"] }
+tokio-socks = "0.5"
+getrandom = { version = "0.2", features = ["std"] }

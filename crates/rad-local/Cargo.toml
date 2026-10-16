@@ -5,6 +5,7 @@ edition.workspace = true
 description = "RAD's built-in llama.cpp engine and local GGUF model library"
 
 [dependencies]
+rad-tunnel.workspace = true
 # llama.cpp is compiled in (needs cmake + a C/C++ toolchain + libclang). Metal is on by default on macOS.
 llama-cpp-2 = { version = "0.1.159", default-features = false }
 reqwest.workspace = true

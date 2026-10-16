@@ -5,7 +5,7 @@
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { store } from '../lib/state.svelte';
   import { rad } from '../lib/api';
-  import { video, videoEngine as eng, fileItem, vaultItem, pickFiles, fmtTime, ext, VIDEO_EXT, SUBTITLE_EXT } from '../lib/media.svelte';
+  import { video, videoEngine as eng, musicEngine, fileItem, vaultItem, pickFiles, fmtTime, ext, VIDEO_EXT, SUBTITLE_EXT } from '../lib/media.svelte';
   import type * as T from '../lib/types';
   import VaultMediaPicker from './VaultMediaPicker.svelte';
   import {
@@ -138,6 +138,7 @@
       else openFiles();
       return;
     }
+    if (st.state !== 'playing' && musicEngine.status.state === 'playing') musicEngine.send({ cmd: 'pause' });
     eng.send({ cmd: st.state === 'ended' || st.state === 'stopped' ? 'play' : 'toggle' });
     poke();
   }

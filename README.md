@@ -72,6 +72,34 @@ Build the engine once with `./scripts/build-browser.sh`. The first build compile
   - Host and user names are validated, and SSH is started directly, never through a shell.
 - **Hide the sidebar** with ⌘\ for a full-width view.
 
+## RYMNET (Rymnet and RYMWIN)
+
+[Rymnet](rymnet/README.md), the encrypted, decentralised peer-to-peer network, is part of RAD. Its source is in `rymnet/` (its own Cargo workspace), and **RYMNET** in the sidebar drives it:
+
+- **RYMWIN** (sidebar, or **Start RYMWIN**) runs the Rymnet Desktop inside RAD, with its own login. `rymwin --embed` renders off-screen with wgpu and streams frames to RAD over the same pipe protocol as the browser engines; RAD sends back mouse, keyboard, clipboard and file drops.
+- **Files into RYMWIN.** Drag files or folders from Finder onto it, use **Send to RYMWIN** in Files, or **Add files / From vault** in its toolbar. They are copied into the account's `/Downloads`.
+- **Initiate RYMWIN** joins this computer to the network. It creates the node identity if needed, starts the peer daemon (`rymnetd`, stopped when RAD quits), and connects to the node address you type in, along with the peers that node shares. It then opens **rymsh**, the Rymnet shell, as a Terminal tab. The page also lists your peers, the node ID and the daemon's log.
+- **Assistant.** A chat that knows the RYMWIN User Guide and runs `rym` commands for you: peers, domains, publishing sites, search. It never runs a shell. Commands that remove or undo something wait for your OK.
+- **User guide in the vault.** The first time you open RYMNET, [the RYMWIN User Guide](rymnet/docs/RYMWIN_USER_GUIDE.md) is filed as a note in a **Rymnet** project, so every chat can answer from it. A newer guide in a new RAD replaces it.
+
+Build the Rymnet programs with `./scripts/build-rymnet.sh`. `cargo tauri dev` finds them in `rymnet/target/release`, and `./scripts/build-app.sh` puts them inside the app.
+
+## VPN (WireGuard inside RAD)
+
+The **VPN** switch in the top bar sends RAD's own traffic through a WireGuard tunnel to your server. It needs no administrator rights and installs nothing: `crates/rad-tunnel` runs WireGuard ([boringtun](https://github.com/cloudflare/boringtun)) and its own TCP/IP stack ([smoltcp](https://github.com/smoltcp-rs/smoltcp)) inside RAD, behind a SOCKS5 proxy on 127.0.0.1. The same code runs on macOS, Windows and Linux.
+
+- **Set up** in **Settings → VPN**. Either create a key there (RAD shows the `[Peer]` lines for your server) or import the `wg-quick` `.conf` file from your server. Keys are kept in the OS keychain.
+- **Choose what goes through it:**
+  - **RAD & AI:** your RAD server, AI providers, model and voice downloads
+  - **Chromium:** pages and name lookups (it restarts when the VPN changes)
+  - **Email**
+  - **SSH terminals** (on Linux this needs `netcat-openbsd`)
+  - **Rymnet** peer connections, via `RYMNET_SOCKS`
+
+  This computer and your local network always stay direct. Servo can't use a proxy, so it shows a note when it isn't covered.
+- **No silent fallback:** while the VPN is on, covered connections go through the tunnel or fail; they never fall back to the open network. Names are looked up through the tunnel's DNS too.
+- **Server:** a standard WireGuard server, for example Ubuntu with `wg-quick` on UDP 51820 and `unbound` answering DNS on the tunnel address.
+
 ## Voice (text to speech)
 
 **Settings → Voice** downloads **MioTTS-0.1B** (about 510 MB, checksum-verified), which then reads answers aloud on this computer, in English and Japanese.
@@ -216,10 +244,12 @@ crates/rad-api      wire types shared by server and app
 crates/rad-vault    encrypted single-file vault: KDF, recovery kit, blobs, schema, FTS5 + sqlite-vec search
 crates/rad-ingest   extractors (PDF, Office, email, zip…) and the chunker — all in memory
 crates/rad-llm      Ollama / OpenAI-compatible / Anthropic adapters: chat, embeddings, vision, transcription
+crates/rad-tunnel   RAD's VPN: WireGuard in user space (boringtun + smoltcp) behind a local SOCKS5 proxy
 crates/rad-server   axum server: auth, unlock, uploads, jobs, RAG, live sync (SSE), backups
 app/src-tauri       desktop shell: tray, hotkeys, screenshots, rad:// file protocol, keychain
 app/ui              Svelte 5 interface
 browser/rad-browser web browser engine: Servo rendering offscreen, driven by the app (its own Cargo workspace)
+rymnet/             Rymnet: peer network, rymwin desktop (embedded via --embed), rymsh, rym CLI, rymnetd daemon (its own Cargo workspace); docs/ has the guides
 tts/                text-to-speech engine build (mio-tts-cpp, fetched and built by scripts/build-tts.sh)
 sandbox/launcher    Linux sandbox launcher (libkrun); scripts/build-sandbox.sh builds it with libkrun and gvproxy
 deploy/             Dockerfile, docker-compose

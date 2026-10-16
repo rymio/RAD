@@ -7,7 +7,8 @@
   import Logo from './Logo.svelte';
   import Menu from './Menu.svelte';
   import Modal from './Modal.svelte';
-  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp } from '@lucide/svelte';
+  import VpnToggle from './VpnToggle.svelte';
+  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp, Network, Monitor } from '@lucide/svelte';
 
   let newProjectOpen = $state(false);
   let npName = $state('');
@@ -83,6 +84,7 @@
       <span class="vname truncate">RAD</span>
       <span class="locked" title="Encrypted vault — unlocked"><Lock size={11} /></span>
     </div>
+    <VpnToggle />
     <button class="icon-btn no-drag" title="Hide sidebar (⌘\)" onclick={() => store.toggleSidebar()}><PanelLeftClose size={17} /></button>
     <button class="icon-btn no-drag" title="New chat (⌘N)" onclick={() => store.newChat()}><SquarePen size={17} /></button>
   </div>
@@ -116,6 +118,12 @@
     </button>
     <button class="item web" class:active={store.route.kind === 'video'} onclick={() => store.navigate({ kind: 'video' })}>
       <Clapperboard size={15} /> <span class="spacer">Video</span>
+    </button>
+    <button class="item web" class:active={store.route.kind === 'rymnet'} onclick={() => store.navigate({ kind: 'rymnet' })}>
+      <Network size={15} /> <span class="spacer">RYMNET</span>
+    </button>
+    <button class="item web" class:active={store.route.kind === 'rymwin'} onclick={() => store.navigate({ kind: 'rymwin' })}>
+      <Monitor size={15} /> <span class="spacer">RYMWIN</span>
     </button>
     <div class="sect">
       <div class="sect-h">

@@ -87,7 +87,7 @@ export const rad = {
   browserSavePage: (engine: T.BrowserEngine, projectId?: T.Id) => call<T.UploadResponse>('browser_save_page', { engine, projectId: projectId ?? null }),
 
   termOpen: (args: {
-    kind: 'local' | 'ssh' | 'sandbox'; host?: string; user?: string; port?: number; identity_file?: string;
+    kind: 'local' | 'ssh' | 'sandbox' | 'rymsh'; host?: string; user?: string; port?: number; identity_file?: string;
     sandbox?: string; script?: { code: string; lang: string }; cols: number; rows: number;
   }) =>
     call<T.TermInfo>('term_open', { args }),
@@ -144,6 +144,22 @@ export const rad = {
   /** Raw bytes: [w, h, 0, h] (u32 LE) then RGBA; w = 0 when there's no new picture. */
   mediaFrame: (player: T.MediaPlayerKind) => invoke<ArrayBuffer>('media_frame', { player }),
   /** A loopback address the engine streams a vault file from. */
+  rymnetStatus: () => call<T.RymnetStatus>('rymnet_status'),
+  rymwinPaste: () => call<void>('rymwin_paste'),
+  vpnGet: () => call<T.VpnInfo>('vpn_get'),
+  vpnSet: (on: boolean) => call<T.VpnInfo>('vpn_set', { on }),
+  vpnSave: (settings: Omit<T.VpnSettings, 'mtu' | 'was_on'> & { preshared_key: string | null }) => call<T.VpnInfo>('vpn_save', { settings }),
+  vpnGenerateKey: () => call<T.VpnInfo>('vpn_generate_key'),
+  vpnImport: (text: string) => call<T.VpnInfo>('vpn_import', { text }),
+  vpnImportFile: (path: string) => call<T.VpnInfo>('vpn_import_file', { path }),
+  vpnCheckIp: () => call<{ direct: string | null; vpn: string | null; error: string | null }>('vpn_check_ip'),
+  rymnetTempDir: () => call<string>('rymnet_temp_dir'),
+  rymnetInitiate: (address?: string) => call<string[]>('rymnet_initiate', { address: address ?? null }),
+  rymnetRemovePeer: (name: string) => call<void>('rymnet_remove_peer', { name }),
+  rymnetStopDaemon: () => call<void>('rymnet_stop_daemon'),
+  rymnetGuide: () => call<string>('rymnet_guide'),
+  rymnetExec: (args: string[], timeoutSecs?: number) =>
+    call<{ exit_code: number | null; output: string; timed_out: boolean }>('rymnet_exec', { args, timeoutSecs: timeoutSecs ?? null }),
   mediaVaultUrl: (documentId: T.Id) => call<string>('media_vault_url', { documentId }),
 
   mailTest: (account: T.EmailAccount, password: string) => call<number>('mail_test', { account, password }),

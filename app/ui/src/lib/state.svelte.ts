@@ -48,7 +48,7 @@ class Store {
   drafts = $state<Record<number, Draft>>({});
   /** The conversation docked under the web browser. */
   /** The conversation beside each browser engine. */
-  browserChatIds = $state<Record<T.BrowserEngine, number | null>>({ servo: null, chromium: null });
+  browserChatIds = $state<Record<T.BrowserEngine, number | null>>({ servo: null, chromium: null, rymwin: null });
   /** Kept in the vault: browser favourites and SSH hosts. */
   bookmarks = $state<T.Bookmark[]>([]);
   sshHosts = $state<T.SshHost[]>([]);
@@ -61,6 +61,8 @@ class Store {
   /** Linux sandboxes can run here (engine present). */
   sandboxReady = $state(false);
   pendingBrowserUrl = $state<string | null>(null);
+  /** Files on their way into RYMWIN (from Files or the vault), dropped once it's open. */
+  pendingRymwinDrop = $state<string[] | null>(null);
   pendingAttachments = $state<T.Document[]>([]);
   private quick = false;
 

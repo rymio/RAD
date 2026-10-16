@@ -1,0 +1,36 @@
+[package]
+name = "rymnet-web"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "rymweb"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+base64.workspace = true
+blake3.workspace = true
+chrono.workspace = true
+clap.workspace = true
+rymnet-account.workspace = true
+rymnet-core.workspace = true
+rymnet-domain.workspace = true
+rymnet-gateway.workspace = true
+rymnet-mail.workspace = true
+rymnet-network.workspace = true
+rymnet-search.workspace = true
+rymnet-site.workspace = true
+rymnet-storage.workspace = true
+scraper.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+shell-words.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+walkdir.workspace = true
+x25519-dalek.workspace = true

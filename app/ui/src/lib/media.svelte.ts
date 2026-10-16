@@ -85,6 +85,9 @@ class MediaController {
   eqInfo = $state<T.EqInfo | null>(null);
   /** Called once each time playback reaches the end of a file. */
   onEnded: (() => void) | null = null;
+  /** Called once each time a file fails to open or play. */
+  onFailed: (() => void) | null = null;
+  onPlaying: (() => void) | null = null;
   onMeta: ((m: T.MediaMeta) => void) | null = null;
 
   private listening = false;
@@ -163,6 +166,8 @@ class MediaController {
         const { type: _t, player: _p, ...st } = ev;
         this.status = st as T.MediaStatus;
         if (st.state === 'ended' && was !== 'ended') this.onEnded?.();
+        if (st.state === 'error' && was !== 'error') this.onFailed?.();
+        if (st.state === 'playing' && was !== 'playing') this.onPlaying?.();
         break;
       }
       case 'meta':
@@ -225,6 +230,11 @@ class Playlist {
 
   constructor(readonly c: MediaController, readonly name: 'music' | 'video', readonly kind: 'audio' | 'video') {
     c.onEnded = () => this.ended();
+    c.onFailed = () => this.failed();
+    c.onPlaying = () => {
+      this.failures = 0;
+      this.started = true;
+    };
     c.onMeta = (m) => this.adoptMeta(m);
     if (name === 'video') this.repeat = 'off';
   }
@@ -314,7 +324,11 @@ class Playlist {
       return;
     }
     this.current = it.key;
+    this.started = false;
+    this.failedKey = null;
     this.save();
+    // A film and music at once is noise: the music pauses (it resumes from the Music view).
+    if (this.name === 'video' && musicEngine.status.state === 'playing') musicEngine.send({ cmd: 'pause' });
     await this.c.start();
     this.sync();
     await this.c.open(it.src, opts);
@@ -355,7 +369,31 @@ class Playlist {
     this.play(this.sequence()[i]);
   }
 
+  /** Files that failed in a row (a missing file, a vault file while the vault is locked…). */
+  private failures = 0;
+  /** The current file got as far as playing (libVLC reports a file it can't open as "ended"). */
+  private started = false;
+
+  private failedKey: string | null = null;
+
+  /** Like Winamp, music skips a file that can't play — unless nothing in the list plays. */
+  private failed() {
+    const it = this.currentItem;
+    // libVLC may report "error" and then "ended" for the same file: handle it once.
+    if (this.failedKey === this.current) return;
+    this.failedKey = this.current;
+    if (this.name !== 'music') {
+      store.toast('error', 'Can’t play this video', it?.title);
+      return;
+    }
+    this.failures++;
+    if (this.failures < this.items.length) this.step(1, true);
+    else store.toast('error', 'Music stopped', 'None of the files in the playlist could be played.');
+  }
+
   private ended() {
+    if (!this.started) return this.failed();
+    this.failures = 0;
     if (this.repeat === 'one') this.play(this.current ?? undefined);
     else this.step(1, true);
   }

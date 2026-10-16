@@ -1,0 +1,10 @@
+# Reverse proxy for rymweb, with automatic Let's Encrypt TLS.
+# Install: https://caddyserver.com/docs/install
+# Usage:   caddy run --config /etc/caddy/Caddyfile
+#
+# Caddy handles the ACME HTTP-01 challenge on :80 itself and redirects
+# everything to :443 -- no separate certbot step needed.
+
+rymtech.net {
+    reverse_proxy 127.0.0.1:8080
+}

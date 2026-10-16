@@ -1,0 +1,29 @@
+# counter.win -- a RymScript desktop program.
+#
+# *.win programs run only in the graphical desktop (via Rymcode's Run
+# button, or File Manager / the Start menu once opened there), never in
+# a terminal. A .win script defines draw(events) and returns a list of
+# widget dicts each frame; module-level variables (like `count` below)
+# persist between frames like a normal running program's state.
+#
+# `events` tells you what happened to each widget (by id) last frame:
+# a button's id is present (True) the frame after it's clicked; a
+# text_input/checkbox's id holds its current value every frame once
+# it's been drawn at least once. See RYMSCRIPT_SDK.md for the full
+# widget/event reference.
+
+count = 0
+
+def draw(events):
+    global count
+    if events.get("inc"):
+        count += 1
+    if events.get("reset"):
+        count = 0
+    return [
+        {"type": "heading", "text": "Rymnet Counter"},
+        {"type": "label", "text": f"Count: {count}"},
+        {"type": "separator"},
+        {"type": "button", "id": "inc", "text": "Increment"},
+        {"type": "button", "id": "reset", "text": "Reset"},
+    ]

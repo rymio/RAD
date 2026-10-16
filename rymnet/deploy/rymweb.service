@@ -1,0 +1,23 @@
+[Unit]
+Description=rymweb - Rymnet web terminal
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rymnet
+Group=rymnet
+# Bind to loopback only -- the reverse proxy is the only thing that should
+# ever talk to this port directly. Never point --listen at 0.0.0.0 or a
+# public address in production; that would expose plaintext HTTP (the
+# login endpoint sends a password) directly to the internet.
+ExecStart=/usr/local/bin/rymweb --data-dir /home/rymnet/.rymnet --listen 127.0.0.1:8080
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/rymnet/.rymnet
+
+[Install]
+WantedBy=multi-user.target

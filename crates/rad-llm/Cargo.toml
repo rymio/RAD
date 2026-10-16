@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+rad-tunnel.workspace = true
 rad-api.workspace = true
 rad-local.workspace = true
 reqwest = { workspace = true, features = ["multipart"] }

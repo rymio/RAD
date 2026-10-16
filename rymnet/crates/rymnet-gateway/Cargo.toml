@@ -1,0 +1,18 @@
+[package]
+name = "rymnet-gateway"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+blake3.workspace = true
+rymnet-core.workspace = true
+rymnet-domain.workspace = true
+rymnet-search.workspace = true
+rymnet-site.workspace = true
+rymnet-storage.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true

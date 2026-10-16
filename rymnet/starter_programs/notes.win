@@ -1,0 +1,57 @@
+# notes.win -- a RymScript desktop program demonstrating the curated
+# standard library's JSON helpers (json_loads/json_dumps) for structured
+# storage, instead of inventing a text format by hand.
+#
+# Notes are kept as a JSON array of {"text": str, "done": bool} objects
+# in notes.json in your home folder, loaded once at startup and
+# rewritten every time a note is added or checked off.
+#
+# See RYMSCRIPT_SDK.md's "Standard library" section for why json_loads/
+# json_dumps are plain functions rather than `import json`.
+
+NOTES_PATH = "notes.json"
+
+if exists(NOTES_PATH):
+    notes = json_loads(read_file(NOTES_PATH))
+else:
+    notes = []
+
+# text_input only lets the script *seed* a field the first time its id is
+# drawn -- after that, whatever the user typed wins, so there's no way to
+# clear it by re-sending value="". Bumping the id after a successful add
+# makes the next frame draw a brand-new, empty field instead.
+draft_generation = 0
+
+
+def save():
+    write_file(NOTES_PATH, json_dumps(notes))
+
+
+def draw(events):
+    global draft_generation
+    draft_id = f"draft_{draft_generation}"
+    draft = events.get(draft_id, "")
+
+    widgets = [
+        {"type": "heading", "text": "Notes"},
+        {"type": "text_input", "id": draft_id, "value": ""},
+        {"type": "button", "id": "add", "text": "Add note"},
+        {"type": "separator"},
+    ]
+
+    if events.get("add") and draft.strip():
+        notes.append({"text": draft.strip(), "done": False})
+        save()
+        draft_generation += 1
+
+    for i, note in enumerate(notes):
+        done_id = f"done_{i}"
+        if done_id in events:
+            note["done"] = events[done_id]
+            save()
+        text = note["text"]
+        if note["done"]:
+            text = f"[done] {text}"
+        widgets.append({"type": "checkbox", "id": done_id, "text": text, "value": note["done"]})
+
+    return widgets

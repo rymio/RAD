@@ -1,0 +1,54 @@
+# checksum_tool.run -- a RymScript terminal program demonstrating the
+# curated standard library: per-algorithm hashing, random, and csv.
+#
+# Run from rymsh:
+#   run checksum_tool
+#
+# See RYMSCRIPT_SDK.md's "Standard library" section for the full list of
+# importable modules and why hashing/random work a little differently
+# here than in real Python.
+
+import sha256
+import random
+import csv
+
+print("RymScript checksum tool")
+path = input("File to checksum (relative to your home folder): ")
+
+if not exists(path):
+    print(f"no such file: {path}")
+else:
+    data = read_file(path).encode("utf-8")
+    digest = sha256.sha256(data).hexdigest()
+    print(f"sha256: {digest}")
+
+    # random.random() doesn't exist here -- random.Random() is RustPython's
+    # accelerator class, so make an instance first. It only has .random(),
+    # .getrandbits(k), .seed()/.getstate()/.setstate() -- no .randint or
+    # .choice -- so a random digit is built from .random() by hand.
+    rng = random.Random()
+    confirmation = "".join(str(int(rng.random() * 10)) for _ in range(6))
+    print(f"confirmation code: {confirmation}")
+
+    # csv.writer wants a file-like object with .write(str) -- build the new
+    # row in memory, then append it with the existing file helpers, since
+    # there's no real filesystem handle to hand it directly.
+    class RowBuffer:
+        def __init__(self):
+            self.value = ""
+
+        def write(self, s):
+            self.value += s
+
+    buf = RowBuffer()
+    writer = csv.writer(buf)
+    write_header = not exists("checksum_log.csv")
+    if write_header:
+        writer.writerow(["path", "sha256", "confirmation"])
+    writer.writerow([path, digest, confirmation])
+
+    if write_header:
+        write_file("checksum_log.csv", buf.value)
+    else:
+        append_file("checksum_log.csv", buf.value)
+    print("(logged to checksum_log.csv in your home folder)")

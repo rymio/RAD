@@ -99,6 +99,7 @@ impl Default for Llm {
 impl Llm {
     pub fn new() -> Self {
         let http = reqwest::Client::builder()
+            .proxy(rad_tunnel::route::reqwest_proxy())
             .connect_timeout(Duration::from_secs(15))
             .pool_idle_timeout(Duration::from_secs(90))
             .user_agent(concat!("RAD/", env!("CARGO_PKG_VERSION")))

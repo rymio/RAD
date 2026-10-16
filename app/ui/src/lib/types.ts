@@ -142,7 +142,7 @@ export type MediaSource = { kind: 'file'; path: string } | { kind: 'vault'; id: 
 export interface MediaItem { key: string; src: MediaSource; title: string; artist?: string | null; album?: string | null; duration?: number }
 
 /** The built-in browsers: Servo ("Web Browser") and Chromium (CEF). */
-export type BrowserEngine = 'servo' | 'chromium';
+export type BrowserEngine = 'servo' | 'chromium' | 'rymwin';
 
 export type Route =
   | { kind: 'chat'; id: Id | null }
@@ -155,7 +155,9 @@ export type Route =
   | { kind: 'calendar' }
   | { kind: 'email' }
   | { kind: 'music' }
-  | { kind: 'video' };
+  | { kind: 'video' }
+  | { kind: 'rymnet' }
+  | { kind: 'rymwin' };
 
 /** Something the assistant asks the app to do (see crates/rad-server/src/agent.rs). */
 export interface AgentAction { kind: 'ssh' | 'open_url' | 'terminal' | string; host?: string; user?: string; port?: number; identity_file?: string; url?: string }
@@ -174,7 +176,7 @@ export interface SandboxStatus {
 }
 export interface SandboxProgress { phase: string; done?: number; total?: number }
 /** What the Terminal should open next (from chat actions, code blocks, Files…). */
-export type TerminalRequest = AgentAction | { kind: 'sandbox_run'; code: string; lang: string } | { kind: 'sandbox'; id: string };
+export type TerminalRequest = AgentAction | { kind: 'sandbox_run'; code: string; lang: string } | { kind: 'sandbox'; id: string } | { kind: 'rymsh' };
 export interface FsEntry { name: string; path: string; is_dir: boolean; size: number; modified: number; hidden: boolean }
 export interface FsListing { path: string; parent: string | null; entries: FsEntry[] }
 export interface FsPlace { name: string; path: string; icon: string }
@@ -191,3 +193,17 @@ export interface PageScrape {
   links: { text: string; href: string }[]; scroll_y: number; page_height: number;
 }
 export interface BrowserSnapshot { page?: PageScrape; image?: InlineImage }
+
+export interface RymnetPeer { name: string; public_key: string; endpoint: string }
+export interface RymnetStatus {
+  installed: boolean; bin_dir: string | null; initialized: boolean; node_id: string | null; listen_addr: string | null;
+  daemon: 'running' | 'external' | 'stopped'; rymwin: boolean; peers: RymnetPeer[]; daemon_log: string[];
+}
+
+export interface VpnScopes { services: boolean; browsers: boolean; email: boolean; ssh: boolean; rymnet: boolean }
+export interface VpnSettings {
+  endpoint: string; peer_public_key: string; address: string[]; dns: string[]; keepalive: number | null; mtu: number | null;
+  scopes: VpnScopes; auto_connect: boolean; was_on: boolean;
+}
+export interface VpnStatus { up: boolean; handshake_ago_secs: number | null; tx_bytes: number; rx_bytes: number; connections: number; last_error: string | null }
+export interface VpnInfo { settings: VpnSettings; public_key: string | null; has_psk: boolean; configured: boolean; on: boolean; socks: string | null; status: VpnStatus | null }

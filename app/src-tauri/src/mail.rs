@@ -142,7 +142,7 @@ fn tls_connector() -> tokio_rustls::TlsConnector {
 
 async fn login(acc: &Account, password: &str) -> CmdResult<Imap> {
     let host = acc.host.trim();
-    let tcp = TcpStream::connect((host, acc.port))
+    let tcp = rad_tunnel::route::connect_tcp(rad_tunnel::route::Scope::Email, host, acc.port)
         .await
         .map_err(|e| CmdError::new("mail", format!("Can't reach {host}:{}: {e}", acc.port)))?;
     let starttls = acc.security == "starttls";

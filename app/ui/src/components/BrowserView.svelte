@@ -3,6 +3,7 @@
   import { listen } from '@tauri-apps/api/event';
   import { rad, RadError } from '../lib/api';
   import { store } from '../lib/state.svelte';
+  import { vpn } from '../lib/vpn.svelte';
   import { toUrl, hostOf } from '../lib/web';
   import type { BrowserEngine, BrowserState, BrowserTab } from '../lib/types';
   import BrowserChat from './BrowserChat.svelte';
@@ -10,7 +11,7 @@
 
   /** Which engine renders this view: Servo ("Web Browser") or Chromium. */
   let { kind = 'servo' }: { kind?: BrowserEngine } = $props();
-  const HOME = $derived(kind === 'chromium' ? 'https://www.google.com' : 'https://servo.org');
+  const HOME = 'https://rymtech.net';
   const engineName = $derived(kind === 'chromium' ? 'Chromium' : 'browser');
 
   let viewport: HTMLDivElement | undefined = $state();
@@ -62,6 +63,9 @@
   });
 
   const dpr = () => window.devicePixelRatio || 1;
+  /** Page to reopen after Chromium restarts for a VPN change. */
+  let vpnRestart: string | null = null;
+  const servoUncovered = $derived(kind === 'servo' && vpn.info?.on && vpn.info.settings.scopes.browsers);
   const send = (cmd: Record<string, unknown>) => rad.browserSend(kind, cmd).catch(() => {});
 
   // ------------------------------------------------------------ frames
@@ -171,6 +175,12 @@
       case 'exited':
         if (engine === 'running') engine = 'stopped';
         tabs = [];
+        // Stopped because the VPN changed: start again, now with (or without) its proxy.
+        if (vpnRestart) {
+          const url = vpnRestart;
+          vpnRestart = null;
+          start(url);
+        }
         break;
     }
   }
@@ -180,6 +190,13 @@
     // Both engines share these events; each view follows its own.
     listen<string>('browser-frame', (e) => e.payload === kind && pull()).then((u) => un.push(u));
     listen<any>('browser-event', (e) => (e.payload.engine ?? 'servo') === kind && onEvent(e.payload)).then((u) => un.push(u));
+    if (kind === 'chromium')
+      listen('vpn-changed', () => {
+        if (engine !== 'running' && engine !== 'stopped') return;
+        const url = tab?.url || HOME;
+        if (engine === 'stopped') start(url);
+        else vpnRestart = url;
+      }).then((u) => un.push(u));
     start();
 
     let t: ReturnType<typeof setTimeout> | undefined;
@@ -454,6 +471,10 @@
     </div>
   {/if}
 
+  {#if servoUncovered}
+    <div class="vpn-note">This browser (Servo) can’t use RAD’s VPN — pages load over your normal connection. Use Chromium for browsing through the VPN.</div>
+  {/if}
+
   <!-- Page -->
   <div class="viewport" bind:this={viewport}>
     {#if tab?.loading}<div class="progress"></div>{/if}
@@ -556,6 +577,14 @@
 </div>
 
 <style>
+  .vpn-note {
+    flex: none;
+    padding: 6px 14px;
+    font-size: 12.5px;
+    background: var(--warning-soft);
+    color: var(--text-2);
+    border-bottom: 1px solid var(--border);
+  }
   .browser {
     flex: 1;
     min-height: 0;

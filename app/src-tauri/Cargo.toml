@@ -12,6 +12,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+rad-tunnel.workspace = true
 rad-api.workspace = true
 rad-server = { path = "../../crates/rad-server" }
 serde.workspace = true

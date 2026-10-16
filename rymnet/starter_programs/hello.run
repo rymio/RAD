@@ -1,0 +1,21 @@
+# hello.run -- a RymScript terminal program.
+#
+# *.run programs run in a terminal via rymsh's `run` command:
+#   run hello
+#
+# Only your virtual computer is reachable: no real filesystem, network,
+# or process access. File helpers: read_file(path), write_file(path,
+# text), append_file(path, text), list_dir(path='.'), exists(path),
+# remove_file(path), mkdir(path). print() and input() work like normal
+# Python. See RYMSCRIPT_SDK.md for the full reference.
+
+print("Hello from RymScript!")
+name = input("What's your name? ")
+print(f"Nice to meet you, {name}.")
+
+if not exists("notes.txt"):
+    write_file("notes.txt", f"{name} said hello.\n")
+    print("(wrote notes.txt in your home folder)")
+else:
+    append_file("notes.txt", f"{name} said hello again.\n")
+    print("(appended to notes.txt in your home folder)")

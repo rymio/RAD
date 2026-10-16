@@ -279,7 +279,7 @@ async fn download(app: &AppHandle, t: &Tts, cloning: bool) -> CmdResult<()> {
     let todo: Vec<&ModelFile> = FILES.iter().filter(|f| f.cloning == cloning).filter(|f| !std::fs::metadata(d.join(f.name)).is_ok_and(|m| m.len() == f.bytes)).collect();
     let total: u64 = todo.iter().map(|f| f.bytes).sum();
     let mut done = 0u64;
-    let http = reqwest::Client::builder().connect_timeout(Duration::from_secs(15)).build().map_err(|e| CmdError::new("tts", e.to_string()))?;
+    let http = reqwest::Client::builder().proxy(rad_tunnel::route::reqwest_proxy()).connect_timeout(Duration::from_secs(15)).build().map_err(|e| CmdError::new("tts", e.to_string()))?;
     for f in todo {
         let part = d.join(format!("{}.part", f.name));
         let resp = http.get(format!("{}/{}", f.base, f.name)).send().await.map_err(|e| CmdError::new("offline", format!("Download failed: {e}")))?;

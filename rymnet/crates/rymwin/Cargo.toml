@@ -1,0 +1,43 @@
+[package]
+name = "rymwin"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "rymwin"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+blake3.workspace = true
+chrono.workspace = true
+eframe.workspace = true
+egui.workspace = true
+egui_commonmark.workspace = true
+egui_extras.workspace = true
+egui-wgpu.workspace = true
+image.workspace = true
+mime_guess.workspace = true
+pdfium-render.workspace = true
+pulldown-cmark.workspace = true
+rymnet-account.workspace = true
+rymnet-board.workspace = true
+rymnet-chat.workspace = true
+rymnet-core.workspace = true
+rymnet-domain.workspace = true
+rymnet-mail.workspace = true
+rymnet-network.workspace = true
+rymnet-search.workspace = true
+rymnet-site.workspace = true
+rymnet-storage.workspace = true
+rustpython-stdlib.workspace = true
+rustpython-vm.workspace = true
+scraper.workspace = true
+serde_json.workspace = true
+shell-words.workspace = true
+tokio.workspace = true
+walkdir.workspace = true
+x25519-dalek.workspace = true
+wgpu = "29"
+pollster = "0.4"

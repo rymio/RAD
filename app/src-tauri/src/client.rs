@@ -57,12 +57,14 @@ pub fn normalize_url(url: &str) -> String {
 impl Client {
     pub fn new() -> Self {
         let http = reqwest::Client::builder()
+            .proxy(rad_tunnel::route::reqwest_proxy())
             .connect_timeout(Duration::from_secs(8))
             .timeout(Duration::from_secs(120))
             .user_agent(concat!("RAD-desktop/", env!("CARGO_PKG_VERSION")))
             .build()
             .expect("http client");
         let stream_http = reqwest::Client::builder()
+            .proxy(rad_tunnel::route::reqwest_proxy())
             .connect_timeout(Duration::from_secs(8))
             .user_agent(concat!("RAD-desktop/", env!("CARGO_PKG_VERSION")))
             .build()

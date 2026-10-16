@@ -374,6 +374,19 @@ fn main() {
             std::env::set_var("VLC_PLUGIN_PATH", p);
         }
     }
+    // Build step (scripts/build-media.sh): write libVLC's plugin cache next to the plugins, so
+    // each start loads only the plugins it needs instead of opening all of them.
+    if args.iter().any(|a| a == "--gen-cache") {
+        let argv: Vec<CString> = ["--reset-plugins-cache", "--ignore-config"].iter().map(|a| cstr(a)).collect();
+        let ptrs: Vec<*const std::ffi::c_char> = argv.iter().map(|a| a.as_ptr()).collect();
+        let inst = unsafe { sys::libvlc_new(ptrs.len() as i32, ptrs.as_ptr()) };
+        if inst.is_null() {
+            eprintln!("libVLC didn't start");
+            std::process::exit(1);
+        }
+        unsafe { sys::libvlc_release(inst) };
+        std::process::exit(0);
+    }
     let Some(vlc) = Instance::new() else {
         fatal(&out, "libVLC didn't start (its plugins weren't found). Reinstall VLC or rebuild the media engine with ./scripts/build-media.sh.");
         unreachable!()

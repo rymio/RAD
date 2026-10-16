@@ -10,12 +10,14 @@ mod mail;
 mod media;
 mod events;
 mod protocol;
+mod rymnet;
 mod sandbox;
 mod secrets;
 mod terminal;
 mod term_agent;
 mod tray;
 mod tts;
+mod vpn;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -309,6 +311,9 @@ pub fn run() {
             app.manage(sandbox::Sandboxes::default());
             app.manage(mail::Mail::default());
             app.manage(media::Media::default());
+            app.manage(rymnet::Rymnet::default());
+            app.manage(vpn::Vpn::default());
+            vpn::restore(app.handle());
             let handle = app.handle().clone();
             tray::build(&handle)?;
             #[cfg(target_os = "macos")]
@@ -399,6 +404,21 @@ pub fn run() {
             media::media_send,
             media::media_frame,
             media::media_vault_url,
+            rymnet::rymnet_status,
+            rymnet::rymwin_paste,
+            rymnet::rymnet_temp_dir,
+            rymnet::rymnet_initiate,
+            rymnet::rymnet_remove_peer,
+            rymnet::rymnet_stop_daemon,
+            rymnet::rymnet_guide,
+            vpn::vpn_get,
+            vpn::vpn_set,
+            vpn::vpn_save,
+            vpn::vpn_generate_key,
+            vpn::vpn_import,
+            vpn::vpn_import_file,
+            vpn::vpn_check_ip,
+            rymnet::rymnet_exec,
             tts::tts_status,
             tts::tts_download,
             tts::tts_remove,
@@ -423,6 +443,7 @@ pub fn run() {
                 // Drop the session — and in standalone mode lock the vault and checkpoint it.
                 app.state::<browser::Browsers>().stop();
                 app.state::<media::Media>().stop();
+                app.state::<rymnet::Rymnet>().stop();
                 app.state::<terminal::Terminals>().close_all();
                 app.state::<tts::Tts>().stop();
                 let st = app.state::<App>();

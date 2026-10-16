@@ -1,0 +1,139 @@
+# minesweeper.win -- a RymScript desktop program combining `grid`,
+# per-cell button `color`/`enabled`, and `random` (see RYMSCRIPT_SDK.md):
+# a small Minesweeper. Every cell is its own button in a fixed-size
+# grid; revealing/flagging just changes that button's text/color/enabled
+# state for the next frame -- the same "redeclare the whole UI every
+# frame" model every .win program uses, just with many more buttons.
+#
+# There's no right-click in the widget contract (a button only ever
+# reports a plain click), so flagging works through a "Flag mode"
+# checkbox instead: left-click either reveals or toggles a flag
+# depending on whether it's checked.
+
+import random
+
+SIZE = 8
+MINE_COUNT = 10
+
+rng = random.Random()
+
+
+def generate_mines():
+    placed = set()
+    while len(placed) < MINE_COUNT:
+        placed.add((int(rng.random() * SIZE), int(rng.random() * SIZE)))
+    return placed
+
+
+mines = generate_mines()
+revealed = set()
+flagged = set()
+game_over = False
+won = False
+
+
+def neighbors(r, c):
+    result = []
+    for dr in (-1, 0, 1):
+        for dc in (-1, 0, 1):
+            if dr == 0 and dc == 0:
+                continue
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < SIZE and 0 <= nc < SIZE:
+                result.append((nr, nc))
+    return result
+
+
+def neighbor_mine_count(r, c):
+    count = 0
+    for cell in neighbors(r, c):
+        if cell in mines:
+            count += 1
+    return count
+
+
+def reveal(r, c):
+    global game_over, won
+    if (r, c) in revealed or (r, c) in flagged or game_over:
+        return
+    revealed.add((r, c))
+    if (r, c) in mines:
+        game_over = True
+        return
+    if neighbor_mine_count(r, c) == 0:
+        for cell in neighbors(r, c):
+            reveal(cell[0], cell[1])
+    if len(revealed) == SIZE * SIZE - MINE_COUNT:
+        won = True
+
+
+def cell_label(r, c):
+    if (r, c) in flagged and (r, c) not in revealed:
+        return "F"
+    if (r, c) not in revealed:
+        return ""
+    if (r, c) in mines:
+        return "X"
+    count = neighbor_mine_count(r, c)
+    return str(count) if count else ""
+
+
+def cell_color(r, c):
+    if (r, c) in revealed and (r, c) in mines:
+        return [220, 80, 80]
+    if (r, c) in revealed:
+        return [220, 220, 220]
+    if (r, c) in flagged:
+        return [220, 200, 120]
+    return None
+
+
+def draw(events):
+    global mines, revealed, flagged, game_over, won
+
+    if events.get("restart"):
+        mines = generate_mines()
+        revealed = set()
+        flagged = set()
+        game_over = False
+        won = False
+
+    flag_mode = events.get("flag_mode", False)
+
+    if not game_over and not won:
+        for r in range(SIZE):
+            for c in range(SIZE):
+                if events.get(f"cell_{r}_{c}"):
+                    if flag_mode:
+                        if (r, c) in flagged:
+                            flagged.discard((r, c))
+                        elif (r, c) not in revealed:
+                            flagged.add((r, c))
+                    else:
+                        reveal(r, c)
+
+    if won:
+        status = "You win!"
+    elif game_over:
+        status = "Boom -- game over."
+    else:
+        status = "Find every safe cell."
+
+    cells = []
+    for r in range(SIZE):
+        for c in range(SIZE):
+            cells.append({
+                "type": "button",
+                "id": f"cell_{r}_{c}",
+                "text": cell_label(r, c),
+                "color": cell_color(r, c),
+                "enabled": (r, c) not in revealed and not game_over and not won,
+            })
+
+    return [
+        {"type": "heading", "text": "Rymnet Minesweeper"},
+        {"type": "label", "text": status},
+        {"type": "checkbox", "id": "flag_mode", "text": "Flag mode", "value": False},
+        {"type": "grid", "id": "board", "columns": SIZE, "children": cells},
+        {"type": "button", "id": "restart", "text": "Restart"},
+    ]

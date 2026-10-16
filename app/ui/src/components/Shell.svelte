@@ -15,7 +15,10 @@
   import EmailView from './EmailView.svelte';
   import MusicView from './MusicView.svelte';
   import VideoView from './VideoView.svelte';
+  import RymnetView from './RymnetView.svelte';
+  import RymwinView from './RymwinView.svelte';
   import CommandPalette from './CommandPalette.svelte';
+  import VpnToggle from './VpnToggle.svelte';
   import { UploadCloud, PanelLeftOpen } from '@lucide/svelte';
 
   let dragging = $state(false);
@@ -54,11 +57,11 @@
     getCurrentWebview()
       .onDragDropEvent((ev) => {
         const p = ev.payload;
-        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'terminal', 'files', 'calendar', 'email', 'music', 'video'].includes(store.route.kind);
+        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin'].includes(store.route.kind);
         else if (p.type === 'leave') dragging = false;
         else if (p.type === 'drop') {
           dragging = false;
-          if (['browser', 'chromium', 'terminal', 'files', 'calendar', 'email', 'music', 'video'].includes(store.route.kind)) return;
+          if (['browser', 'chromium', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin'].includes(store.route.kind)) return;
           uploadTo(p.paths);
         }
       })
@@ -93,6 +96,7 @@
 <div class="shell">
   {#if store.sidebarCollapsed}
     <button class="icon-btn sb-open no-drag" class:mac={document.documentElement.dataset.os === 'macos'} title="Show sidebar (⌘\)" onclick={() => store.toggleSidebar()}><PanelLeftOpen size={17} /></button>
+    <div class="vpn-float" class:mac={document.documentElement.dataset.os === 'macos'}><VpnToggle /></div>
   {:else}
     <Sidebar />
   {/if}
@@ -119,6 +123,10 @@
       <MusicView />
     {:else if store.route.kind === 'video'}
       <VideoView />
+    {:else if store.route.kind === 'rymnet'}
+      <RymnetView />
+    {:else if store.route.kind === 'rymwin'}
+      <RymwinView />
     {/if}
   </main>
   {#if dragging}
@@ -146,6 +154,15 @@
   }
   .sb-open.mac {
     left: 78px;
+  }
+  .vpn-float {
+    position: fixed;
+    z-index: 60;
+    top: 11px;
+    left: 44px;
+  }
+  .vpn-float.mac {
+    left: 114px;
   }
   .shell:has(.sb-open) main {
     border-left: none;

@@ -4,7 +4,7 @@
   import { anchorLabel, debounce, docKind } from '../lib/util';
   import type { Citation } from '../lib/types';
   import DocIcon from './DocIcon.svelte';
-  import { Search, MessageSquare, SquarePen, Settings, Lock, StickyNote, Camera, Loader, CornerDownLeft, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, Music, Clapperboard, CircleHelp } from '@lucide/svelte';
+  import { Search, MessageSquare, SquarePen, Settings, Lock, StickyNote, Camera, Loader, CornerDownLeft, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, Music, Clapperboard, CircleHelp, Network, Monitor } from '@lucide/svelte';
   import { rad } from '../lib/api';
 
   type Item = { id: string; group: string; label: string; sub?: string; icon?: any; color?: string; doc?: Citation; run: () => void };
@@ -62,6 +62,8 @@
       { id: 'a-mail', group: 'Actions', label: 'Email', icon: Mail, run: () => store.navigate({ kind: 'email' }) },
       { id: 'a-music', group: 'Actions', label: 'Music', icon: Music, run: () => store.navigate({ kind: 'music' }) },
       { id: 'a-video', group: 'Actions', label: 'Video', icon: Clapperboard, run: () => store.navigate({ kind: 'video' }) },
+      { id: 'a-rymnet', group: 'Actions', label: 'RYMNET', icon: Network, run: () => store.navigate({ kind: 'rymnet' }) },
+      { id: 'a-rymwin', group: 'Actions', label: 'RYMWIN', icon: Monitor, run: () => store.navigate({ kind: 'rymwin' }) },
       { id: 'a-sidebar', group: 'Actions', label: 'Toggle sidebar', icon: Globe, run: () => store.toggleSidebar() },
       { id: 'a-settings', group: 'Actions', label: 'Settings', icon: Settings, run: () => store.navigate({ kind: 'settings' }) },
       { id: 'a-about', group: 'Actions', label: 'About RAD', icon: CircleHelp, run: () => (store.aboutOpen = true) },

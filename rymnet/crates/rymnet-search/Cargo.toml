@@ -1,0 +1,17 @@
+[package]
+name = "rymnet-search"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+blake3.workspace = true
+chrono.workspace = true
+rymnet-core.workspace = true
+rymnet-site.workspace = true
+rymnet-storage.workspace = true
+scraper.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tantivy.workspace = true

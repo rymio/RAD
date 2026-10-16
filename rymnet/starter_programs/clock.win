@@ -1,0 +1,46 @@
+# clock.win -- a RymScript desktop program demonstrating the time
+# helpers, the live-repaint timer, and the `row` layout container (see
+# RYMSCRIPT_SDK.md). Two parts: a digital clock that keeps ticking on
+# its own even while nobody touches the window, and a small stopwatch
+# built on now_ms() to show elapsed-time math -- there's no real
+# time/datetime module here (see RYMSCRIPT_SDK.md's "Standard library"
+# section for why), so both now() and now_ms() are hand-implemented
+# functions rather than `import time`.
+
+running = False
+start_ms = 0
+elapsed_ms = 0
+
+
+def draw(events):
+    global running, start_ms, elapsed_ms
+
+    if events.get("start_stop"):
+        if running:
+            elapsed_ms += now_ms() - start_ms
+            running = False
+        else:
+            start_ms = now_ms()
+            running = True
+    if events.get("reset"):
+        running = False
+        elapsed_ms = 0
+
+    total_ms = elapsed_ms + (now_ms() - start_ms if running else 0)
+    total_seconds = total_ms // 1000
+    minutes = total_seconds // 60
+    seconds = total_seconds % 60
+
+    return [
+        {"type": "heading", "text": "Rymnet Clock"},
+        {"type": "label", "text": now()},
+        {"type": "separator"},
+        {"type": "label", "text": f"Stopwatch: {minutes:02d}:{seconds:02d}"},
+        {
+            "type": "row",
+            "children": [
+                {"type": "button", "id": "start_stop", "text": "Stop" if running else "Start"},
+                {"type": "button", "id": "reset", "text": "Reset", "enabled": not running},
+            ],
+        },
+    ]

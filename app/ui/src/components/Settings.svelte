@@ -12,8 +12,9 @@
   import RecoveryKit from './RecoveryKit.svelte';
   import VoiceSettings from './VoiceSettings.svelte';
   import EmailSettings from './EmailSettings.svelte';
+  import VpnSettings from './VpnSettings.svelte';
   import {
-    SlidersHorizontal, Palette, Cpu, Search, Brain, MonitorSmartphone, ShieldCheck, Server, Plus, Trash2, Plug, Loader,
+    SlidersHorizontal, Palette, Cpu, Search, Brain, MonitorSmartphone, ShieldCheck, Server, Plus, ShieldHalf, Trash2, Plug, Loader,
     Check, Download, KeyRound, HardDriveDownload, Lock, Wrench, Sun, Moon, Monitor, Circle, CircleAlert, FolderOpen, AudioLines, Mail, FolderInput, Users,
   } from '@lucide/svelte';
 
@@ -23,6 +24,7 @@
     { id: 'models', label: 'Models', icon: Cpu },
     { id: 'voice', label: 'Voice', icon: AudioLines },
     { id: 'email', label: 'Email', icon: Mail },
+    { id: 'vpn', label: 'VPN', icon: ShieldHalf },
     { id: 'retrieval', label: 'Answers & search', icon: Search },
     { id: 'memories', label: 'Memories', icon: Brain },
     { id: 'devices', label: 'Devices', icon: MonitorSmartphone },
@@ -33,6 +35,10 @@
   type Tab = (typeof tabs)[number]['id'];
 
   let tab = $state<Tab>(((store.route.kind === 'settings' && store.route.tab) as Tab) || 'general');
+  // Opened again on a given tab (e.g. from the VPN switch) while Settings is already showing.
+  $effect(() => {
+    if (store.route.kind === 'settings' && store.route.tab) tab = store.route.tab as Tab;
+  });
   const isMac = document.documentElement.dataset.os === 'macos';
 
   // ---------------------------------------------------------------- general
@@ -547,6 +553,8 @@
         <VoiceSettings />
       {:else if tab === 'email'}
         <EmailSettings />
+      {:else if tab === 'vpn'}
+        <VpnSettings />
       {:else if tab === 'retrieval' && s}
         <h2>Answers & search</h2>
         <div class="group">

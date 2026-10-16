@@ -202,6 +202,7 @@ impl Library {
             tracing::warn!("can't create models folder {}: {e}", dir.display());
         }
         let http = reqwest::Client::builder()
+            .proxy(rad_tunnel::route::reqwest_proxy())
             .connect_timeout(Duration::from_secs(20))
             .read_timeout(Duration::from_secs(60))
             .user_agent(concat!("RAD/", env!("CARGO_PKG_VERSION")))

@@ -143,7 +143,7 @@ impl Terminals {
 
 #[derive(Debug, Deserialize)]
 pub struct OpenArgs {
-    /// "local" or "ssh".
+    /// "local", "ssh", "sandbox" or "rymsh".
     kind: String,
     host: Option<String>,
     user: Option<String>,
@@ -170,6 +170,13 @@ fn user_ok(u: &str) -> bool {
     !u.is_empty() && u.len() <= 64 && !u.starts_with('-') && u.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
 }
 
+/// A netcat that speaks SOCKS5 (`-X 5 -x`): macOS's own, or OpenBSD netcat on Linux.
+fn socks_netcat() -> Option<&'static str> {
+    ["/usr/bin/nc", "/bin/nc.openbsd", "/usr/bin/nc.openbsd"].into_iter().find(|p| {
+        std::path::Path::new(p).is_file() && (cfg!(target_os = "macos") || p.ends_with(".openbsd"))
+    })
+}
+
 fn home() -> Option<std::path::PathBuf> {
     std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(Into::into)
 }
@@ -193,6 +200,13 @@ fn command(a: &OpenArgs, control: Option<&std::path::Path>) -> CmdResult<(Comman
             let t = SshTarget { target: target.clone(), port: a.port, identity, control: control.map(Into::into) };
             let mut cmd = CommandBuilder::new("ssh");
             cmd.args(t.options("-p"));
+            // RAD's VPN: ssh reaches the server through the VPN's SOCKS5 proxy (never directly).
+            if let Some(socks) = rad_tunnel::route::socks_for(rad_tunnel::route::Scope::Ssh).filter(|_| !rad_tunnel::route::is_local(host)) {
+                let nc = socks_netcat().ok_or_else(|| {
+                    CmdError::new("vpn", "SSH through the VPN needs OpenBSD netcat (on Linux: apt install netcat-openbsd). Or turn SSH off in Settings → VPN.")
+                })?;
+                cmd.args(["-o", &format!("ProxyCommand={nc} -X 5 -x {socks} %h %p")]);
+            }
             if t.control.is_some() {
                 // This terminal's connection is the one the agent and file transfers reuse.
                 cmd.args(["-o", "ControlMaster=auto", "-o", "ControlPersist=60"]);
@@ -243,6 +257,14 @@ pub async fn term_open(app: AppHandle, t: State<'_, Terminals>, args: OpenArgs) 
         net = l.net;
         sandbox = Some(id);
         (l.cmd, l.title)
+    } else if args.kind == "rymsh" {
+        // The Rymnet shell, from the Rymnet programs RAD carries (see rymnet.rs).
+        crate::rymnet::ensure_identity(&app)?;
+        let mut cmd = CommandBuilder::new(crate::rymnet::program(&app, "rymsh")?);
+        if let Some(s) = crate::rymnet::vpn_socks() {
+            cmd.env("RYMNET_SOCKS", s);
+        }
+        (cmd, "rymsh".to_string())
     } else {
         let control = if args.kind == "ssh" { control_dir() } else { None };
         let (cmd, title, target) = command(&args, control.as_deref())?;

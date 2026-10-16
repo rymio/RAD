@@ -4,7 +4,7 @@
   import { store } from '../lib/state.svelte';
   import { formatBytes } from '../lib/util';
   import type { Document, FsEntry, FsListing, FsPlace, FsPreview, Id, SandboxInfo } from '../lib/types';
-  import { Home, Monitor, FileText, Download, Image, HardDrive, Folder, File, ArrowLeft, ArrowUp, RefreshCw, Eye, EyeOff, Sparkles, FolderInput, ExternalLink, Search, Loader, Box } from '@lucide/svelte';
+  import { Home, Monitor, FileText, Download, Image, HardDrive, Folder, File, ArrowLeft, ArrowUp, RefreshCw, Eye, EyeOff, Sparkles, FolderInput, ExternalLink, Search, Loader, Box, MonitorUp } from '@lucide/svelte';
 
   const ICONS: Record<string, any> = { home: Home, desktop: Monitor, docs: FileText, downloads: Download, pictures: Image, drive: HardDrive };
   const IMAGE = /\.(png|jpe?g|gif|webp|bmp|svg|tiff?)$/i;
@@ -39,6 +39,13 @@
     (listing?.entries ?? []).filter((e) => (showHidden || !e.hidden) && (!filter.trim() || e.name.toLowerCase().includes(filter.trim().toLowerCase()))),
   );
   const chosen = $derived(visible.filter((e) => selected.has(e.path) && !e.is_dir));
+  /** RYMWIN takes folders too (copied whole). */
+  const forRymwin = $derived(visible.filter((e) => selected.has(e.path)));
+
+  function sendToRymwin() {
+    store.pendingRymwinDrop = forRymwin.map((e) => e.path);
+    store.navigate({ kind: 'rymwin' });
+  }
   const crumbs = $derived.by(() => {
     const p = listing?.path ?? '';
     const sep = p.includes('\\') ? '\\' : '/';
@@ -264,6 +271,8 @@
       <button class="btn sm" disabled={!chosen.length} onclick={sendToSandbox}><Box size={14} /> Send to sandbox</button>
       <span class="sep"></span>
     {/if}
+    <button class="btn sm" disabled={!forRymwin.length} title="Copy into RYMWIN’s /Downloads (the Rymnet Desktop)" onclick={sendToRymwin}><MonitorUp size={14} /> Send to RYMWIN</button>
+    <span class="sep"></span>
     <select class="select" bind:value={target} title="Project to add the files to">
       <option value={null}>Inbox</option>
       {#each projects.filter((p) => p.name !== 'Inbox') as p}<option value={p.id}>{p.name}</option>{/each}

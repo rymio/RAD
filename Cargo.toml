@@ -7,11 +7,12 @@ members = [
     "crates/rad-llm",
     "crates/rad-local",
     "crates/rad-server",
+    "crates/rad-tunnel",
     "app/src-tauri",
 ]
-# The web browser engines and the media engine (libVLC) are their own workspaces: see
-# browser/rad-browser, browser/rad-chromium and media/rad-media.
-exclude = ["browser", "media"]
+# The web browser engines, the media engine (libVLC) and Rymnet are their own workspaces: see
+# browser/rad-browser, browser/rad-chromium, media/rad-media and rymnet.
+exclude = ["browser", "media", "rymnet"]
 
 [workspace.package]
 version = "0.1.0"
@@ -25,6 +26,7 @@ rad-vault = { path = "crates/rad-vault" }
 rad-ingest = { path = "crates/rad-ingest" }
 rad-llm = { path = "crates/rad-llm" }
 rad-local = { path = "crates/rad-local" }
+rad-tunnel = { path = "crates/rad-tunnel" }
 anyhow = "1"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
@@ -33,7 +35,7 @@ tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "socks"] }
 base64 = "0.22"
 blake3 = "1"
 rand = "0.8"

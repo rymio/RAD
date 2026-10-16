@@ -1,0 +1,104 @@
+# calculator.win -- a RymScript desktop program demonstrating the `grid`
+# layout container (see RYMSCRIPT_SDK.md): a standard four-function
+# calculator, its keypad laid out as a 4-column grid of buttons instead
+# of the single vertical stack every widget was stuck in before `grid`
+# existed. Also demonstrates a button's optional `color` field, to tell
+# operator/clear/equals keys apart from digit keys at a glance.
+
+display = "0"
+accumulator = 0.0
+pending_op = None
+fresh = True  # True right after an operator/equals -- next digit starts a new number
+
+
+def apply(op, a, b):
+    if op == "+":
+        return a + b
+    if op == "-":
+        return a - b
+    if op == "*":
+        return a * b
+    if op == "/":
+        return a / b if b != 0 else 0.0
+    return b
+
+
+def format_display(value):
+    if value == int(value):
+        return str(int(value))
+    return str(value)
+
+
+def press_digit(digit):
+    global display, fresh
+    if fresh or display == "0":
+        display = digit
+        fresh = False
+    else:
+        display += digit
+
+
+def press_op(op):
+    global display, accumulator, pending_op, fresh
+    if pending_op and not fresh:
+        accumulator = apply(pending_op, accumulator, float(display))
+    else:
+        accumulator = float(display)
+    pending_op = op
+    fresh = True
+    display = format_display(accumulator)
+
+
+def press_equals():
+    global display, accumulator, pending_op, fresh
+    if pending_op:
+        accumulator = apply(pending_op, accumulator, float(display))
+        display = format_display(accumulator)
+        pending_op = None
+        fresh = True
+
+
+def press_clear():
+    global display, accumulator, pending_op, fresh
+    display = "0"
+    accumulator = 0.0
+    pending_op = None
+    fresh = True
+
+
+def digit_button(digit):
+    return {"type": "button", "id": f"digit_{digit}", "text": digit}
+
+
+def op_button(op):
+    return {"type": "button", "id": f"op_{op}", "text": op, "color": [200, 180, 120]}
+
+
+def draw(events):
+    for digit in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]:
+        if events.get(f"digit_{digit}"):
+            press_digit(digit)
+    for op in ["+", "-", "*", "/"]:
+        if events.get(f"op_{op}"):
+            press_op(op)
+    if events.get("equals"):
+        press_equals()
+    if events.get("clear"):
+        press_clear()
+
+    keypad = [
+        digit_button("7"), digit_button("8"), digit_button("9"), op_button("/"),
+        digit_button("4"), digit_button("5"), digit_button("6"), op_button("*"),
+        digit_button("1"), digit_button("2"), digit_button("3"), op_button("-"),
+        {"type": "button", "id": "clear", "text": "C", "color": [200, 120, 120]},
+        digit_button("0"),
+        {"type": "button", "id": "equals", "text": "=", "color": [120, 180, 120]},
+        op_button("+"),
+    ]
+
+    return [
+        {"type": "heading", "text": "Rymnet Calculator"},
+        {"type": "label", "text": display},
+        {"type": "separator"},
+        {"type": "grid", "id": "keypad", "columns": 4, "children": keypad},
+    ]

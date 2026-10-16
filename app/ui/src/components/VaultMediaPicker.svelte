@@ -4,11 +4,12 @@
   import { playableDoc } from '../lib/media.svelte';
   import type * as T from '../lib/types';
   import Modal from './Modal.svelte';
-  import { Search, Loader, Music, Film, Check } from '@lucide/svelte';
+  import { Search, Loader, Music, Film, Check, FileText } from '@lucide/svelte';
 
   let { open = $bindable(false), kind, multiple = true, onpick }: {
     open?: boolean;
-    kind: 'audio' | 'video';
+    /** 'any': every document in the vault (copying files into RYMWIN). */
+    kind: 'audio' | 'video' | 'any';
     multiple?: boolean;
     onpick: (docs: T.Document[]) => void;
   } = $props();
@@ -30,7 +31,7 @@
     picked = new Set();
     try {
       const lists = await Promise.all(store.projects.map((p) => api.get<T.Document[]>(`/v1/projects/${p.id}/documents`).catch(() => [])));
-      docs = lists.flat().filter((d) => playableDoc(d, kind)).sort((a, b) => b.created_at - a.created_at);
+      docs = lists.flat().filter((d) => kind === 'any' ? d.status !== 'error' : playableDoc(d, kind)).sort((a, b) => b.created_at - a.created_at);
     } finally {
       loading = false;
     }
@@ -60,7 +61,7 @@
   const size = (n: number) => (n > 1 << 30 ? `${(n / (1 << 30)).toFixed(1)} GB` : `${(n / (1 << 20)).toFixed(1)} MB`);
 </script>
 
-<Modal bind:open title={kind === 'audio' ? 'Add music from the vault' : 'Open a video from the vault'} width={560}>
+<Modal bind:open title={kind === 'audio' ? 'Add music from the vault' : kind === 'video' ? 'Open a video from the vault' : 'Copy from the vault'} width={560}>
   <div class="search">
     <Search size={15} />
     <!-- svelte-ignore a11y_autofocus -->
@@ -71,13 +72,13 @@
       <div class="empty"><Loader size={16} class="spin" /> Looking through your projects…</div>
     {:else if !shown.length}
       <div class="empty">
-        {docs.length ? 'Nothing matches.' : `No ${kind === 'audio' ? 'audio' : 'video'} files in the vault yet. Drop some into a project to add them.`}
+        {docs.length ? 'Nothing matches.' : `No ${kind === 'audio' ? 'audio' : kind === 'video' ? 'video' : ''} files in the vault yet. Drop some into a project to add them.`}
       </div>
     {:else}
       {#each shown as d (d.id)}
         <button class="row" class:on={picked.has(d.id)} onclick={() => toggle(d)} ondblclick={() => multiple && (picked = new Set([d.id]), done())}>
           <span class="ic">
-            {#if picked.has(d.id)}<Check size={15} />{:else if kind === 'audio'}<Music size={15} />{:else}<Film size={15} />{/if}
+            {#if picked.has(d.id)}<Check size={15} />{:else if kind === 'audio'}<Music size={15} />{:else if kind === 'video'}<Film size={15} />{:else}<FileText size={15} />{/if}
           </span>
           <span class="name truncate">{d.title || d.original_name}</span>
           <span class="proj truncate">{projectName(d.project_id)}</span>
