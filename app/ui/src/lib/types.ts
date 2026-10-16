@@ -141,8 +141,8 @@ export interface EqInfo { freqs: number[]; presets: EqPreset[] }
 export type MediaSource = { kind: 'file'; path: string } | { kind: 'vault'; id: Id };
 export interface MediaItem { key: string; src: MediaSource; title: string; artist?: string | null; album?: string | null; duration?: number }
 
-/** The built-in browsers: Servo ("Web Browser") and Chromium (CEF). */
-export type BrowserEngine = 'servo' | 'chromium' | 'rymwin';
+/** The built-in browsers: Servo ("Web Browser"), Chromium (CEF) and Tor (Servo over Arti). */
+export type BrowserEngine = 'servo' | 'chromium' | 'tor' | 'rymwin';
 
 export type Route =
   | { kind: 'chat'; id: Id | null }
@@ -150,6 +150,7 @@ export type Route =
   | { kind: 'settings'; tab?: string }
   | { kind: 'browser' }
   | { kind: 'chromium' }
+  | { kind: 'tor' }
   | { kind: 'terminal' }
   | { kind: 'files' }
   | { kind: 'calendar' }

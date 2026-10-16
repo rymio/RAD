@@ -17,6 +17,7 @@ cd "$(dirname "$0")/.."
 triple="$(rustc -vV | sed -n 's/^host: //p')"
 
 ./scripts/build-browser.sh "$triple"
+[[ "${RAD_NO_TOR:-}" == 1 ]] || ./scripts/build-tor-browser.sh "$triple"
 [[ "${RAD_NO_CHROMIUM:-}" == 1 ]] || ./scripts/build-chromium.sh
 # Without VLC installed the app is still built; Music and Video then say the engine is missing.
 [[ "${RAD_NO_MEDIA:-}" == 1 ]] || ./scripts/build-media.sh || echo "warning: building without the media engine (Music, Video)" >&2
@@ -25,7 +26,7 @@ triple="$(rustc -vV | sed -n 's/^host: //p')"
 
 # Bundle whichever engines were built: executables as sidecars, libraries into Frameworks.
 bins=(); libs=()
-for b in rad-browser mio-tts-server rad-sandbox gvproxy; do
+for b in rad-browser rad-tor-browser mio-tts-server rad-sandbox gvproxy; do
   [[ -f "app/src-tauri/binaries/$b-$triple" || -f "app/src-tauri/binaries/$b-$triple.exe" ]] && bins+=("\"binaries/$b\"")
 done
 for l in libkrun.1.dylib libkrunfw.5.dylib; do

@@ -1,0 +1,46 @@
+[package]
+name = "rad-tor-browser"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Robert <robert@rymtechsystems.com>"]
+description = "RAD Tor browser engine: an offscreen Servo instance that routes every page through Arti (Tor in Rust)"
+
+# Servo pins its own versions of SQLite and ICU, which clash with the RAD vault's, so the
+# engine is its own workspace and runs as a separate process next to the app. Arti (Tor) is
+# embedded here too and runs a local SOCKS5 proxy that Servo is pointed at, so no browsing
+# data leaves this computer except through the Tor network.
+[workspace]
+
+[dependencies]
+servo = { version = "0.7", default-features = false, features = ["bundled", "js_jit", "clipboard"] }
+url = "2"
+euclid = "0.22"
+dpi = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+crossbeam-channel = "0.5"
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs"] }
+log = "0.4"
+env_logger = "0.11"
+
+# Arti (Tor in Rust). Default features (tokio + native-tls + compression) keep its TLS stack
+# separate from Servo's rustls provider, so the two never fight over the global crypto provider.
+arti-client = "0.47"
+tor-rtcompat = "0.47"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "macros", "sync"] }
+tempfile = "3"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# webrender 0.70.0 matches a `const` of `RenderTaskId` in a pattern, which rustc 1.86+ rejects
+# as a non-structural pattern. Servo pins webrender 0.70 (and no fixed release exists), so we
+# build a locally patched copy. See browser/vendor/webrender.
+[patch.crates-io]
+webrender = { path = "../vendor/webrender" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true

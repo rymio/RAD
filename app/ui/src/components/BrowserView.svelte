@@ -9,10 +9,10 @@
   import BrowserChat from './BrowserChat.svelte';
   import { ArrowLeft, ArrowRight, RotateCw, Plus, X, Lock, Globe, Camera, FileDown, Loader, MessageSquare, ZoomIn, ZoomOut, Home, TriangleAlert, Star, Download, FolderOpen, FolderInput, Check } from '@lucide/svelte';
 
-  /** Which engine renders this view: Servo ("Web Browser") or Chromium. */
+  /** Which engine renders this view: Servo ("Web Browser"), Chromium or Tor. */
   let { kind = 'servo' }: { kind?: BrowserEngine } = $props();
-  const HOME = 'https://rymtech.net';
-  const engineName = $derived(kind === 'chromium' ? 'Chromium' : 'browser');
+  const HOME = $derived(kind === 'tor' ? 'https://check.torproject.org' : 'https://rymtech.net');
+  const engineName = $derived(kind === 'chromium' ? 'Chromium' : kind === 'tor' ? 'Tor' : 'browser');
 
   let viewport: HTMLDivElement | undefined = $state();
   let canvas: HTMLCanvasElement | undefined = $state();
@@ -25,6 +25,10 @@
   let editingAddress = $state(false);
   let cursor = $state('default');
   let statusText = $state<string | null>(null);
+  /** Tor bootstrap status, when this is the Tor browser. */
+  let tor = $state<{ status: 'connecting' | 'bootstrapping' | 'ready' | 'error'; progress: number; message?: string } | null>(
+    kind === 'tor' ? { status: 'connecting', progress: 0 } : null,
+  );
   let engine = $state<'starting' | 'running' | 'missing' | 'stopped'>('starting');
   let engineError = $state('');
   let chatOpen = $state(true);
@@ -143,6 +147,9 @@
       case 'status':
         statusText = ev.text;
         break;
+      case 'tor':
+        tor = { status: ev.status === 'ready' ? 'ready' : ev.status === 'error' ? 'error' : 'bootstrapping', progress: typeof ev.progress === 'number' ? ev.progress : (tor?.progress ?? 0), message: ev.message };
+        break;
       case 'dialog':
         dialog = { control: ev.control, kind: ev.kind, message: ev.message, value: ev.default ?? '', host: hostOf(tab?.url ?? '') || 'This page' };
         break;
@@ -154,7 +161,7 @@
         if (select?.control === ev.control) select = null;
         break;
       case 'error':
-        store.toast('error', kind === 'chromium' ? 'Chromium' : 'Browser', ev.message);
+        store.toast('error', engineName, ev.message);
         break;
       case 'download': {
         const d = { id: ev.id, name: ev.name, path: ev.path, received: ev.received, total: ev.total, state: ev.state };
@@ -475,6 +482,16 @@
     <div class="vpn-note">This browser (Servo) can’t use RAD’s VPN — pages load over your normal connection. Use Chromium for browsing through the VPN.</div>
   {/if}
 
+  {#if kind === 'tor' && tor && tor.status !== 'ready'}
+    <div class="vpn-note tor-note">
+      {#if tor.status === 'error'}
+        Couldn’t connect to the Tor network{tor.message ? `: ${tor.message}` : ''}.
+      {:else}
+        Connecting to the Tor network{tor.status === 'bootstrapping' ? ` — ${Math.max(0, Math.round(tor.progress * 100))}%` : '…'}
+      {/if}
+    </div>
+  {/if}
+
   <!-- Page -->
   <div class="viewport" bind:this={viewport}>
     {#if tab?.loading}<div class="progress"></div>{/if}
@@ -584,6 +601,9 @@
     background: var(--warning-soft);
     color: var(--text-2);
     border-bottom: 1px solid var(--border);
+  }
+  .tor-note {
+    background: var(--accent-soft);
   }
   .browser {
     flex: 1;

@@ -6,6 +6,7 @@ node_modules
 .DS_Store
 /models
 /browser/rad-browser/target
+/browser/rad-tor-browser/target
 /app/src-tauri/binaries
 /tts/mio-tts-cpp
 /tts/bin

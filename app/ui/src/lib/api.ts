@@ -72,7 +72,7 @@ export const rad = {
   captureScreenshot: (projectId?: T.Id) => call<T.UploadResponse | null>('capture_screenshot', { projectId: projectId ?? null }),
   exportDocument: (documentId: T.Id, dest: string) => call<void>('export_document', { documentId, dest }),
 
-  /** `engine`: 'servo' (Web Browser) or 'chromium' (CEF); each has its own process and tabs. */
+  /** `engine`: 'servo' (Web Browser), 'chromium' (CEF) or 'tor' (Servo over Arti); each has its own process and tabs. */
   browserStart: (engine: T.BrowserEngine, width: number, height: number, scale: number, url?: string) =>
     call<T.BrowserState | null>('browser_start', { engine, width, height, scale, url: url ?? null }),
   browserStop: (engine: T.BrowserEngine) => call<void>('browser_stop', { engine }),

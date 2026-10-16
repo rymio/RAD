@@ -57,11 +57,11 @@
     getCurrentWebview()
       .onDragDropEvent((ev) => {
         const p = ev.payload;
-        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin'].includes(store.route.kind);
+        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin'].includes(store.route.kind);
         else if (p.type === 'leave') dragging = false;
         else if (p.type === 'drop') {
           dragging = false;
-          if (['browser', 'chromium', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin'].includes(store.route.kind)) return;
+          if (['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin'].includes(store.route.kind)) return;
           uploadTo(p.paths);
         }
       })
@@ -111,6 +111,8 @@
       <BrowserView />
     {:else if store.route.kind === 'chromium'}
       <BrowserView kind="chromium" />
+    {:else if store.route.kind === 'tor'}
+      <BrowserView kind="tor" />
     {:else if store.route.kind === 'terminal'}
       <TerminalView />
     {:else if store.route.kind === 'files'}

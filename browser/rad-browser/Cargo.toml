@@ -25,6 +25,12 @@ env_logger = "0.11"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# webrender 0.70.0 matches a `const` of `RenderTaskId` in a pattern, which rustc 1.86+ rejects
+# as a non-structural pattern. Servo pins webrender 0.70 (and no fixed release exists), so we
+# build a locally patched copy. See browser/vendor/webrender.
+[patch.crates-io]
+webrender = { path = "../vendor/webrender" }
+
 [profile.release]
 lto = "thin"
 codegen-units = 4

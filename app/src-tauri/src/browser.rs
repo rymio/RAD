@@ -26,11 +26,15 @@ use crate::client::{CmdError, CmdResult};
 
 const BIN: &str = if cfg!(windows) { "rad-browser.exe" } else { "rad-browser" };
 const CHROMIUM_BIN: &str = if cfg!(windows) { "rad-chromium.exe" } else { "rad-chromium" };
+const TOR_BIN: &str = if cfg!(windows) { "rad-tor-browser.exe" } else { "rad-tor-browser" };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Servo,
     Chromium,
+    /// The Tor browser: the same Servo engine, but every page goes through an embedded Arti
+    /// (Tor in Rust) SOCKS5 proxy.
+    Tor,
     Rymwin,
 }
 
@@ -38,6 +42,7 @@ impl Kind {
     fn parse(s: Option<&str>) -> Kind {
         match s {
             Some("chromium") => Kind::Chromium,
+            Some("tor") => Kind::Tor,
             Some("rymwin") => Kind::Rymwin,
             _ => Kind::Servo,
         }
@@ -46,6 +51,7 @@ impl Kind {
         match self {
             Kind::Servo => "servo",
             Kind::Chromium => "chromium",
+            Kind::Tor => "tor",
             Kind::Rymwin => "rymwin",
         }
     }
@@ -84,12 +90,13 @@ pub struct Browser {
 pub struct Browsers {
     servo: Browser,
     chromium: Browser,
+    tor: Browser,
     rymwin: Browser,
 }
 
 impl Default for Browsers {
     fn default() -> Self {
-        Browsers { servo: Browser::new(Kind::Servo), chromium: Browser::new(Kind::Chromium), rymwin: Browser::new(Kind::Rymwin) }
+        Browsers { servo: Browser::new(Kind::Servo), chromium: Browser::new(Kind::Chromium), tor: Browser::new(Kind::Tor), rymwin: Browser::new(Kind::Rymwin) }
     }
 }
 
@@ -98,6 +105,7 @@ impl Browsers {
         match Kind::parse(engine) {
             Kind::Servo => &self.servo,
             Kind::Chromium => &self.chromium,
+            Kind::Tor => &self.tor,
             Kind::Rymwin => &self.rymwin,
         }
     }
@@ -115,6 +123,7 @@ impl Browsers {
     pub fn stop(&self) {
         self.servo.stop();
         self.chromium.stop();
+        self.tor.stop();
         self.rymwin.stop();
     }
 }
@@ -222,6 +231,7 @@ fn engine_path(app: &AppHandle, kind: Kind) -> Option<PathBuf> {
     match kind {
         Kind::Servo => servo_path(app),
         Kind::Chromium => chromium_path(app),
+        Kind::Tor => tor_path(app),
         Kind::Rymwin => crate::rymnet::bin_dir(app).map(|d| d.join(crate::rymnet::exe("rymwin"))).filter(|p| p.is_file()),
     }
 }
@@ -271,6 +281,27 @@ fn servo_path(app: &AppHandle) -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.is_file())
 }
 
+/// Finds the Tor engine (Servo + embedded Arti): same locations as `servo_path`, under
+/// `browser/rad-tor-browser`. `RAD_TOR_BROWSER_BIN` overrides all of these.
+fn tor_path(app: &AppHandle) -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(p) = std::env::var("RAD_TOR_BROWSER_BIN") {
+        candidates.push(p.into());
+    }
+    if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(PathBuf::from)) {
+        candidates.push(dir.join(TOR_BIN));
+    }
+    if let Ok(dir) = app.path().resource_dir() {
+        candidates.push(dir.join(TOR_BIN));
+    }
+    if cfg!(debug_assertions) {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../browser/rad-tor-browser/target");
+        candidates.push(root.join("release").join(TOR_BIN));
+        candidates.push(root.join("debug").join(TOR_BIN));
+    }
+    candidates.into_iter().find(|p| p.is_file())
+}
+
 fn spawn(app: &AppHandle, b: &Browser, w: u32, h: u32, scale: f64, url: &str) -> CmdResult<()> {
     let path = engine_path(app, b.kind).ok_or_else(|| {
         CmdError::new(
@@ -278,6 +309,7 @@ fn spawn(app: &AppHandle, b: &Browser, w: u32, h: u32, scale: f64, url: &str) ->
             match (b.kind, cfg!(debug_assertions)) {
                 (Kind::Servo, true) => "The web browser engine isn't built yet. Run ./scripts/build-browser.sh, then reopen the browser.",
                 (Kind::Chromium, true) => "The Chromium engine isn't built yet. Run ./scripts/build-chromium.sh, then reopen Chromium.",
+                (Kind::Tor, true) => "The Tor engine isn't built yet. Run ./scripts/build-tor-browser.sh, then reopen Tor.",
                 (Kind::Rymwin, true) => "RYMWIN isn't built yet. Run ./scripts/build-rymnet.sh, then reopen RYMWIN.",
                 _ => "This copy of RAD was built without this browser engine. Rebuild it with ./scripts/build-app.sh and reinstall.",
             },
@@ -435,7 +467,10 @@ pub fn browser_start(app: AppHandle, bs: State<'_, Browsers>, engine: Option<Str
         let _ = app.emit_to("main", "browser-frame", b.kind.name());
         return Ok(b.state.lock().unwrap().clone());
     }
-    let home = "https://rymtech.net";
+    let home = match b.kind {
+        Kind::Tor => "https://check.torproject.org",
+        _ => "https://rymtech.net",
+    };
     spawn(&app, b, w, h, scale, url.as_deref().unwrap_or(home))?;
     Ok(Value::Null)
 }

@@ -8,7 +8,7 @@
   import Menu from './Menu.svelte';
   import Modal from './Modal.svelte';
   import VpnToggle from './VpnToggle.svelte';
-  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp, Network, Monitor } from '@lucide/svelte';
+  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp, Network, Monitor, Shield } from '@lucide/svelte';
 
   let newProjectOpen = $state(false);
   let npName = $state('');
@@ -99,6 +99,9 @@
     </button>
     <button class="item web" class:active={store.route.kind === 'chromium'} onclick={() => store.navigate({ kind: 'chromium' })}>
       <Compass size={15} /> <span class="spacer">Chromium</span>
+    </button>
+    <button class="item web" class:active={store.route.kind === 'tor'} onclick={() => store.navigate({ kind: 'tor' })}>
+      <Shield size={15} /> <span class="spacer">TOR</span>
     </button>
     <button class="item web" class:active={store.route.kind === 'terminal'} onclick={() => store.navigate({ kind: 'terminal' })}>
       <SquareTerminal size={15} /> <span class="spacer">Terminal</span>

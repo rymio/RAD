@@ -61,7 +61,17 @@ Notes:
 
 The ☆ in the address bar adds a page to **Favourites**, which are kept encrypted in your vault and shown under the toolbar. Right-click a favourite to remove it. The chat collapses to a single line (⌄), and − / + change its height.
 
-Build the engine once with `./scripts/build-browser.sh`. The first build compiles Servo and takes a few minutes. `cargo tauri dev` then finds it automatically; `./scripts/build-app.sh` puts it inside the installable app.
+Build the engine once with `./scripts/build-browser.sh`. The first build compiles Servo and takes a few minutes. `cargo tauri dev` then finds it automatically; `./scripts/build-app.sh` puts it inside the installable app. Note: Servo pins `webrender 0.70`, which no longer compiles on rustc 1.86+; RAD builds a one-line-patched copy from `browser/vendor/webrender` via a `[patch.crates-io]` override.
+
+## Tor browser
+
+**TOR** in the sidebar is the same Servo browser, but every page is routed through the Tor network by an embedded [Arti](https://blog.torproject.org/arti_2_0_0_released/) client (Tor in Rust). The engine runs its own HTTP CONNECT proxy on `127.0.0.1` (Servo's proxy connector only speaks HTTP CONNECT), points Servo at it, and bootstraps Tor in the background — a note shows the connection progress. If Tor can't start or connect, pages simply don't load; the browser never falls back to the open network.
+
+- No browsing data is kept: Tor's state and caches live in temporary folders that are deleted when RAD quits.
+- The Tor engine is a separate process (`rad-tor-browser`), so it can't take the vault down with it.
+- Like Servo, it's still pre-1.0 — some sites don't render perfectly yet, and it can't use RAD's VPN (it has its own tunnel).
+
+Build it with `./scripts/build-tor-browser.sh` (this also compiles Arti, so the first build is longer than the plain browser). `./scripts/build-app.sh` bundles it inside the app; set `RAD_NO_TOR=1` to skip it. Linux builds need OpenSSL development headers for Arti's TLS.
 
 ## Terminal, Files and actions from chat
 
@@ -249,6 +259,7 @@ crates/rad-server   axum server: auth, unlock, uploads, jobs, RAG, live sync (SS
 app/src-tauri       desktop shell: tray, hotkeys, screenshots, rad:// file protocol, keychain
 app/ui              Svelte 5 interface
 browser/rad-browser web browser engine: Servo rendering offscreen, driven by the app (its own Cargo workspace)
+browser/rad-tor-browser the Tor browser engine: the same Servo engine with an embedded Arti (Tor) HTTP CONNECT proxy (its own Cargo workspace)
 rymnet/             Rymnet: peer network, rymwin desktop (embedded via --embed), rymsh, rym CLI, rymnetd daemon (its own Cargo workspace); docs/ has the guides
 tts/                text-to-speech engine build (mio-tts-cpp, fetched and built by scripts/build-tts.sh)
 sandbox/launcher    Linux sandbox launcher (libkrun); scripts/build-sandbox.sh builds it with libkrun and gvproxy

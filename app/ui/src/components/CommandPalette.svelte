@@ -4,7 +4,7 @@
   import { anchorLabel, debounce, docKind } from '../lib/util';
   import type { Citation } from '../lib/types';
   import DocIcon from './DocIcon.svelte';
-  import { Search, MessageSquare, SquarePen, Settings, Lock, StickyNote, Camera, Loader, CornerDownLeft, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, Music, Clapperboard, CircleHelp, Network, Monitor } from '@lucide/svelte';
+  import { Search, MessageSquare, SquarePen, Settings, Lock, StickyNote, Camera, Loader, CornerDownLeft, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, Music, Clapperboard, CircleHelp, Network, Monitor, Shield } from '@lucide/svelte';
   import { rad } from '../lib/api';
 
   type Item = { id: string; group: string; label: string; sub?: string; icon?: any; color?: string; doc?: Citation; run: () => void };
@@ -56,6 +56,7 @@
       { id: 'a-new', group: 'Actions', label: 'New chat', icon: SquarePen, run: () => store.newChat() },
       { id: 'a-web', group: 'Actions', label: 'Web Browser', icon: Globe, run: () => store.navigate({ kind: 'browser' }) },
       { id: 'a-chromium', group: 'Actions', label: 'Chromium', icon: Compass, run: () => store.navigate({ kind: 'chromium' }) },
+      { id: 'a-tor', group: 'Actions', label: 'TOR', icon: Shield, run: () => store.navigate({ kind: 'tor' }) },
       { id: 'a-term', group: 'Actions', label: 'Terminal', icon: SquareTerminal, run: () => store.navigate({ kind: 'terminal' }) },
       { id: 'a-files', group: 'Actions', label: 'Files', icon: FolderOpen, run: () => store.navigate({ kind: 'files' }) },
       { id: 'a-cal', group: 'Actions', label: 'Calendar', icon: CalendarDays, run: () => store.navigate({ kind: 'calendar' }) },
