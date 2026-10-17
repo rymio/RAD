@@ -26,13 +26,26 @@ pub struct TermInfo {
     pub exited: Option<String>,
     /// The Linux sandbox this session runs in.
     pub sandbox: Option<String>,
+    /// The container this session is a shell in.
+    pub container: Option<String>,
+}
+
+/// A shell that isn't on a local pseudo-terminal (a container's, through its agent).
+pub struct Remote {
+    pub title: String,
+    pub reader: Box<dyn Read + Send>,
+    pub writer: Box<dyn Write + Send>,
+    pub resize: Box<dyn Fn(u16, u16) + Send + Sync>,
+    pub close: Box<dyn Fn() + Send + Sync>,
 }
 
 struct Session {
     info: Mutex<TermInfo>,
     writer: Mutex<Box<dyn Write + Send>>,
-    master: Mutex<Box<dyn MasterPty + Send>>,
-    child: Mutex<Box<dyn Child + Send + Sync>>,
+    /// A local pseudo-terminal and its program — or a remote shell's controls.
+    master: Mutex<Option<Box<dyn MasterPty + Send>>>,
+    child: Mutex<Option<Box<dyn Child + Send + Sync>>>,
+    remote: Option<(Box<dyn Fn(u16, u16) + Send + Sync>, Box<dyn Fn() + Send + Sync>)>,
     history: Mutex<VecDeque<u8>>,
     out: Mutex<Option<Channel<InvokeResponseBody>>>,
     /// A sandbox's private network; stopped with the session.
@@ -136,7 +149,18 @@ impl Terminals {
 
     pub fn close_all(&self) {
         for (_, s) in self.sessions.lock().unwrap().drain() {
-            let _ = s.child.lock().unwrap().kill();
+            s.kill();
+        }
+    }
+}
+
+impl Session {
+    fn kill(&self) {
+        if let Some(c) = self.child.lock().unwrap().as_mut() {
+            let _ = c.kill();
+        }
+        if let Some((_, close)) = &self.remote {
+            close();
         }
     }
 }
@@ -151,6 +175,9 @@ pub struct OpenArgs {
     identity_file: Option<String>,
     /// "sandbox": the sandbox to start, and optionally code to run in it.
     sandbox: Option<String>,
+    /// "container": the (running) container to open a shell in.
+    #[serde(default)]
+    container: Option<String>,
     script: Option<ScriptArg>,
     cols: u16,
     rows: u16,
@@ -231,8 +258,61 @@ fn command(a: &OpenArgs, control: Option<&std::path::Path>) -> CmdResult<(Comman
     }
 }
 
+/// Output of a session, kept for re-attaching views and sent to the attached one.
+fn pump(app: AppHandle, s: Arc<Session>, mut reader: Box<dyn Read + Send>) {
+    std::thread::spawn(move || {
+        let mut buf = vec![0u8; 16 * 1024];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    {
+                        let mut h = s.history.lock().unwrap();
+                        h.extend(&buf[..n]);
+                        let extra = h.len().saturating_sub(HISTORY);
+                        h.drain(..extra);
+                    }
+                    if let Some(ch) = s.out.lock().unwrap().as_ref() {
+                        let _ = ch.send(InvokeResponseBody::Raw(buf[..n].to_vec()));
+                    }
+                }
+            }
+        }
+        let msg = match s.child.lock().unwrap().as_mut() {
+            Some(c) => c.wait().map(|st| if st.success() { "exited".to_string() } else { format!("exited with code {}", st.exit_code()) }).unwrap_or_else(|e| e.to_string()),
+            None => "exited".to_string(),
+        };
+        s.info.lock().unwrap().exited = Some(msg.clone());
+        drop(s.net.lock().unwrap().take());
+        if let Some(ch) = s.out.lock().unwrap().as_ref() {
+            let _ = ch.send(InvokeResponseBody::Json(json!({ "exit": msg }).to_string()));
+        }
+        let _ = app.emit_to("main", "term-changed", ());
+    });
+}
+
 #[tauri::command]
 pub async fn term_open(app: AppHandle, t: State<'_, Terminals>, args: OpenArgs) -> CmdResult<TermInfo> {
+    if args.kind == "container" {
+        let cid = args.container.clone().ok_or_else(|| CmdError::new("bad_request", "Choose a container"))?;
+        let id = t.next.fetch_add(1, Ordering::Relaxed) + 1;
+        let r = crate::containers::shell(&app, &cid, &format!("t{id}"), args.cols, args.rows)?;
+        let info = TermInfo { id, title: r.title, kind: "container".into(), exited: None, sandbox: None, container: Some(cid) };
+        let s = Arc::new(Session {
+            info: Mutex::new(info.clone()),
+            writer: Mutex::new(r.writer),
+            master: Mutex::new(None),
+            child: Mutex::new(None),
+            remote: Some((r.resize, r.close)),
+            history: Mutex::new(VecDeque::new()),
+            out: Mutex::new(None),
+            net: Mutex::new(None),
+            ssh: None,
+        });
+        t.sessions.lock().unwrap().insert(id, s.clone());
+        pump(app, s, r.reader);
+        return Ok(info);
+    }
     let mut net = None;
     let mut sandbox = None;
     let mut ssh = None;
@@ -281,48 +361,23 @@ pub async fn term_open(app: AppHandle, t: State<'_, Terminals>, args: OpenArgs) 
         .map_err(|e| CmdError::new("terminal", e.to_string()))?;
     let child = pty.slave.spawn_command(cmd).map_err(|e| CmdError::new("terminal", format!("Couldn't start {title}: {e}")))?;
     drop(pty.slave);
-    let mut reader = pty.master.try_clone_reader().map_err(|e| CmdError::new("terminal", e.to_string()))?;
+    let reader = pty.master.try_clone_reader().map_err(|e| CmdError::new("terminal", e.to_string()))?;
     let writer = pty.master.take_writer().map_err(|e| CmdError::new("terminal", e.to_string()))?;
     let id = t.next.fetch_add(1, Ordering::Relaxed) + 1;
-    let info = TermInfo { id, title, kind: args.kind.clone(), exited: None, sandbox };
+    let info = TermInfo { id, title, kind: args.kind.clone(), exited: None, sandbox, container: None };
     let s = Arc::new(Session {
         info: Mutex::new(info.clone()),
         writer: Mutex::new(writer),
-        master: Mutex::new(pty.master),
-        child: Mutex::new(child),
+        master: Mutex::new(Some(pty.master)),
+        child: Mutex::new(Some(child)),
+        remote: None,
         history: Mutex::new(VecDeque::new()),
         out: Mutex::new(None),
         net: Mutex::new(net),
         ssh,
     });
     t.sessions.lock().unwrap().insert(id, s.clone());
-    std::thread::spawn(move || {
-        let mut buf = vec![0u8; 16 * 1024];
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    {
-                        let mut h = s.history.lock().unwrap();
-                        h.extend(&buf[..n]);
-                        let extra = h.len().saturating_sub(HISTORY);
-                        h.drain(..extra);
-                    }
-                    if let Some(ch) = s.out.lock().unwrap().as_ref() {
-                        let _ = ch.send(InvokeResponseBody::Raw(buf[..n].to_vec()));
-                    }
-                }
-            }
-        }
-        let status = s.child.lock().unwrap().wait().map(|st| if st.success() { "exited".to_string() } else { format!("exited with code {}", st.exit_code()) });
-        let msg = status.unwrap_or_else(|e| e.to_string());
-        s.info.lock().unwrap().exited = Some(msg.clone());
-        drop(s.net.lock().unwrap().take());
-        if let Some(ch) = s.out.lock().unwrap().as_ref() {
-            let _ = ch.send(InvokeResponseBody::Json(json!({ "exit": msg }).to_string()));
-        }
-        let _ = app.emit_to("main", "term-changed", ());
-    });
+    pump(app, s, reader);
     Ok(info)
 }
 
@@ -417,14 +472,19 @@ pub fn term_write(t: State<'_, Terminals>, id: u32, data: String) -> CmdResult<(
 #[tauri::command]
 pub fn term_resize(t: State<'_, Terminals>, id: u32, cols: u16, rows: u16) -> CmdResult<()> {
     let s = t.get(id)?;
-    let r = s.master.lock().unwrap().resize(PtySize { rows: rows.max(2), cols: cols.max(10), pixel_width: 0, pixel_height: 0 });
-    r.map_err(|e| CmdError::new("terminal", e.to_string()))
+    if let Some((resize, _)) = &s.remote {
+        resize(cols.max(10), rows.max(2));
+        return Ok(());
+    }
+    let m = s.master.lock().unwrap();
+    let Some(m) = m.as_ref() else { return Ok(()) };
+    m.resize(PtySize { rows: rows.max(2), cols: cols.max(10), pixel_width: 0, pixel_height: 0 }).map_err(|e| CmdError::new("terminal", e.to_string()))
 }
 
 #[tauri::command]
 pub fn term_close(app: AppHandle, t: State<'_, Terminals>, id: u32) {
     if let Some(s) = t.sessions.lock().unwrap().remove(&id) {
-        let _ = s.child.lock().unwrap().kill();
+        s.kill();
     }
     let _ = app.emit_to("main", "term-changed", ());
 }
@@ -434,7 +494,7 @@ mod tests {
     use super::*;
 
     fn args(host: &str, user: &str, port: u16, key: &str) -> OpenArgs {
-        OpenArgs { kind: "ssh".into(), host: Some(host.into()), user: Some(user.into()), port: Some(port), identity_file: Some(key.into()), sandbox: None, script: None, cols: 80, rows: 24 }
+        OpenArgs { kind: "ssh".into(), host: Some(host.into()), user: Some(user.into()), port: Some(port), identity_file: Some(key.into()), sandbox: None, container: None, script: None, cols: 80, rows: 24 }
     }
 
     #[test]

@@ -10,9 +10,10 @@ members = [
     "crates/rad-tunnel",
     "app/src-tauri",
 ]
-# The web browser engines, the media engine (libVLC) and Rymnet are their own workspaces: see
-# browser/rad-browser, browser/rad-chromium, media/rad-media and rymnet.
-exclude = ["browser", "media", "rymnet"]
+# The web browser engines, the media engine (libVLC), Rymnet and SideX (a checkout made by
+# scripts/build-sidex.sh) are their own workspaces: see browser/rad-browser,
+# browser/rad-chromium, media/rad-media, rymnet and sidex.
+exclude = ["browser", "media", "rymnet", "sidex"]
 
 [workspace.package]
 version = "0.1.0"

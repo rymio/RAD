@@ -5,6 +5,7 @@
 #   - the media engine (libVLC, Music/Video) → scripts/build-media.sh   (skip: RAD_NO_MEDIA=1; needs VLC)
 #   - the text-to-speech engine (MioTTS)    → scripts/build-tts.sh
 #   - the Linux sandbox engine (libkrun)    → scripts/build-sandbox.sh (macOS on Apple Silicon)
+#   - SideX, the code editor (VS Code)      → scripts/build-sidex.sh   (skip: RAD_NO_SIDEX=1; macOS)
 # All are incremental, so re-running is quick. Extra arguments go to `cargo tauri build`
 # (e.g. --bundles app). Result: target/release/bundle/…
 #
@@ -23,6 +24,7 @@ triple="$(rustc -vV | sed -n 's/^host: //p')"
 [[ "${RAD_NO_MEDIA:-}" == 1 ]] || ./scripts/build-media.sh || echo "warning: building without the media engine (Music, Video)" >&2
 ./scripts/build-tts.sh "$triple"
 ./scripts/build-sandbox.sh "$triple"
+[[ "${RAD_NO_SIDEX:-}" == 1 ]] || ./scripts/build-sidex.sh || echo "warning: building without SideX (the code editor)" >&2
 
 # Bundle whichever engines were built: executables as sidecars, libraries into Frameworks.
 bins=(); libs=()
@@ -93,6 +95,14 @@ if [[ -d "$app" && -x "$media/rad-media" && "${RAD_NO_MEDIA:-}" != 1 ]]; then
   find "$app/Contents/Helpers/rad-media" -name '*.dylib' -type f -print0 | xargs -0 codesign --force --sign "$identity"
   codesign --force --sign "$identity" "$app/Contents/Helpers/rad-media/rad-media"
 fi
+sidex=sidex/target/release/bundle/macos/SideX.app
+if [[ -d "$app" && -d "$sidex" && "${RAD_NO_SIDEX:-}" != 1 ]]; then
+  # SideX, the code editor (SideX view): its own app inside RAD's, signed with the app's identity.
+  rm -rf "$app/Contents/Helpers/SideX.app"
+  mkdir -p "$app/Contents/Helpers"
+  ditto "$sidex" "$app/Contents/Helpers/SideX.app"
+  codesign --force --deep --sign "${APPLE_SIGNING_IDENTITY:--}" "$app/Contents/Helpers/SideX.app"
+fi
 rymnet=rymnet/target/release
 if [[ -d "$app" && -x "$rymnet/rymwin" && "${RAD_NO_RYMNET:-}" != 1 ]]; then
   # The Rymnet programs (RYMNET and RYMWIN views): rymwin, rymnetd, rym and rymsh, signed with the app's identity.
@@ -105,6 +115,10 @@ if [[ -d "$app" && -x "$rymnet/rymwin" && "${RAD_NO_RYMNET:-}" != 1 ]]; then
   done
   # rymwin's PDF Reader looks for libpdfium next to it.
   for f in "$rymnet"/libpdfium.dylib; do [[ -f "$f" ]] && cp "$f" "$app/Contents/Helpers/rymnet/" && codesign --force --sign "$identity" "$app/Contents/Helpers/rymnet/libpdfium.dylib"; done
+fi
+if [[ -d "$app" && -f sandbox/bin/rad-agent ]]; then
+  # The containers' agent (a Linux program the VMs run): a resource, not a macOS executable.
+  install -m 755 sandbox/bin/rad-agent "$app/Contents/Resources/rad-agent"
 fi
 if [[ -d "$app" ]]; then
   # Without a signing identity Tauri leaves the bundle unsealed. Sign it inside-out — libraries,

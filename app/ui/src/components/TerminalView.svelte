@@ -13,7 +13,7 @@
   import { agentFor } from '../lib/termAgent.svelte';
   import { platform } from '../lib/api';
   import Modal from './Modal.svelte';
-  import { Plus, X, SquareTerminal, Server, KeyRound, Trash2, Box, Network } from '@lucide/svelte';
+  import { Plus, X, SquareTerminal, Server, KeyRound, Trash2, Box, Network, Container } from '@lucide/svelte';
 
   interface View {
     term: Terminal;
@@ -175,6 +175,23 @@
     }
   }
 
+  /** A shell in a running container: shows its open one, or opens one. */
+  async function openContainer(id: string) {
+    await refresh();
+    const open = sessions.find((s) => s.kind === 'container' && s.container === id && !s.exited);
+    if (open) {
+      active = open.id;
+      return;
+    }
+    try {
+      const s = await rad.termOpen({ kind: 'container', container: id, ...size() });
+      await refresh();
+      active = s.id;
+    } catch (e) {
+      store.error(e, 'Couldn’t open a shell in the container');
+    }
+  }
+
   const LAST_SANDBOX = 'rad-last-sandbox';
 
   async function openSandbox(sb: { id: string }, script?: { code: string; lang: string }) {
@@ -254,6 +271,7 @@
     if (a.kind === 'ssh' && 'host' in a && a.host) openSsh({ host: a.host, user: a.user, port: a.port, identity_file: a.identity_file });
     else if (a.kind === 'sandbox_run' && 'code' in a) runCode(a.code, a.lang);
     else if (a.kind === 'sandbox' && 'id' in a) openSandbox({ id: a.id });
+    else if (a.kind === 'container' && 'id' in a && a.id) openContainer(a.id);
     else if (a.kind === 'rymsh') openRymsh();
     else openLocal();
   });
@@ -296,7 +314,7 @@
     {#each sessions as s (s.id)}
       <div class="tab no-drag" class:active={s.id === active} class:dead={!!s.exited} role="tab" tabindex="0" aria-selected={s.id === active}
         onclick={() => (active = s.id)} onkeydown={(e) => e.key === 'Enter' && (active = s.id)}>
-        {#if s.kind === 'ssh'}<Server size={13} />{:else if s.kind === 'sandbox'}<Box size={13} />{:else if s.kind === 'rymsh'}<Network size={13} />{:else}<SquareTerminal size={13} />{/if}
+        {#if s.kind === 'ssh'}<Server size={13} />{:else if s.kind === 'sandbox'}<Box size={13} />{:else if s.kind === 'container'}<Container size={13} />{:else if s.kind === 'rymsh'}<Network size={13} />{:else}<SquareTerminal size={13} />{/if}
         <span class="truncate spacer">{s.title}</span>
         <button class="x" aria-label="Close terminal" onclick={(e) => close(s.id, e)}><X size={12} /></button>
       </div>

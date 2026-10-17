@@ -1,7 +1,8 @@
 // rad-sandbox: runs one command in a libkrun microVM on this terminal.
 //
 //   rad-sandbox [--cpus N] [--mem MiB] [--disk IMG | --root DIR] [--data IMG] [--net SOCKET]
-//               [--share TAG=DIR]... [--workdir DIR] [--env KEY=VALUE]... -- CMD [ARGS...]
+//               [--share TAG=DIR]... [--vsock PORT=SOCKET]... [--workdir DIR] [--env KEY=VALUE]...
+//               -- CMD [ARGS...]
 //
 // --disk   boots from an ext4 disk image (the sandbox's own drive)
 // --root   boots from a host directory (used for RAD's small installer VM)
@@ -11,6 +12,9 @@
 //          forwarding (TSI) is always switched off, so the guest can never reach this
 //          computer's localhost.
 // --share  exposes a host directory as virtiofs tag TAG (the guest mounts it itself).
+// --vsock  connects guest vsock port PORT to a unix socket on the host that this program
+//          listens on: host programs connect to SOCKET to reach a server in the guest (RAD's
+//          containers use it for their agent). This is plain vsock, never TSI.
 //
 // The process exits with the guest command's exit code.
 
@@ -50,8 +54,8 @@ static void preload_kernel(void) {
 int main(int argc, char **argv) {
     int cpus = 2, mem = 1024;
     const char *disk = NULL, *root = NULL, *data = NULL, *net = NULL, *workdir = "/root";
-    const char *shares[MAX_LIST], *envs[MAX_LIST + 1];
-    int nshares = 0, nenvs = 0;
+    const char *shares[MAX_LIST], *envs[MAX_LIST + 1], *vsocks[MAX_LIST];
+    int nshares = 0, nenvs = 0, nvsocks = 0;
     int i = 1;
     while (i < argc) {
         const char *a = argv[i];
@@ -67,6 +71,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--workdir")) workdir = v;
         else if (!strcmp(a, "--share") && nshares < MAX_LIST) shares[nshares++] = v;
         else if (!strcmp(a, "--env") && nenvs < MAX_LIST) envs[nenvs++] = v;
+        else if (!strcmp(a, "--vsock") && nvsocks < MAX_LIST) vsocks[nvsocks++] = v;
         else { fprintf(stderr, "rad-sandbox: unknown option %s\n", a); return 2; }
         i += 2;
     }
@@ -103,6 +108,17 @@ int main(int argc, char **argv) {
         memcpy(tag, shares[s], eq - shares[s]);
         tag[eq - shares[s]] = 0;
         if ((r = krun_add_virtiofs(ctx, tag, eq + 1))) die("krun_add_virtiofs", r);
+    }
+
+    if (nvsocks) {
+        // An explicit vsock device without TSI: only the listed ports, nothing hijacked.
+        if ((r = krun_add_vsock(ctx, 0))) die("krun_add_vsock", r);
+        for (int s = 0; s < nvsocks; s++) {
+            char *end;
+            long port = strtol(vsocks[s], &end, 10);
+            if (*end != '=' || port <= 0 || port > 0xffffffffL || !end[1]) { fprintf(stderr, "rad-sandbox: bad --vsock %s\n", vsocks[s]); return 2; }
+            if ((r = krun_add_vsock_port2(ctx, (uint32_t)port, end + 1, true))) die("krun_add_vsock_port2", r);
+        }
     }
 
     if (net) {

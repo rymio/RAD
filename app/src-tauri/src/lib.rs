@@ -12,6 +12,8 @@ mod events;
 mod protocol;
 mod rymnet;
 mod sandbox;
+mod containers;
+mod sidex;
 mod secrets;
 mod terminal;
 mod term_agent;
@@ -309,6 +311,8 @@ pub fn run() {
             app.manage(term_agent::Agents::default());
             app.manage(tts::Tts::default());
             app.manage(sandbox::Sandboxes::default());
+            app.manage(containers::Containers::default());
+            app.manage(sidex::Sidex::default());
             app.manage(mail::Mail::default());
             app.manage(media::Media::default());
             app.manage(rymnet::Rymnet::default());
@@ -432,6 +436,23 @@ pub fn run() {
             sandbox::sandbox_update,
             sandbox::sandbox_send,
             sandbox::sandbox_shared_dir,
+            containers::container_status,
+            containers::container_create,
+            containers::container_start,
+            containers::container_stop,
+            containers::container_reset,
+            containers::container_delete,
+            containers::container_update,
+            containers::container_exec,
+            containers::container_run,
+            containers::container_cancel,
+            containers::container_read,
+            containers::container_write,
+            containers::container_list,
+            containers::container_shared_dir,
+            sidex::sidex_status,
+            sidex::sidex_open,
+            sidex::sidex_forget,
         ])
         .build(tauri::generate_context!())
         .expect("error while building RAD")
@@ -445,6 +466,8 @@ pub fn run() {
                 app.state::<media::Media>().stop();
                 app.state::<rymnet::Rymnet>().stop();
                 app.state::<terminal::Terminals>().close_all();
+                // Containers power off cleanly (their files are on their drives).
+                app.state::<containers::Containers>().stop_all();
                 app.state::<tts::Tts>().stop();
                 let st = app.state::<App>();
                 st.client.set_session(None);

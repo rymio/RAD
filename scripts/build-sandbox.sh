@@ -5,6 +5,8 @@
 #   - gvproxy 0.9.0 (Apache-2.0)       the sandbox's private NAT network
 #   - rad-sandbox                      RAD's launcher (sandbox/launcher), signed with the
 #                                      hypervisor entitlement
+#   - rad-agent                        the agent inside RAD's containers (sandbox/agent), a
+#                                      static Linux program
 # Output: sandbox/bin (used by `cargo tauri dev`) and app/src-tauri/{binaries,frameworks}
 # (bundled by ./scripts/build-app.sh). Needs: Rust, Xcode tools, and `brew install lld llvm`.
 set -euo pipefail
@@ -68,9 +70,16 @@ clang -O2 -Wall -I"$W/libkrun/include" -L"$OUT" -lkrun.1 \
 codesign --force --sign - "$OUT/libkrun.1.dylib" "$OUT/libkrunfw.5.dylib" "$OUT/gvproxy" 2>/dev/null
 codesign --force --sign - --entitlements sandbox/launcher/hvf-entitlements.plist "$OUT/rad-sandbox"
 
+echo "==> rad-agent (Linux, for containers)"
+rustup target add aarch64-unknown-linux-musl >/dev/null
+CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=rust-lld \
+  cargo build -q --release --manifest-path sandbox/agent/Cargo.toml --target aarch64-unknown-linux-musl
+install -m 755 sandbox/agent/target/aarch64-unknown-linux-musl/release/rad-agent "$OUT/rad-agent"
+
 # For bundles: executables as Tauri sidecars, libraries into Contents/Frameworks.
 mkdir -p app/src-tauri/binaries app/src-tauri/frameworks
 cp "$OUT/rad-sandbox" "app/src-tauri/binaries/rad-sandbox-$triple"
 cp "$OUT/gvproxy" "app/src-tauri/binaries/gvproxy-$triple"
 cp "$OUT/libkrun.1.dylib" "$OUT/libkrunfw.5.dylib" app/src-tauri/frameworks/
+# rad-agent isn't a macOS program: build-app.sh copies it into the bundle's Resources.
 echo "Sandbox engine ready: $OUT"

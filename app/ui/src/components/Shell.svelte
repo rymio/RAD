@@ -17,6 +17,8 @@
   import VideoView from './VideoView.svelte';
   import RymnetView from './RymnetView.svelte';
   import RymwinView from './RymwinView.svelte';
+  import ContainersView from './ContainersView.svelte';
+  import SidexView from './SidexView.svelte';
   import CommandPalette from './CommandPalette.svelte';
   import VpnToggle from './VpnToggle.svelte';
   import { UploadCloud, PanelLeftOpen } from '@lucide/svelte';
@@ -57,11 +59,11 @@
     getCurrentWebview()
       .onDragDropEvent((ev) => {
         const p = ev.payload;
-        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin'].includes(store.route.kind);
+        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex'].includes(store.route.kind);
         else if (p.type === 'leave') dragging = false;
         else if (p.type === 'drop') {
           dragging = false;
-          if (['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin'].includes(store.route.kind)) return;
+          if (['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex'].includes(store.route.kind)) return;
           uploadTo(p.paths);
         }
       })
@@ -129,6 +131,10 @@
       <RymnetView />
     {:else if store.route.kind === 'rymwin'}
       <RymwinView />
+    {:else if store.route.kind === 'sidex'}
+      <SidexView />
+    {:else if store.route.kind === 'container'}
+      {#key store.route.type}<ContainersView kind={store.route.type} />{/key}
     {/if}
   </main>
   {#if dragging}

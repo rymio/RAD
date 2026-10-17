@@ -158,13 +158,15 @@ export type Route =
   | { kind: 'music' }
   | { kind: 'video' }
   | { kind: 'rymnet' }
-  | { kind: 'rymwin' };
+  | { kind: 'rymwin' }
+  | { kind: 'container'; type: 'rust' | 'python' }
+  | { kind: 'sidex' };
 
 /** Something the assistant asks the app to do (see crates/rad-server/src/agent.rs). */
 export interface AgentAction { kind: 'ssh' | 'open_url' | 'terminal' | string; host?: string; user?: string; port?: number; identity_file?: string; url?: string }
 export interface Bookmark { title: string; url: string }
 export interface SshHost { host: string; user?: string; port?: number; identity_file?: string; last_used?: number }
-export interface TermInfo { id: number; title: string; kind: 'local' | 'ssh' | 'sandbox' | string; exited: string | null; sandbox: string | null }
+export interface TermInfo { id: number; title: string; kind: 'local' | 'ssh' | 'sandbox' | 'container' | string; exited: string | null; sandbox: string | null; container?: string | null }
 export interface SandboxInfo {
   id: string; name: string; distro: string; distro_name: string; cpus: number; mem_mb: number; disk_gb: number;
   network: boolean; created_at: number; disk_used: number; running: boolean;
@@ -176,8 +178,30 @@ export interface SandboxStatus {
   progress: SandboxProgress | null;
 }
 export interface SandboxProgress { phase: string; done?: number; total?: number }
+export interface SidexStatus {
+  supported: boolean; available: boolean; dev_build: boolean; running: boolean;
+  recent: { path: string; name: string; exists: boolean }[];
+}
+export type ContainerKindId = 'rust' | 'python';
+export interface ContainerKind { id: ContainerKindId; name: string; description: string; files: string[]; run: string; ready: boolean }
+export interface ContainerStats { disk_total: number; disk_used: number; mem_total: number; mem_used: number; uptime: number }
+export interface ContainerInfo {
+  id: string; name: string; kind: ContainerKindId; kind_name: string; cpus: number; mem_mb: number; disk_gb: number;
+  network: boolean; ports: number[]; created_at: number; disk_used: number; disk_total: number;
+  running: boolean; starting: boolean; started_at: number | null; disk_on_mac: number; stats: ContainerStats | null; grow_pending: boolean;
+}
+export interface ContainerStatus {
+  supported: boolean; engine: boolean; dev_build: boolean;
+  kinds: ContainerKind[];
+  containers: ContainerInfo[];
+  progress: SandboxProgress | null;
+  host: { mem_mb: number; cpus: number };
+  project: string;
+}
+export interface ContainerEntry { name: string; dir: boolean; size: number }
+export interface ExecResult { exit_code: number | null; output: string; truncated: boolean; timed_out: boolean; cwd: string | null }
 /** What the Terminal should open next (from chat actions, code blocks, Files…). */
-export type TerminalRequest = AgentAction | { kind: 'sandbox_run'; code: string; lang: string } | { kind: 'sandbox'; id: string } | { kind: 'rymsh' };
+export type TerminalRequest = AgentAction | { kind: 'sandbox_run'; code: string; lang: string } | { kind: 'sandbox'; id: string } | { kind: 'container'; id: string } | { kind: 'rymsh' };
 export interface FsEntry { name: string; path: string; is_dir: boolean; size: number; modified: number; hidden: boolean }
 export interface FsListing { path: string; parent: string | null; entries: FsEntry[] }
 export interface FsPlace { name: string; path: string; icon: string }

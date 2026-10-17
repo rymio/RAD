@@ -20,7 +20,7 @@
   const tasks = $derived(TASKS[agent.kind]);
   /** A command is waiting for Run / Skip. */
   const waiting = $derived(agent.items.some((i) => i.kind === 'cmd' && i.status === 'waiting'));
-  const title = $derived(agent.kind === 'ssh' ? 'Server agent' : agent.kind === 'local' ? 'Shell agent' : 'Sandbox agent');
+  const title = $derived(agent.kind === 'ssh' ? 'Server agent' : agent.kind === 'local' ? 'Shell agent' : agent.kind === 'container' ? 'Container agent' : 'Sandbox agent');
   const where = $derived(agent.kind === 'ssh' ? `on ${agent.name}` : agent.kind === 'local' ? 'on this computer' : `in ${agent.name}`);
   const f = $derived(agent.facts);
   const diskHigh = $derived(+(f?.disk?.match(/\((\d+)%\)/)?.[1] ?? 0) >= 85);
@@ -163,7 +163,9 @@
       <span class="title">{title}</span>
       <span class="muted sub truncate">runs commands {where}{#if agent.cwd} · <code>{agent.cwd}</code>{/if}</span>
       <span class="spacer"></span>
-      {#if agent.kind !== 'sandbox'}
+      {#if agent.kind === 'container'}
+        <button class="icon-btn sm" class:active={panel === 'tasks'} title="Ready-made tasks" onclick={() => (panel = panel === 'tasks' ? null : 'tasks')}><Zap size={13} /></button>
+      {:else if agent.kind !== 'sandbox'}
         <button class="icon-btn sm" class:active={panel === 'tasks'} title="Ready-made tasks" onclick={() => (panel = panel === 'tasks' ? null : 'tasks')}><Zap size={13} /></button>
         <button class="icon-btn sm" class:active={panel === 'sudo' || agent.hasSudo} title={agent.hasSudo ? 'Sudo password set (in memory only)' : 'Set the sudo password'} onclick={() => (panel = panel === 'sudo' ? null : 'sudo')}><KeyRound size={13} /></button>
       {/if}
@@ -180,7 +182,7 @@
       <button class="icon-btn sm" title="Collapse" onclick={() => (collapsed = true)}><ChevronDown size={15} /></button>
     </div>
 
-    {#if agent.kind !== 'sandbox'}
+    {#if agent.kind === 'ssh' || agent.kind === 'local'}
       <div class="facts">
         {#if f}
           {#if f.os}<span class="fact" title="Operating system">{f.os}</span>{/if}
@@ -230,6 +232,8 @@
             Tell the agent what to do on this server — it investigates and makes changes with shell commands, and you watch them run in the terminal above. Deleting, stopping, rebooting and firewall changes always wait for your OK.
           {:else if agent.kind === 'local'}
             Tell the agent what to do on this computer — it runs the commands for you and you watch them in the terminal above.
+          {:else if agent.kind === 'container'}
+            Tell the agent what to build — it writes code, installs packages and runs it inside this isolated container. Its commands show up in Output.
           {:else}
             Tell the agent what to do — it runs the commands in this sandbox and you watch them in the terminal above.
           {/if}
@@ -290,7 +294,7 @@
         bind:this={input}
         bind:value={text}
         rows="1"
-        placeholder={agent.kind === 'ssh' ? 'e.g. why is the site slow? renew the TLS certificate, set up a nightly backup…' : agent.kind === 'local' ? 'e.g. find large files in Downloads, what is using port 3000…' : 'e.g. list current dir, install numpy and plot something…'}
+        placeholder={agent.kind === 'ssh' ? 'e.g. why is the site slow? renew the TLS certificate, set up a nightly backup…' : agent.kind === 'local' ? 'e.g. find large files in Downloads, what is using port 3000…' : agent.kind === 'container' ? 'e.g. write a CLI that fetches a URL and counts words, then run it…' : 'e.g. list current dir, install numpy and plot something…'}
         onkeydown={onKey}
         oninput={autosize}
       ></textarea>

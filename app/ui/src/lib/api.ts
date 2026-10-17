@@ -87,8 +87,8 @@ export const rad = {
   browserSavePage: (engine: T.BrowserEngine, projectId?: T.Id) => call<T.UploadResponse>('browser_save_page', { engine, projectId: projectId ?? null }),
 
   termOpen: (args: {
-    kind: 'local' | 'ssh' | 'sandbox' | 'rymsh'; host?: string; user?: string; port?: number; identity_file?: string;
-    sandbox?: string; script?: { code: string; lang: string }; cols: number; rows: number;
+    kind: 'local' | 'ssh' | 'sandbox' | 'container' | 'rymsh'; host?: string; user?: string; port?: number; identity_file?: string;
+    sandbox?: string; container?: string; script?: { code: string; lang: string }; cols: number; rows: number;
   }) =>
     call<T.TermInfo>('term_open', { args }),
   termList: () => call<T.TermInfo[]>('term_list'),
@@ -127,6 +127,33 @@ export const rad = {
   sandboxUpdate: (args: { id: string; name?: string; cpus?: number; mem_mb?: number; network?: boolean }) => call<T.SandboxInfo>('sandbox_update', { args }),
   sandboxSend: (id: string, paths: string[]) => call<number>('sandbox_send', { id, paths }),
   sandboxSharedDir: (id: string) => call<string>('sandbox_shared_dir', { id }),
+
+  sidexStatus: () => call<T.SidexStatus>('sidex_status'),
+  /** Opens SideX (the code editor), on `folder` if given. */
+  sidexOpen: (folder?: string) => call<void>('sidex_open', { folder: folder ?? null }),
+  sidexForget: (folder?: string) => call<void>('sidex_forget', { folder: folder ?? null }),
+
+  containerStatus: () => call<T.ContainerStatus>('container_status'),
+  containerCreate: (kind: T.ContainerKindId, name?: string) => call<T.ContainerInfo>('container_create', { args: { kind, name: name ?? null } }),
+  containerStart: (id: string) => call<void>('container_start', { id }),
+  containerStop: (id: string) => call<void>('container_stop', { id }),
+  containerReset: (id: string) => call<void>('container_reset', { id }),
+  containerDelete: (id: string) => call<void>('container_delete', { id }),
+  containerUpdate: (args: { id: string; name?: string; cpus?: number; mem_mb?: number; network?: boolean; ports?: number[] }) => call<T.ContainerInfo>('container_update', { args }),
+  /** Runs a shell command in a container and returns its output; `cwd` carries over like a shell's. */
+  containerExec: (id: string, command: string, cwd?: string | null, timeoutSecs?: number) =>
+    call<T.ExecResult>('container_exec', { id, command, cwd: cwd ?? null, timeoutSecs: timeoutSecs ?? null }),
+  /** Runs a command, streaming `{o}` / `{e}` text; resolves to the exit code (null if cancelled). */
+  containerRun(id: string, command: string, runId: string, onEvent: (e: { o?: string; e?: string }) => void) {
+    const ch = new Channel<{ o?: string; e?: string }>();
+    ch.onmessage = onEvent;
+    return call<number | null>('container_run', { id, command, runId, onEvent: ch });
+  },
+  containerCancel: (runId: string) => call<void>('container_cancel', { runId }),
+  containerRead: (id: string, path: string) => call<string>('container_read', { id, path }),
+  containerWrite: (id: string, path: string, data: string) => call<void>('container_write', { id, path, data }),
+  containerList: (id: string, path: string) => call<T.ContainerEntry[]>('container_list', { id, path }),
+  containerSharedDir: (id: string) => call<string>('container_shared_dir', { id }),
 
   /** Moves this computer's vault file into `folder` and reopens it there (locked). */
   vaultRelocate: (folder: string) => call<T.ServerStatus>('vault_relocate', { folder }),

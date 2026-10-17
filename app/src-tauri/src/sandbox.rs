@@ -32,7 +32,7 @@ const ALPINE_URL: &str = "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/a
 const ALPINE_SHA: &str = "9bf70a7f18ea44094cbb5f70c58f9af129c8214745743db0e68e5502cc2ce773";
 const ALPINE_FILE: &str = "alpine-3.24.2.tar.gz";
 const LXC: &str = "https://images.linuxcontainers.org";
-const GUEST_PATH: &str = "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+pub(crate) const GUEST_PATH: &str = "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
 struct Distro {
     id: &'static str,
@@ -173,7 +173,7 @@ fn list(env: &Env) -> Vec<SandboxConfig> {
 }
 
 /// The engine: `rad-sandbox` and `gvproxy`, bundled next to RAD or (dev builds) in sandbox/bin.
-fn engine(app: &AppHandle) -> Option<(PathBuf, PathBuf)> {
+pub(crate) fn engine(app: &AppHandle) -> Option<(PathBuf, PathBuf)> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     if let Some(d) = std::env::current_exe().ok().and_then(|e| e.parent().map(PathBuf::from)) {
         dirs.push(d);
@@ -187,7 +187,7 @@ fn engine(app: &AppHandle) -> Option<(PathBuf, PathBuf)> {
     dirs.into_iter().map(|d| (d.join("rad-sandbox"), d.join("gvproxy"))).find(|(l, g)| l.is_file() && g.is_file())
 }
 
-fn need_engine(env: &Env) -> CmdResult<(PathBuf, PathBuf)> {
+pub(crate) fn need_engine(env: &Env) -> CmdResult<(PathBuf, PathBuf)> {
     if !SUPPORTED {
         return Err(CmdError::new("sandbox_unsupported", "Linux sandboxes need a Mac with Apple Silicon for now"));
     }
@@ -218,6 +218,12 @@ pub struct Net {
     cfg: PathBuf,
 }
 
+impl Net {
+    pub fn pid(&self) -> u32 {
+        self.child.id()
+    }
+}
+
 impl Drop for Net {
     fn drop(&mut self) {
         let _ = self.child.kill();
@@ -231,7 +237,16 @@ impl Drop for Net {
 /// address gvproxy normally maps to this computer's localhost is pointed at a reserved,
 /// unroutable address (RFC 5737) instead.
 fn start_net(env: &Env, gvproxy: &Path) -> CmdResult<Net> {
-    let dir = root(env).join("run");
+    start_net_with(&root(env).join("run"), gvproxy, &[])
+}
+
+/// The MAC address rad-sandbox gives the guest, and the address gvproxy always leases it.
+pub(crate) const GUEST_IP: &str = "192.168.127.2";
+const GUEST_MAC: &str = "5a:94:ef:e4:0c:ee";
+
+/// gvproxy with its sockets in `dir`, forwarding these TCP ports on this computer's localhost
+/// to the same ports in the guest.
+pub(crate) fn start_net_with(dir: &Path, gvproxy: &Path, forwards: &[u16]) -> CmdResult<Net> {
     std::fs::create_dir_all(&dir).map_err(|e| CmdError::new("io", e.to_string()))?;
     let n = format!("{}-{}", std::process::id(), NET_SEQ.fetch_add(1, Ordering::Relaxed));
     let sock = dir.join(format!("{n}.sock"));
@@ -240,7 +255,13 @@ fn start_net(env: &Env, gvproxy: &Path) -> CmdResult<Net> {
         return Err(CmdError::new("sandbox", "RAD's data folder path is too long for the sandbox network socket"));
     }
     let _ = std::fs::remove_file(&sock);
-    let yaml = format!("interfaces:\n  vfkit: unixgram://{}\nstack:\n  nat:\n    192.168.127.254: 192.0.2.1\n", sock.display());
+    let mut yaml = format!("interfaces:\n  vfkit: unixgram://{}\nstack:\n  nat:\n    192.168.127.254: 192.0.2.1\n", sock.display());
+    if !forwards.is_empty() {
+        yaml.push_str(&format!("  dhcpStaticLeases:\n    {GUEST_IP}: {GUEST_MAC}\n  forwards:\n"));
+        for p in forwards {
+            yaml.push_str(&format!("    127.0.0.1:{p}: {GUEST_IP}:{p}\n"));
+        }
+    }
     std::fs::write(&cfg, yaml).map_err(|e| CmdError::new("io", e.to_string()))?;
     let child = Command::new(gvproxy)
         .arg("-config")
@@ -277,7 +298,7 @@ fn file_sha(p: &Path) -> Option<String> {
     Some(hex(&h.finalize()))
 }
 
-async fn download(env: &Env, url: &str, sha: &str, dest: &Path, label: &str) -> CmdResult<()> {
+pub(crate) async fn download(env: &Env, url: &str, sha: &str, dest: &Path, label: &str) -> CmdResult<()> {
     if dest.is_file() && file_sha(dest).as_deref() == Some(sha) {
         return Ok(());
     }
@@ -362,7 +383,7 @@ async fn run_vm(launcher: &Path, args: Vec<String>, net: Option<&Net>, timeout: 
 }
 
 /// The installer VM's root: Alpine with e2fsprogs, GNU tar and xz. Prepared once.
-async fn ensure_tools(env: &Env, launcher: &Path, gvproxy: &Path) -> CmdResult<PathBuf> {
+pub(crate) async fn ensure_tools(env: &Env, launcher: &Path, gvproxy: &Path) -> CmdResult<PathBuf> {
     let r = root(env);
     let tools = r.join("tools");
     if tools.join(".ready").is_file() {
@@ -394,7 +415,7 @@ async fn ensure_tools(env: &Env, launcher: &Path, gvproxy: &Path) -> CmdResult<P
     Ok(tools)
 }
 
-fn write_exec(p: &Path, content: &str) -> CmdResult<()> {
+pub(crate) fn write_exec(p: &Path, content: &str) -> CmdResult<()> {
     std::fs::write(p, content).map_err(|e| CmdError::new("io", e.to_string()))?;
     #[cfg(unix)]
     {
@@ -404,7 +425,7 @@ fn write_exec(p: &Path, content: &str) -> CmdResult<()> {
     Ok(())
 }
 
-fn hostname(name: &str) -> String {
+pub(crate) fn hostname(name: &str) -> String {
     let h: String = name.to_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
     let h = h.trim_matches('-').chars().take(30).collect::<String>();
     if h.is_empty() { "sandbox".into() } else { h }
@@ -412,8 +433,15 @@ fn hostname(name: &str) -> String {
 
 /// Downloads the distro (cached) and installs it onto a fresh drive.
 async fn install(env: &Env, c: &SandboxConfig) -> CmdResult<()> {
+    let dir = sandbox_dir(env, &c.id)?;
+    std::fs::create_dir_all(dir.join("shared")).map_err(|e| CmdError::new("io", e.to_string()))?;
+    install_disk(env, &c.distro, &dir.join("disk.img"), c.disk_gb, &hostname(&c.name)).await
+}
+
+/// Downloads a distro (cached) and installs it onto a fresh sparse drive of `size_gb` at `disk`.
+pub(crate) async fn install_disk(env: &Env, distro: &str, disk: &Path, size_gb: u32, host: &str) -> CmdResult<()> {
     let (launcher, gvproxy) = need_engine(env)?;
-    let distro = DISTROS.iter().find(|d| d.id == c.distro).ok_or_else(|| CmdError::new("bad_request", "Unknown distro"))?;
+    let distro = DISTROS.iter().find(|d| d.id == distro).ok_or_else(|| CmdError::new("bad_request", "Unknown distro"))?;
     let tools = ensure_tools(env, &launcher, &gvproxy).await?;
     let cache = root(env).join("cache");
     let file = match distro.lxc {
@@ -435,14 +463,11 @@ async fn install(env: &Env, c: &SandboxConfig) -> CmdResult<()> {
     if distro.lxc.is_none() {
         download(env, ALPINE_URL, ALPINE_SHA, &cache.join(ALPINE_FILE), "Downloading Alpine").await?;
     }
-    progress(env, Some(json!({"phase": format!("Installing {} on the sandbox's drive", distro.name)})));
-    let dir = sandbox_dir(env, &c.id)?;
-    std::fs::create_dir_all(dir.join("shared")).map_err(|e| CmdError::new("io", e.to_string()))?;
-    let disk = dir.join("disk.img");
+    progress(env, Some(json!({"phase": format!("Installing {} on the drive", distro.name)})));
     {
         // A sparse file: it only takes the space the sandbox actually uses.
-        let f = std::fs::File::create(&disk).map_err(|e| CmdError::new("io", e.to_string()))?;
-        f.set_len(c.disk_gb as u64 * 1024 * 1024 * 1024).map_err(|e| CmdError::new("io", e.to_string()))?;
+        let f = std::fs::File::create(disk).map_err(|e| CmdError::new("io", e.to_string()))?;
+        f.set_len(size_gb as u64 * 1024 * 1024 * 1024).map_err(|e| CmdError::new("io", e.to_string()))?;
     }
     write_exec(&tools.join("root/install.sh"), INSTALL_SH)?;
     let args = vec![
@@ -457,7 +482,7 @@ async fn install(env: &Env, c: &SandboxConfig) -> CmdResult<()> {
         "--".into(),
         "/root/install.sh".into(),
         file,
-        hostname(&c.name),
+        host.to_string(),
     ];
     let out = run_vm(&launcher, args, None, Duration::from_secs(900)).await?;
     if !out.contains("installed:") {

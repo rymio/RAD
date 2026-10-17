@@ -1,0 +1,608 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 5e3f4ea..1f3c2ec 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -179,6 +179,30 @@ version = "0.7.6"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
+ 
++[[package]]
++name = "async-broadcast"
++version = "0.7.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "435a87a52755b8f27fcf321ac4f04b2802e337c8c4872923137471ec39c37532"
++dependencies = [
++ "event-listener",
++ "event-listener-strategy",
++ "futures-core",
++ "pin-project-lite",
++]
++
++[[package]]
++name = "async-channel"
++version = "2.5.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "924ed96dd52d1b75e9c1a3e6275715fd320f5f9439fb5a4a11fa51f4221158d2"
++dependencies = [
++ "concurrent-queue",
++ "event-listener-strategy",
++ "futures-core",
++ "pin-project-lite",
++]
++
+ [[package]]
+ name = "async-compression"
+ version = "0.4.41"
+@@ -191,6 +215,102 @@ dependencies = [
+  "tokio",
+ ]
+ 
++[[package]]
++name = "async-executor"
++version = "1.14.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "c96bf972d85afc50bf5ab8fe2d54d1586b4e0b46c97c50a0c9e71e2f7bcd812a"
++dependencies = [
++ "async-task",
++ "concurrent-queue",
++ "fastrand",
++ "futures-lite",
++ "pin-project-lite",
++ "slab",
++]
++
++[[package]]
++name = "async-io"
++version = "2.6.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "456b8a8feb6f42d237746d4b3e9a178494627745c3c56c6ea55d92ba50d026fc"
++dependencies = [
++ "autocfg",
++ "cfg-if",
++ "concurrent-queue",
++ "futures-io",
++ "futures-lite",
++ "parking",
++ "polling",
++ "rustix 1.1.4",
++ "slab",
++ "windows-sys 0.61.2",
++]
++
++[[package]]
++name = "async-lock"
++version = "3.4.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "290f7f2596bd5b78a9fec8088ccd89180d7f9f55b94b0576823bbbdc72ee8311"
++dependencies = [
++ "event-listener",
++ "event-listener-strategy",
++ "pin-project-lite",
++]
++
++[[package]]
++name = "async-process"
++version = "2.5.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "fc50921ec0055cdd8a16de48773bfeec5c972598674347252c0399676be7da75"
++dependencies = [
++ "async-channel",
++ "async-io",
++ "async-lock",
++ "async-signal",
++ "async-task",
++ "blocking",
++ "cfg-if",
++ "event-listener",
++ "futures-lite",
++ "rustix 1.1.4",
++]
++
++[[package]]
++name = "async-recursion"
++version = "1.2.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "4f8abc12baad266b1c8cec146854c195b5864b4221d4b2ca7296a7ae82d9e451"
++dependencies = [
++ "proc-macro2",
++ "quote",
++ "syn 3.0.9",
++]
++
++[[package]]
++name = "async-signal"
++version = "0.2.14"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "52b5aaafa020cf5053a01f2a60e8ff5dccf550f0f77ec54a4e47285ac2bab485"
++dependencies = [
++ "async-io",
++ "async-lock",
++ "atomic-waker",
++ "cfg-if",
++ "futures-core",
++ "futures-io",
++ "rustix 1.1.4",
++ "signal-hook-registry",
++ "slab",
++ "windows-sys 0.61.2",
++]
++
++[[package]]
++name = "async-task"
++version = "4.7.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "8b75356056920673b02621b35afd0f7dda9306d03c79a30f5c56c44cf256e3de"
++
+ [[package]]
+ name = "async-trait"
+ version = "0.1.89"
+@@ -376,6 +496,19 @@ dependencies = [
+  "objc2",
+ ]
+ 
++[[package]]
++name = "blocking"
++version = "1.7.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "a70e4329df6cb94385eed412ec92375c3cdd8a6e502493d1229b6414e4036dfa"
++dependencies = [
++ "async-channel",
++ "async-task",
++ "futures-io",
++ "futures-lite",
++ "piper",
++]
++
+ [[package]]
+ name = "blowfish"
+ version = "0.9.1"
+@@ -869,6 +1002,15 @@ version = "0.4.31"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "75984efb6ed102a0d42db99afb6c1948f0380d1d91808d5529916e6c08b49d8d"
+ 
++[[package]]
++name = "concurrent-queue"
++version = "2.5.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "4ca0197aee26d1ae37445ee532fefce43251d24cc7c166799f4d46817f1d3973"
++dependencies = [
++ "crossbeam-utils",
++]
++
+ [[package]]
+ name = "const-oid"
+ version = "0.9.6"
+@@ -1756,6 +1898,33 @@ dependencies = [
+  "cfg-if",
+ ]
+ 
++[[package]]
++name = "endi"
++version = "1.1.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
++
++[[package]]
++name = "enumflags2"
++version = "0.7.12"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "1027f7680c853e056ebcec683615fb6fbbc07dbaa13b4d5d9442b146ded4ecef"
++dependencies = [
++ "enumflags2_derive",
++ "serde",
++]
++
++[[package]]
++name = "enumflags2_derive"
++version = "0.7.12"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "67c78a4d8fdf9953a5c9d458f9efe940fd97a0cab0941c075a813ac594733827"
++dependencies = [
++ "proc-macro2",
++ "quote",
++ "syn 2.0.117",
++]
++
+ [[package]]
+ name = "env_filter"
+ version = "0.1.4"
+@@ -1805,6 +1974,26 @@ version = "3.3.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "dea2df4cf52843e0452895c455a1a2cfbb842a1e7329671acf418fdc53ed4c59"
+ 
++[[package]]
++name = "event-listener"
++version = "5.4.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "5a23add41df1562121a9393cb065eab5146a1242410f23a644851e90cfd669d2"
++dependencies = [
++ "parking",
++ "pin-project-lite",
++]
++
++[[package]]
++name = "event-listener-strategy"
++version = "0.5.4"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "8be9f3dfaaffdae2972880079a491a1a8bb7cbed0b8dd7a347f668b4150a3b93"
++dependencies = [
++ "event-listener",
++ "pin-project-lite",
++]
++
+ [[package]]
+ name = "fallible-iterator"
+ version = "0.3.0"
+@@ -2127,6 +2316,19 @@ version = "0.3.32"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "cecba35d7ad927e23624b22ad55235f2239cfa44fd10428eecbeba6d6a717718"
+ 
++[[package]]
++name = "futures-lite"
++version = "2.6.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "f78e10609fe0e0b3f4157ffab1876319b5b0db102a2c60dc4626306dc46b44ad"
++dependencies = [
++ "fastrand",
++ "futures-core",
++ "futures-io",
++ "parking",
++ "pin-project-lite",
++]
++
+ [[package]]
+ name = "futures-macro"
+ version = "0.3.32"
+@@ -4202,6 +4404,16 @@ version = "0.2.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
+ 
++[[package]]
++name = "ordered-stream"
++version = "0.2.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "9aa2b01e1d916879f73a53d01d1d6cee68adbb31d6d9177a8cfce093cced1d50"
++dependencies = [
++ "futures-core",
++ "pin-project-lite",
++]
++
+ [[package]]
+ name = "os_pipe"
+ version = "1.2.3"
+@@ -4290,6 +4502,12 @@ dependencies = [
+  "system-deps",
+ ]
+ 
++[[package]]
++name = "parking"
++version = "2.2.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "f38d5652c16fde515bb1ecef450ab0f6a219d619a7274976324d5e377f7dceba"
++
+ [[package]]
+ name = "parking_lot"
+ version = "0.12.5"
+@@ -4553,6 +4771,17 @@ version = "0.1.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
+ 
++[[package]]
++name = "piper"
++version = "0.2.5"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "c835479a4443ded371d6c535cbfd8d31ad92c5d23ae9770a61bc155e4992a3c1"
++dependencies = [
++ "atomic-waker",
++ "fastrand",
++ "futures-io",
++]
++
+ [[package]]
+ name = "pkcs1"
+ version = "0.7.5"
+@@ -4642,6 +4871,20 @@ dependencies = [
+  "miniz_oxide",
+ ]
+ 
++[[package]]
++name = "polling"
++version = "3.11.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "5d0e4f59085d47d8241c88ead0f274e8a0cb551f3625263c05eb8dd897c34218"
++dependencies = [
++ "cfg-if",
++ "concurrent-queue",
++ "hermit-abi",
++ "pin-project-lite",
++ "rustix 1.1.4",
++ "windows-sys 0.61.2",
++]
++
+ [[package]]
+ name = "poly1305"
+ version = "0.8.0"
+@@ -6219,6 +6462,7 @@ dependencies = [
+  "tauri-plugin-dialog",
+  "tauri-plugin-log",
+  "tauri-plugin-shell",
++ "tauri-plugin-single-instance",
+  "tokio",
+  "tokio-tungstenite 0.24.0",
+  "toml 0.8.2",
+@@ -6930,6 +7174,17 @@ dependencies = [
+  "unicode-ident",
+ ]
+ 
++[[package]]
++name = "syn"
++version = "3.0.9"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "d78c8dee4c7bf0e14673097256fed6142ce9d3b85a408189d07482442145823b"
++dependencies = [
++ "proc-macro2",
++ "quote",
++ "unicode-ident",
++]
++
+ [[package]]
+ name = "sync_wrapper"
+ version = "1.0.2"
+@@ -7295,6 +7550,22 @@ dependencies = [
+  "tokio",
+ ]
+ 
++[[package]]
++name = "tauri-plugin-single-instance"
++version = "2.4.5"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "db817fe9295e19b7d8357e900af31edb93703dd9fb6de524b007b47b6afc63b0"
++dependencies = [
++ "serde",
++ "serde_json",
++ "tauri",
++ "thiserror 2.0.18",
++ "tokio",
++ "tracing",
++ "windows-sys 0.60.2",
++ "zbus",
++]
++
+ [[package]]
+ name = "tauri-runtime"
+ version = "2.10.1"
+@@ -8094,6 +8365,17 @@ version = "1.19.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
+ 
++[[package]]
++name = "uds_windows"
++version = "1.2.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
++dependencies = [
++ "memoffset 0.9.1",
++ "tempfile",
++ "windows-sys 0.61.2",
++]
++
+ [[package]]
+ name = "unic-char-property"
+ version = "0.9.0"
+@@ -10020,6 +10302,76 @@ dependencies = [
+  "synstructure",
+ ]
+ 
++[[package]]
++name = "zbus"
++version = "5.19.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "5db4be7c075cb421e4b7ee645541604239bd243ba7c357511f4ff3a74b555907"
++dependencies = [
++ "async-broadcast",
++ "async-executor",
++ "async-io",
++ "async-lock",
++ "async-process",
++ "async-recursion",
++ "async-task",
++ "async-trait",
++ "blocking",
++ "enumflags2",
++ "event-listener",
++ "futures-core",
++ "futures-lite",
++ "hex",
++ "libc",
++ "ordered-stream",
++ "rustix 1.1.4",
++ "serde",
++ "serde_repr",
++ "tracing",
++ "uds_windows",
++ "uuid",
++ "windows-sys 0.61.2",
++ "winnow 1.0.1",
++ "zbus_macros",
++ "zbus_names",
++ "zvariant",
++]
++
++[[package]]
++name = "zbus_macros"
++version = "5.19.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "2990635d09ade6df1868f72f8cac69a876a90981e8bd3c40b1be413f8dc88f40"
++dependencies = [
++ "proc-macro-crate 3.5.0",
++ "proc-macro2",
++ "quote",
++ "syn 3.0.9",
++ "zbus_names",
++ "zvariant",
++ "zvariant_utils",
++]
++
++[[package]]
++name = "zbus_names"
++version = "4.3.5"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "812a12be4ead7a59e18ea8f047d08add0066b73bc62fc1467066a2472ae088dd"
++dependencies = [
++ "serde",
++ "winnow 1.0.1",
++ "zvariant",
++]
++
++[[package]]
++name = "zcheapstr"
++version = "1.1.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "d1afec51604565183aeb5c54c20aeab286120d4e4460f7f76e3e8bb8c0d99473"
++dependencies = [
++ "serde",
++]
++
+ [[package]]
+ name = "zerocopy"
+ version = "0.8.48"
+@@ -10204,3 +10556,44 @@ checksum = "27bc9d5b815bc103f142aa054f561d9187d191692ec7c2d1e2b4737f8dbd7296"
+ dependencies = [
+  "zune-core",
+ ]
++
++[[package]]
++name = "zvariant"
++version = "5.15.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "80bf6d6cd6a4b601acb64cfb8284cdc643fcfa75ef26ae3c46ec8aa4e8a1fbb7"
++dependencies = [
++ "endi",
++ "enumflags2",
++ "serde",
++ "winnow 1.0.1",
++ "zcheapstr",
++ "zvariant_derive",
++ "zvariant_utils",
++]
++
++[[package]]
++name = "zvariant_derive"
++version = "5.15.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "ef2672456ba1cb54b5eaec136e63135b3c7495fb938e53b28a62e633496d486d"
++dependencies = [
++ "proc-macro-crate 3.5.0",
++ "proc-macro2",
++ "quote",
++ "syn 3.0.9",
++ "zvariant_utils",
++]
++
++[[package]]
++name = "zvariant_utils"
++version = "4.2.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "bad0294361a320b694a328460dc73add56c306150f5cb6bfafc44446120008a3"
++dependencies = [
++ "proc-macro2",
++ "quote",
++ "serde",
++ "syn 3.0.9",
++ "winnow 1.0.1",
++]
+diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
+index adc351e..70a6987 100644
+--- a/src-tauri/Cargo.toml
++++ b/src-tauri/Cargo.toml
+@@ -28,6 +28,7 @@ tauri = { version = "2.10.3", features = [
+ tauri-plugin-log = "2"
+ tauri-plugin-dialog = "2"
+ tauri-plugin-shell = "2"
++tauri-plugin-single-instance = "2"
+ jsonwebtoken = { version = "10.4", features = ["aws_lc_rs"] }
+ 
+ serde = { version = "1.0", features = ["derive"] }
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index bf5c0ce..b280480 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -432,6 +432,49 @@ fn fix_macos_path() {
+ 
+ #[cfg_attr(mobile, tauri::mobile_entry_point)]
+ #[allow(clippy::too_many_lines)]
++/// RAD: the folder to open, from `--folder PATH` (how RAD launches SideX).
++fn rad_folder_arg(args: &[String]) -> Option<std::path::PathBuf> {
++    let i = args.iter().position(|a| a == "--folder")?;
++    let p = std::path::PathBuf::from(args.get(i + 1)?);
++    p.is_dir().then_some(p)
++}
++
++/// RAD: shows `folder` — in the window that already has it, in the main window if that has
++/// no folder yet, or in a new window.
++fn rad_open_folder(app: &tauri::AppHandle, folder: &std::path::Path) {
++    let Some(main) = app.get_webview_window("main") else { return };
++    let Ok(mut url) = main.url() else { return };
++    let Ok(uri) = tauri::Url::from_file_path(folder) else { return };
++    let has_folder = url.query_pairs().any(|(k, _)| k == "folder");
++    url.query_pairs_mut().clear().append_pair("folder", uri.as_str());
++    for w in app.webview_windows().into_values() {
++        if w.url().ok().as_ref() == Some(&url) {
++            let _ = w.unminimize();
++            let _ = w.set_focus();
++            return;
++        }
++    }
++    if !has_folder {
++        let _ = main.navigate(url);
++        let _ = main.show();
++        let _ = main.set_focus();
++        return;
++    }
++    let label = format!("rad-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0));
++    let title = folder.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "SideX".into());
++    let builder = tauri::WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::External(url))
++        .title(&title)
++        .inner_size(1280.0, 800.0)
++        .min_inner_size(800.0, 600.0);
++    #[cfg(target_os = "macos")]
++    let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
++    #[cfg(not(target_os = "macos"))]
++    let builder = builder.decorations(false).shadow(true);
++    if let Ok(w) = builder.build() {
++        let _ = w.set_focus();
++    }
++}
++
+ pub fn run() {
+     // Inherit the user's login-shell PATH before anything (terminals, git,
+     // LSP servers, extension hosts) is spawned.
+@@ -449,6 +492,18 @@ pub fn run() {
+     }
+ 
+     tauri::Builder::default()
++        // RAD: one SideX; launching it again with --folder opens that folder in it.
++        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
++            match rad_folder_arg(&argv) {
++                Some(folder) => rad_open_folder(app, &folder),
++                None => {
++                    if let Some(w) = app.get_webview_window("main") {
++                        let _ = w.show();
++                        let _ = w.set_focus();
++                    }
++                }
++            }
++        }))
+         .plugin(tauri_plugin_dialog::init())
+         .plugin(tauri_plugin_shell::init())
+         .manage(AuthState::new())
+@@ -577,6 +632,9 @@ pub fn run() {
+             };
+ 
+             restore_and_show(app, &db);
++            if let Some(folder) = rad_folder_arg(&std::env::args().collect::<Vec<_>>()) {
++                rad_open_folder(app.handle(), &folder);
++            }
+ 
+             // Debug-only: SIDEX_DEVTOOLS=1 auto-opens devtools to capture boot errors
+             #[cfg(debug_assertions)]

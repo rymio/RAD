@@ -16,3 +16,5 @@ node_modules
 /browser/rad-chromium/target
 /media/rad-media/target
 /rymnet/target
+/sandbox/agent/target
+/sidex

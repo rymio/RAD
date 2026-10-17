@@ -8,8 +8,9 @@ export type AgentItem =
   | { kind: 'cmd'; command: string; status: 'waiting' | 'running' | 'done' | 'skipped'; exit?: number | null; output?: string; timedOut?: boolean; risky?: string | null }
   | { kind: 'error'; text: string };
 
-/** Where the agent works: a Linux sandbox, a server over SSH, or this computer's shell. */
-export type AgentKind = 'sandbox' | 'ssh' | 'local';
+/** Where the agent works: a Linux sandbox, a server over SSH, this computer's shell, or a
+ *  Rust / Python container. */
+export type AgentKind = 'sandbox' | 'ssh' | 'local' | 'container';
 
 type Turn = { role: 'user' | 'assistant'; content: string };
 
@@ -89,6 +90,12 @@ export const TASKS: Record<AgentKind, { label: string; prompt: string }[]> = {
     { label: 'Open ports', prompt: 'Which programs are listening on network ports on this computer?' },
     { label: 'Outdated packages', prompt: 'Check for outdated Homebrew (or system) packages and tell me what would be upgraded. Do not upgrade anything.' },
   ],
+  container: [
+    { label: 'Explain project', prompt: 'Look at the project in /work/app and explain what it does and how it is laid out.' },
+    { label: 'Run & fix', prompt: 'Run the project. If it fails, find the cause, fix it and run it again until it works.' },
+    { label: 'Add tests', prompt: 'Add a few meaningful tests for the project and run them.' },
+    { label: 'Web server', prompt: 'Turn the project into a small web server on port 8000 that answers / with a JSON greeting, start it in the background and check it answers with curl.' },
+  ],
   sandbox: [
     { label: 'List files', prompt: 'list the current directory' },
     { label: 'Python', prompt: 'install python and print the version' },
@@ -112,6 +119,23 @@ const COMMON = `How to work:
 - Don't show secrets (private keys, passwords, tokens, .env values) in full: redact them.`;
 
 function systemPrompt(kind: AgentKind, name: string, distro: string, facts: Facts | null) {
+  if (kind === 'container') {
+    const rust = /rust/i.test(distro);
+    return `You are a software engineering agent working inside "${name}", an isolated ${distro} development container (a Debian 13 Linux VM on the user's Mac). You are root. The user sees each command you run and its output.
+
+The project lives in /work/app and the editor shows its files. ${
+      rust
+        ? 'It is a Cargo project: build and run with cargo run (cargo build, cargo test, cargo clippy, cargo fmt). Add crates with cargo add NAME (from crates.io). Rust is installed with rustup.'
+        : 'It is a Python project: main.py is the entry point and requirements.txt lists packages. A virtualenv (/opt/venv) is active: install with pip install NAME and add it to requirements.txt. Run with python main.py.'
+    }
+
+${COMMON}
+- System packages: apt-get install -y PKG (run apt-get update first if a package is not found).
+- Each command runs with sh; the working directory carries over between commands, variables don't. Commands are stopped after 10 minutes.
+- To hand results to the user, write files to /root/shared — that folder is on their Mac.
+- Long-running programs (servers) must be started in the background: nohup CMD > /tmp/NAME.log 2>&1 & — then check them with curl or the log. Ports the user forwarded are reachable from their Mac at 127.0.0.1.
+- Never run reboot, poweroff, or kill the agent (rad-agent).`;
+  }
   if (kind === 'sandbox') {
     const pm = /alpine/i.test(distro)
       ? 'apk (apk add --no-cache PKG)'
@@ -173,6 +197,10 @@ export class TermAgent {
   factsLoading = $state(false);
   cwd = $state<string | null>(null);
   hasSudo = $state(false);
+  /** For a container agent: the container it works in. */
+  containerId: string | null = null;
+  /** Called before each command runs (the container view shows them in its output). */
+  onCommand: ((command: string) => void) | null = null;
   private turns: Turn[] = [];
   private stopped = false;
   private decide: ((run: boolean) => void) | null = null;
@@ -185,11 +213,13 @@ export class TermAgent {
   ) {
     // A real server: look before leaping.
     this.askFirst = kind === 'ssh';
-    if (kind !== 'sandbox') this.loadFacts();
+    if (kind !== 'sandbox' && kind !== 'container') this.loadFacts();
   }
 
   /** Runs one command where this agent works. */
   private exec(command: string, timeout: number, quiet = false) {
+    if (this.kind === 'container')
+      return rad.containerExec(this.containerId!, command, this.cwd, timeout).then((r) => ({ ...r, cancelled: false }));
     if (this.kind === 'sandbox') return rad.sandboxExec(this.termId, command, timeout).then((r) => ({ ...r, cancelled: false, cwd: null as string | null }));
     return rad.agentExec(this.termId, command, timeout, quiet);
   }
@@ -197,7 +227,7 @@ export class TermAgent {
   /** A quick read-only look at the machine (OS, load, memory, disk, failed services). Over
    *  SSH the user may still be logging in, so it tries again for a minute. */
   async loadFacts(retries = this.kind === 'ssh' ? 15 : 0) {
-    if (this.kind === 'sandbox' || this.factsLoading) return;
+    if (this.kind === 'sandbox' || this.kind === 'container' || this.factsLoading) return;
     this.factsLoading = true;
     let ok = false;
     try {
@@ -216,7 +246,7 @@ export class TermAgent {
   stop() {
     this.stopped = true;
     this.decide?.(false);
-    if (this.kind !== 'sandbox') rad.agentCancel(this.termId).catch(() => {});
+    if (this.kind === 'ssh' || this.kind === 'local') rad.agentCancel(this.termId).catch(() => {});
   }
 
   /** Answer to an approval request. */
@@ -248,7 +278,7 @@ export class TermAgent {
     this.items.push({ kind: 'user', text });
     this.turns.push({ role: 'user', content: text });
     try {
-      if (this.kind !== 'sandbox' && !this.facts) await this.loadFacts();
+      if ((this.kind === 'ssh' || this.kind === 'local') && !this.facts) await this.loadFacts();
       for (let step = 0; step < MAX_STEPS && !this.stopped; step++) {
         this.status = 'Thinking…';
         const r = await rad.assist(systemPrompt(this.kind, this.name, this.distro, this.facts), this.turns.slice(-40));
@@ -258,8 +288,8 @@ export class TermAgent {
         if (say) this.items.push({ kind: 'say', text: say });
         if (!command) break;
 
-        // Sandboxes are disposable; elsewhere, risky commands always wait for the user.
-        const risky = this.kind === 'sandbox' ? null : riskOf(command);
+        // Sandboxes and containers are isolated; elsewhere, risky commands always wait for the user.
+        const risky = this.kind === 'sandbox' || this.kind === 'container' ? null : riskOf(command);
         const wait = this.askFirst || !!risky;
         this.items.push({ kind: 'cmd', command, status: wait ? 'waiting' : 'running', risky });
         const item = this.items[this.items.length - 1] as Extract<AgentItem, { kind: 'cmd' }>;
@@ -275,8 +305,9 @@ export class TermAgent {
           }
           item.status = 'running';
         }
-        this.status = this.kind === 'ssh' ? `Running on ${this.name}…` : this.kind === 'sandbox' ? 'Running in the sandbox…' : 'Running…';
-        const limit = this.kind === 'sandbox' ? 180 : 300;
+        this.status = this.kind === 'ssh' ? `Running on ${this.name}…` : this.kind === 'sandbox' ? 'Running in the sandbox…' : this.kind === 'container' ? `Running in ${this.name}…` : 'Running…';
+        const limit = this.kind === 'sandbox' ? 180 : this.kind === 'container' ? 600 : 300;
+        this.onCommand?.(command);
         const res = await this.exec(command, limit);
         item.status = 'done';
         item.exit = res.exit_code;
@@ -308,6 +339,20 @@ export class TermAgent {
       this.decide = null;
     }
   }
+}
+
+/** One agent per container, kept while RAD runs. */
+const containerAgents = new Map<string, TermAgent>();
+
+export function containerAgent(id: string, name: string, kindName: string) {
+  let a = containerAgents.get(id);
+  if (!a) {
+    a = new TermAgent(0, 'container', name, kindName);
+    a.containerId = id;
+    containerAgents.set(id, a);
+  }
+  a.name = name;
+  return a;
 }
 
 /** One agent per terminal tab, kept while RAD runs. */

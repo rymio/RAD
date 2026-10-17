@@ -8,7 +8,7 @@
   import Menu from './Menu.svelte';
   import Modal from './Modal.svelte';
   import VpnToggle from './VpnToggle.svelte';
-  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp, Network, Monitor, Shield } from '@lucide/svelte';
+  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, Cog, FileCode, Code } from '@lucide/svelte';
 
   let newProjectOpen = $state(false);
   let npName = $state('');
@@ -105,6 +105,15 @@
     </button>
     <button class="item web" class:active={store.route.kind === 'terminal'} onclick={() => store.navigate({ kind: 'terminal' })}>
       <SquareTerminal size={15} /> <span class="spacer">Terminal</span>
+    </button>
+    <button class="item web" class:active={store.route.kind === 'sidex'} onclick={() => store.navigate({ kind: 'sidex' })}>
+      <Code size={15} /> <span class="spacer">SideX</span>
+    </button>
+    <button class="item web" class:active={store.route.kind === 'container' && store.route.type === 'rust'} onclick={() => store.navigate({ kind: 'container', type: 'rust' })}>
+      <Cog size={15} /> <span class="spacer">Rust Container</span>
+    </button>
+    <button class="item web" class:active={store.route.kind === 'container' && store.route.type === 'python'} onclick={() => store.navigate({ kind: 'container', type: 'python' })}>
+      <FileCode size={15} /> <span class="spacer">Python Container</span>
     </button>
     <button class="item web" class:active={store.route.kind === 'files'} onclick={() => store.navigate({ kind: 'files' })}>
       <FolderOpen size={15} /> <span class="spacer">Files</span>
