@@ -6,6 +6,7 @@
 #   - the text-to-speech engine (MioTTS)    → scripts/build-tts.sh
 #   - the Linux sandbox engine (libkrun)    → scripts/build-sandbox.sh (macOS on Apple Silicon)
 #   - SideX, the code editor (VS Code)      → scripts/build-sidex.sh   (skip: RAD_NO_SIDEX=1; macOS)
+#   - ZX Spectrum dev tools (sjasmplus)     → scripts/build-zx-tools.sh
 # All are incremental, so re-running is quick. Extra arguments go to `cargo tauri build`
 # (e.g. --bundles app). Result: target/release/bundle/…
 #
@@ -24,6 +25,7 @@ triple="$(rustc -vV | sed -n 's/^host: //p')"
 [[ "${RAD_NO_MEDIA:-}" == 1 ]] || ./scripts/build-media.sh || echo "warning: building without the media engine (Music, Video)" >&2
 ./scripts/build-tts.sh "$triple"
 ./scripts/build-sandbox.sh "$triple"
+./scripts/build-zx-tools.sh || echo "warning: building without the ZX Spectrum assembler" >&2
 [[ "${RAD_NO_SIDEX:-}" == 1 ]] || ./scripts/build-sidex.sh || echo "warning: building without SideX (the code editor)" >&2
 
 # Bundle whichever engines were built: executables as sidecars, libraries into Frameworks.
@@ -94,6 +96,12 @@ if [[ -d "$app" && -x "$media/rad-media" && "${RAD_NO_MEDIA:-}" != 1 ]]; then
   identity="${APPLE_SIGNING_IDENTITY:--}"
   find "$app/Contents/Helpers/rad-media" -name '*.dylib' -type f -print0 | xargs -0 codesign --force --sign "$identity"
   codesign --force --sign "$identity" "$app/Contents/Helpers/rad-media/rad-media"
+fi
+if [[ -d "$app" && -x zxtools/bin/sjasmplus ]]; then
+  # The ZX Spectrum assembler (Games view), signed with the app's identity.
+  mkdir -p "$app/Contents/Helpers/zx"
+  cp zxtools/bin/sjasmplus zxtools/bin/sjasmplus-LICENSE.md "$app/Contents/Helpers/zx/"
+  codesign --force --sign "${APPLE_SIGNING_IDENTITY:--}" "$app/Contents/Helpers/zx/sjasmplus"
 fi
 sidex=sidex/target/release/bundle/macos/SideX.app
 if [[ -d "$app" && -d "$sidex" && "${RAD_NO_SIDEX:-}" != 1 ]]; then
