@@ -163,7 +163,8 @@ export type Route =
   | { kind: 'sidex' }
   | { kind: 'database' }
   | { kind: 'games' }
-  | { kind: 'zx' };
+  | { kind: 'zx' }
+  | { kind: 'zxlab' };
 
 /** Something the assistant asks the app to do (see crates/rad-server/src/agent.rs). */
 export interface AgentAction { kind: 'ssh' | 'open_url' | 'terminal' | string; host?: string; user?: string; port?: number; identity_file?: string; url?: string }
@@ -190,6 +191,19 @@ export type DbValue = null | number | string | { $blob: string };
 export interface DbRowsPage { columns: string[]; rows: { rowid: number | null; values: DbValue[] }[]; total: number; offset: number; limit: number }
 export interface DbResult { sql: string; columns: string[]; rows: DbValue[][]; changes: number; last_insert_rowid: number; truncated: boolean }
 export interface DbKey { id: string; name: string; prefix: string; write: boolean; dbs: string[]; created_at: number; last_used: number | null }
+/** The Spectrum lab (crates/rad-zx/src/lab.rs). */
+export interface LabNotes { labels: Record<number, string>; comments: Record<number, string> }
+export interface LabLine { addr: number; bytes: number[]; kind: 'code' | 'reachable' | 'data' | 'text'; text: string; label: string | null; comment: string | null; target: number | null; variable: boolean }
+export interface LabTapeBlock { index: number; speed: string; flag: number; length: number; screen: boolean; header: { kind: number; name: string; length: number; param1: number; param2: number } | null }
+export interface LabSummary {
+  model: '48' | '128'; entry: number | null; range: [number, number]; functions: number; function_addrs: number[]; code_bytes: number; reachable_bytes: number; variables: number;
+  ports: Record<string, number>; rom_calls: { addr: number; count: number; name: string | null; what: string | null }[]; basic: string | null;
+  tape: LabTapeBlock[]; map: string[]; strings: { addr: number; text: string }[]; steps: number; seconds: number; udg: number;
+}
+export interface FrameStats {
+  fetch_rom: number; fetch_ram_low: number; fetch_ram_high: number; write_screen: number; write_ram_low: number; write_ram_high: number;
+  in_fe: number; out_fe: number; in_joy: number; other_io: number; halts: number; instructions: number; pc: number; border: number;
+}
 export interface SidexStatus {
   supported: boolean; available: boolean; dev_build: boolean; running: boolean;
   recent: { path: string; name: string; exists: boolean }[];

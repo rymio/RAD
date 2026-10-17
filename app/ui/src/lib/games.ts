@@ -68,6 +68,16 @@ export async function create(name: string, template: keyof typeof TEMPLATES): Pr
   return { id, name, kind, created_at: now, updated_at: now };
 }
 
+/** A new game from files (e.g. a disassembly or a BASIC listing from the Spectrum lab). */
+export async function createWithFiles(name: string, kind: GameKind, files: GameFile[]): Promise<Game> {
+  await ensure();
+  const id = `g${Date.now()}`;
+  const now = Date.now();
+  await sql('INSERT INTO games (id, name, created_at, updated_at, kind) VALUES (?1, ?2, ?3, ?3, ?4)', [id, name, now, kind]);
+  for (const f of files) await saveFile(id, f.path, f.content);
+  return { id, name, kind, created_at: now, updated_at: now };
+}
+
 export async function rename(id: string, name: string) {
   await sql('UPDATE games SET name = ?1, updated_at = ?2 WHERE id = ?3', [name, Date.now(), id]);
 }

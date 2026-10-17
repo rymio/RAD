@@ -152,6 +152,23 @@ export const rad = {
   zxSaveState: () => call<string>('zx_save_state'),
   zxControl: (action: string, value?: number) => call<void>('zx_control', { action, value: value ?? null }),
   zxPowerOff: () => call<void>('zx_power_off'),
+  /** The live machine: memory (base64, 64K), pokes, cheats (held values), board statistics. */
+  zxMemory: () => call<string>('zx_memory'),
+  zxPoke: (addr: number, value: number) => call<void>('zx_poke', { addr, value }),
+  zxLock: (addr: number, value: number | null) => call<void>('zx_lock', { addr, value }),
+  zxStats: (on: boolean) => call<void>('zx_stats', { on }),
+  /** The Spectrum lab: analyse a game, list and export its code, patch it. */
+  zxlabOpen: (id: string, name: string, data: string, seconds?: number) => call<T.LabSummary>('zxlab_open', { id, name, data, seconds: seconds ?? null }),
+  zxlabListing: (id: string, from: number, to: number, notes: T.LabNotes) => call<T.LabLine[]>('zxlab_listing', { id, from, to, notes }),
+  zxlabXrefs: (id: string, addr: number, notes: T.LabNotes) => call<{ addr: number; text: string }[]>('zxlab_xrefs', { id, addr, notes }),
+  zxlabMemory: (id: string, from: number, len: number) => call<string>('zxlab_memory', { id, from, len }),
+  zxlabTapeBlock: (id: string, index: number) => call<string>('zxlab_tape_block', { id, index }),
+  zxlabSource: (id: string, from: number, to: number, notes: T.LabNotes, title: string) => call<{ source: string; verified: boolean; note?: string }>('zxlab_source', { id, from, to, notes, title }),
+  zxlabAssemblePatch: (id: string, addr: number, code: string, notes: T.LabNotes) =>
+    call<{ ok: boolean; bytes?: string; end?: number; len?: number; splits?: number | null; messages: string }>('zxlab_assemble_patch', { id, addr, code, notes }),
+  zxlabBuild: (id: string, patches: { addr: number; bytes: string }[], check?: boolean) =>
+    call<{ file: { name: string; data: string }; check?: { crashed: boolean; screen: string[]; report: { code: string; message: string; line: number; statement: number } | null } }>('zxlab_build', { id, patches, check: check ?? null }),
+  zxlabClose: (id: string) => call<void>('zxlab_close', { id }),
   /** Which Spectrum languages can be built here (BASIC always; assembler when sjasmplus is built). */
   zxTools: () => call<{ basic: boolean; asm: boolean }>('zx_tools'),
   /** Builds a Spectrum project ('zx-basic' | 'zx-asm'). */

@@ -29,6 +29,11 @@ enum Cmd {
     FastLoad(bool),
     Volume(f32),
     TapeAudible(bool),
+    /// The lab: per-frame hardware activity on/off, memory, pokes and cheats.
+    Stats(bool),
+    Memory(Sender<Vec<u8>>),
+    Poke(u16, u8),
+    Lock(u16, Option<u8>),
     Quit,
 }
 
@@ -117,6 +122,8 @@ fn run(rx: Receiver<Cmd>, model: Model) {
     let mut next = Instant::now();
     let mut status_at = Instant::now();
     let mut last_status = Value::Null;
+    let mut stats = false;
+    let mut prev_mem: Vec<u8> = Vec::new();
     const FRAME: Duration = Duration::from_micros(19_968);
 
     'main: loop {
@@ -168,6 +175,15 @@ fn run(rx: Receiver<Cmd>, model: Model) {
                 Cmd::FastLoad(f) => zx.fast_load = f,
                 Cmd::Volume(v) => *sound.volume.lock().unwrap() = v.clamp(0.0, 1.0),
                 Cmd::TapeAudible(a) => tape_audible = a,
+                Cmd::Stats(on) => {
+                    stats = on;
+                    prev_mem.clear();
+                }
+                Cmd::Memory(reply) => {
+                    let _ = reply.send(zx.memory());
+                }
+                Cmd::Poke(a, v) => zx.poke(a, v),
+                Cmd::Lock(a, v) => zx.lock(a, v),
                 Cmd::Quit => break 'main,
             }
         }
@@ -185,7 +201,14 @@ fn run(rx: Receiver<Cmd>, model: Model) {
                 zx.skip_audio();
             }
         } else {
-            zx.run_frame();
+            if stats {
+                let st = rad_zx::lab::frame_with_stats(&mut zx, &mut prev_mem);
+                if let Some(ch) = &out {
+                    let _ = ch.send(InvokeResponseBody::Json(json!({ "stats": st }).to_string()));
+                }
+            } else {
+                zx.run_frame();
+            }
             zx.audio(&mut samples, tape_audible);
             let mut q = sound.queue.lock().unwrap();
             // Keep latency low: never more than ~120 ms queued.
@@ -316,6 +339,36 @@ pub fn zx_control(z: State<'_, Zx>, action: String, value: Option<f32>) -> CmdRe
         _ => return Err(CmdError::new("bad_request", "unknown action")),
     };
     z.send(c)
+}
+
+/// The live machine's memory (64K, base64): for the lab's cheat finder.
+#[tauri::command]
+pub async fn zx_memory(z: State<'_, Zx>) -> CmdResult<String> {
+    let (tx, rx) = mpsc::channel();
+    z.send(Cmd::Memory(tx))?;
+    let m = tauri::async_runtime::spawn_blocking(move || rx.recv_timeout(Duration::from_secs(5)))
+        .await
+        .map_err(|e| CmdError::new("zx", e.to_string()))?
+        .map_err(|_| CmdError::new("zx", "The Spectrum didn't answer"))?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(m))
+}
+
+/// Writes a byte into the running game (RAM only).
+#[tauri::command]
+pub fn zx_poke(z: State<'_, Zx>, addr: u16, value: u8) -> CmdResult<()> {
+    z.send(Cmd::Poke(addr, value))
+}
+
+/// Holds a byte at a value every frame (`value` null releases it): infinite lives and the like.
+#[tauri::command]
+pub fn zx_lock(z: State<'_, Zx>, addr: u16, value: Option<u8>) -> CmdResult<()> {
+    z.send(Cmd::Lock(addr, value))
+}
+
+/// Per-frame hardware activity for the board diagram ({stats} messages on the picture channel).
+#[tauri::command]
+pub fn zx_stats(z: State<'_, Zx>, on: bool) -> CmdResult<()> {
+    z.send(Cmd::Stats(on))
 }
 
 /// Switches the Spectrum off.

@@ -6,13 +6,14 @@
 //! [`Spectrum::audio`] for the sound.
 
 pub mod basic;
+pub mod lab;
 pub mod tzx;
 
 use spectrusty::audio::{synth::BandLimited, AudioFrame, BlepStereo, EarMicAmps4, EarOutAmps4, UlaAudioFrame};
 use spectrusty::bus::ay::serial128::Ay3_8912Keypad;
 use spectrusty::bus::joystick::KempstonJoystick;
 use spectrusty::bus::{BusDevice, NullDevice};
-use spectrusty::chip::{ula::UlaPAL, ula128::Ula128, ControlUnit, EarIn, HostConfig, MemoryAccess, UlaCommon};
+use spectrusty::chip::{ula::UlaPAL, ula128::Ula128, ControlUnit, EarIn, FrameState, HostConfig, MemoryAccess, UlaCommon};
 use spectrusty::clock::FTs;
 use spectrusty::memory::{Memory48k, ZxMemory};
 use spectrusty::peripherals::ay::audio::AyAmps;
@@ -180,6 +181,8 @@ pub struct Spectrum {
     blep: BlepStereo<BandLimited<f32>>,
     sample_rate: u32,
     border: BorderSize,
+    /// Bytes held at a value every frame (cheats).
+    locks: Vec<(u16, u8)>,
 }
 
 struct Tape {
@@ -210,6 +213,7 @@ impl Spectrum {
             blep: BlepStereo::build(0.8)(BandLimited::<f32>::new(2)),
             sample_rate: 44_100,
             border: BorderSize::Full,
+            locks: Vec::new(),
         };
         s.prepare_audio(44_100);
         s
@@ -346,6 +350,16 @@ impl Spectrum {
 
     /// Emulates one frame (1/50 s of Spectrum time).
     pub fn run_frame(&mut self) {
+        self.run_frame_inner(None);
+    }
+
+    /// Emulates one frame instruction by instruction, telling `on` about each one (the lab's
+    /// tracing: which addresses run, what they are). Slower than [`Spectrum::run_frame`].
+    pub fn run_frame_traced(&mut self, on: &mut dyn FnMut(&spectrusty::z80emu::CpuDebug)) {
+        self.run_frame_inner(Some(on));
+    }
+
+    fn run_frame_inner(&mut self, mut trace: Option<&mut dyn FnMut(&spectrusty::z80emu::CpuDebug)>) {
         // Keys being typed by the emulator take over from the user's for a moment.
         let keys = match self.typing.front_mut() {
             Some((k, n)) => {
@@ -397,8 +411,49 @@ impl Spectrum {
                     *turbo = false;
                 }
             }
-            zx.ula.execute_next_frame(&mut zx.cpu);
+            match trace.as_mut() {
+                None => zx.ula.execute_next_frame(&mut zx.cpu),
+                Some(on) => {
+                    while !zx.ula.is_frame_over() {
+                        let _ = zx.ula.execute_single_step(&mut zx.cpu, Some(|d: spectrusty::z80emu::CpuDebug| on(&d)));
+                    }
+                }
+            }
+            for (addr, v) in self.locks.iter() {
+                let _ = zx.ula.memory_mut().write(*addr, *v);
+            }
         });
+    }
+
+    /// The whole 64K address space as the CPU sees it now (ROM, screen, RAM).
+    pub fn memory(&self) -> Vec<u8> {
+        with_zx!(&self.m, zx => {
+            let mem = zx.ula.memory_ref();
+            (0..=0xffffu16).map(|a| mem.read(a)).collect()
+        })
+    }
+
+    /// Writes a byte (RAM only; the ROM can't be changed).
+    pub fn poke(&mut self, addr: u16, value: u8) {
+        if addr >= 0x4000 {
+            with_zx!(&mut self.m, zx => zx.ula.memory_mut().write(addr, value));
+        }
+    }
+
+    /// Keeps a byte at a value every frame (a cheat: infinite lives…); `None` releases it.
+    pub fn lock(&mut self, addr: u16, value: Option<u8>) {
+        self.locks.retain(|(a, _)| *a != addr);
+        if let Some(v) = value {
+            if addr >= 0x4000 {
+                self.locks.push((addr, v));
+            }
+        }
+    }
+
+    /// Where the CPU is (its program counter).
+    pub fn pc(&self) -> u16 {
+        use spectrusty::z80emu::Cpu;
+        with_zx!(&self.m, zx => zx.cpu.get_pc())
     }
 
     /// Picture size in pixels (with the border).
@@ -452,8 +507,18 @@ impl Spectrum {
         self.blep.next_frame();
     }
 
-    /// The machine as a Z80 snapshot (a save state; [`Spectrum::load`] it as "….z80").
-    pub fn save_state(&self) -> Result<Vec<u8>, ZxError> {
+    /// The machine as a Z80 snapshot (a save state; [`Spectrum::load`] it as "….z80"). The
+    /// format can't hold a CPU just after EI or inside a prefix; then it runs on an instruction
+    /// or two (microseconds) to a moment it can.
+    pub fn save_state(&mut self) -> Result<Vec<u8>, ZxError> {
+        for _ in 0..8 {
+            match snapshot::save(&self.m) {
+                Ok(s) => return Ok(s),
+                Err(_) => with_zx!(&mut self.m, zx => {
+                    let _ = zx.ula.execute_single_step(&mut zx.cpu, None::<fn(spectrusty::z80emu::CpuDebug)>);
+                }),
+            }
+        }
         snapshot::save(&self.m).map_err(ZxError::Snapshot)
     }
 
@@ -598,3 +663,5 @@ pub(crate) fn machine_128() -> Box<Zx<Ula128k>> {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod lab_tests;

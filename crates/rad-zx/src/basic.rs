@@ -339,6 +339,79 @@ pub fn report(code: u8) -> &'static str {
     R.get(code as usize).copied().unwrap_or("Unknown error")
 }
 
+/// A Spectrum program (as in memory or on tape) → text, like LIST, in the form [`compile`]
+/// reads back: hidden numbers dropped, UDGs and control codes as `\a`… and `\{n}` escapes.
+pub fn detokenize(prog: &[u8]) -> String {
+    let mut out = String::new();
+    let mut i = 0;
+    while i + 4 <= prog.len() {
+        let n = u16::from_be_bytes([prog[i], prog[i + 1]]);
+        let len = u16::from_le_bytes([prog[i + 2], prog[i + 3]]) as usize;
+        if n > 9999 || i + 4 + len > prog.len() {
+            break;
+        }
+        let body = &prog[i + 4..i + 4 + len];
+        out.push_str(&n.to_string());
+        out.push(' ');
+        let mut in_string = false;
+        let mut in_rem = false;
+        let mut k = 0;
+        while k < body.len() {
+            let b = body[k];
+            k += 1;
+            match b {
+                0x0d => break,
+                0x0e if !in_string && !in_rem => k += 5,
+                b'"' if !in_rem => {
+                    in_string = !in_string;
+                    out.push('"');
+                }
+                0xa5..=0xff if !in_string && !in_rem => {
+                    let kw = KEYWORDS[(b - TOKEN_BASE) as usize];
+                    if !out.ends_with(' ') && kw.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
+                        out.push(' ');
+                    }
+                    out.push_str(kw);
+                    if kw.chars().last().is_some_and(|c| c.is_ascii_alphabetic() || c == '$' || c == '#') {
+                        out.push(' ');
+                    }
+                    if b == T_REM {
+                        in_rem = true;
+                    }
+                }
+                0x90..=0xa4 => {
+                    out.push('\\');
+                    out.push((b'a' + (b - 0x90)) as char);
+                }
+                0x60 => out.push('£'),
+                0x7f => out.push('©'),
+                0x20..=0x7e => {
+                    if b == b'\\' && in_string {
+                        out.push_str("\\\\");
+                    } else {
+                        out.push(b as char);
+                    }
+                }
+                _ => out.push_str(&format!("\\{{{b}}}")),
+            }
+        }
+        // Tidy: one space between tokens is enough.
+        while out.ends_with(' ') {
+            out.pop();
+        }
+        out.push('\n');
+        i += 4 + len;
+    }
+    out
+}
+
+/// The program in memory (between the PROG and VARS system variables), if there is one.
+pub fn program_in_memory(mem: &[u8]) -> Option<Vec<u8>> {
+    let w = |a: usize| u16::from_le_bytes([mem[a], mem[a + 1]]) as usize;
+    let (prog, vars) = (w(23635), w(23627));
+    (mem.len() >= 0x10000 && (23755..0xffff).contains(&prog) && vars > prog && vars - prog < 0xa000).then(|| mem[prog..vars].to_vec())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -399,6 +472,15 @@ mod tests {
         let lines: Vec<(usize, Option<u16>)> = e.iter().map(|e| (e.text_line, e.line)).collect();
         assert_eq!(lines, [(1, Some(10)), (4, None), (5, Some(20)), (6, None)], "{e:?}");
         assert!(e[0].message.contains("isn't closed"));
+    }
+
+    #[test]
+    fn listing_and_back() {
+        let src = "10 REM Star \\a game\n20 PRINT AT 5,3; INK 2;\"HI \\a\\{17}\": GO TO 20\n30 IF a<=b THEN LET total=1.5\n";
+        let p = compile(src).unwrap();
+        let text = detokenize(&p);
+        assert_eq!(text, "10 REM Star \\a game\n20 PRINT AT 5,3; INK 2;\"HI \\a\\{17}\": GO TO 20\n30 IF a<=b THEN LET total=1.5\n");
+        assert_eq!(compile(&text).unwrap(), p, "the listing compiles back to the same bytes");
     }
 
     #[test]

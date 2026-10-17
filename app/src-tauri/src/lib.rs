@@ -17,6 +17,7 @@ mod sidex;
 mod games;
 mod zx;
 mod zxdev;
+mod zxlab;
 mod secrets;
 mod terminal;
 mod term_agent;
@@ -318,6 +319,7 @@ pub fn run() {
             app.manage(sidex::Sidex::default());
             app.manage(games::Games::default());
             app.manage(zx::Zx::default());
+            app.manage(zxlab::ZxLab::default());
             app.manage(mail::Mail::default());
             app.manage(media::Media::default());
             app.manage(rymnet::Rymnet::default());
@@ -473,6 +475,19 @@ pub fn run() {
             zxdev::zx_tools,
             zxdev::zx_build,
             zxdev::zx_check,
+            zx::zx_memory,
+            zx::zx_poke,
+            zx::zx_lock,
+            zx::zx_stats,
+            zxlab::zxlab_open,
+            zxlab::zxlab_listing,
+            zxlab::zxlab_xrefs,
+            zxlab::zxlab_memory,
+            zxlab::zxlab_tape_block,
+            zxlab::zxlab_source,
+            zxlab::zxlab_assemble_patch,
+            zxlab::zxlab_build,
+            zxlab::zxlab_close,
             sidex::sidex_open,
             sidex::sidex_forget,
         ])

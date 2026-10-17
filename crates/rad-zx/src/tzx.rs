@@ -637,6 +637,54 @@ pub fn describe(blocks: &[Block]) -> Vec<String> {
     out
 }
 
+/// A block of bytes on a tape, with its ROM header decoded when it is one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DataBlock {
+    pub index: usize,
+    /// "standard" (the ROM's own speed) or "custom" (a turbo or protected loader).
+    pub speed: &'static str,
+    /// The flag byte: 0 = a header, 255 = data (custom loaders use anything).
+    pub flag: u8,
+    pub header: Option<Header>,
+    /// The bytes without the flag and checksum (when the block looks like a ROM block).
+    pub data: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Header {
+    /// 0 program, 1 number array, 2 character array, 3 bytes (code or a screen).
+    pub kind: u8,
+    pub name: String,
+    pub length: u16,
+    /// Programs: the autostart line; bytes: the address they load to.
+    pub param1: u16,
+    pub param2: u16,
+}
+
+/// The tape's data blocks, in order.
+pub fn data_blocks(blocks: &[Block]) -> Vec<DataBlock> {
+    let mut out = Vec::new();
+    for (index, b) in blocks.iter().enumerate() {
+        let Block::Data { zero, one, data, .. } = b else { continue };
+        if data.is_empty() {
+            continue;
+        }
+        let speed = if (*zero, *one) == (855, 1710) { "standard" } else { "custom" };
+        let flag = data[0];
+        let checksum_ok = data.iter().fold(0u8, |a, v| a ^ v) == 0;
+        let body = if checksum_ok && data.len() >= 2 { data[1..data.len() - 1].to_vec() } else { data.clone() };
+        let header = (flag == 0 && body.len() == 17).then(|| Header {
+            kind: body[0],
+            name: String::from_utf8_lossy(&body[1..11]).trim_end().to_string(),
+            length: u16::from_le_bytes([body[11], body[12]]),
+            param1: u16::from_le_bytes([body[13], body[14]]),
+            param2: u16::from_le_bytes([body[15], body[16]]),
+        });
+        out.push(DataBlock { index, speed, flag, header, data: body });
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

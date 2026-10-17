@@ -18,12 +18,18 @@ pub struct SrcFile {
     content: String,
 }
 
+/// A build folder name no other build (at the same millisecond) shares.
+pub(crate) fn unique_dir(prefix: &str) -> String {
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    format!("{prefix}{}-{}-{}", std::process::id(), crate::now_ms(), N.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+}
+
 fn b64(data: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(data)
 }
 
 /// sjasmplus: in RAD's bundle (Contents/Helpers/zx) or, in development, zxtools/bin.
-fn sjasmplus(app: &AppHandle) -> Option<PathBuf> {
+pub(crate) fn sjasmplus(app: &AppHandle) -> Option<PathBuf> {
     let mut c: Vec<PathBuf> = Vec::new();
     if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(PathBuf::from)) {
         c.push(dir.join("../Helpers/zx/sjasmplus"));
@@ -76,7 +82,7 @@ fn assemble(asm: &Path, root: &Path, name: &str, files: &[SrcFile]) -> CmdResult
     let Some(main) = files.iter().find(|f| f.path == "main.asm") else {
         return Ok(json!({"ok": false, "errors": [{"file": "main.asm", "line": null, "message": "the project has no main.asm"}], "output": "No main.asm"}));
     };
-    let dir = root.join(format!("b{}", crate::now_ms()));
+    let dir = root.join(unique_dir("b"));
     std::fs::create_dir_all(&dir).map_err(|e| CmdError::new("io", e.to_string()))?;
     let result = (|| -> CmdResult<Value> {
         for f in files {
