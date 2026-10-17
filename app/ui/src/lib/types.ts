@@ -160,7 +160,10 @@ export type Route =
   | { kind: 'rymnet' }
   | { kind: 'rymwin' }
   | { kind: 'container'; type: 'rust' | 'python' }
-  | { kind: 'sidex' };
+  | { kind: 'sidex' }
+  | { kind: 'database' }
+  | { kind: 'games' }
+  | { kind: 'zx' };
 
 /** Something the assistant asks the app to do (see crates/rad-server/src/agent.rs). */
 export interface AgentAction { kind: 'ssh' | 'open_url' | 'terminal' | string; host?: string; user?: string; port?: number; identity_file?: string; url?: string }
@@ -178,6 +181,15 @@ export interface SandboxStatus {
   progress: SandboxProgress | null;
 }
 export interface SandboxProgress { phase: string; done?: number; total?: number }
+/** Databases (Turso) — see crates/rad-server/src/routes/db.rs. */
+export interface DbInfo { id: string; name: string; created_at: number; size: number }
+export interface DbColumn { name: string; type: string; not_null: boolean; default: string | null; pk: number; unique: boolean }
+export interface DbTable { name: string; kind: 'table' | 'view'; sql: string; columns: DbColumn[]; indexes: { name: string; unique: boolean; columns: string[] }[]; rows: number | null }
+/** A cell: null, number, string, or a blob as {$blob: base64}. */
+export type DbValue = null | number | string | { $blob: string };
+export interface DbRowsPage { columns: string[]; rows: { rowid: number | null; values: DbValue[] }[]; total: number; offset: number; limit: number }
+export interface DbResult { sql: string; columns: string[]; rows: DbValue[][]; changes: number; last_insert_rowid: number; truncated: boolean }
+export interface DbKey { id: string; name: string; prefix: string; write: boolean; dbs: string[]; created_at: number; last_used: number | null }
 export interface SidexStatus {
   supported: boolean; available: boolean; dev_build: boolean; running: boolean;
   recent: { path: string; name: string; exists: boolean }[];

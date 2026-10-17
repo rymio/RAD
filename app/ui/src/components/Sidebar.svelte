@@ -8,7 +8,7 @@
   import Menu from './Menu.svelte';
   import Modal from './Modal.svelte';
   import VpnToggle from './VpnToggle.svelte';
-  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, Cog, FileCode, Code } from '@lucide/svelte';
+  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, Cog, FileCode, Code, Database, Gamepad2, Joystick } from '@lucide/svelte';
 
   let newProjectOpen = $state(false);
   let npName = $state('');
@@ -105,6 +105,15 @@
     </button>
     <button class="item web" class:active={store.route.kind === 'terminal'} onclick={() => store.navigate({ kind: 'terminal' })}>
       <SquareTerminal size={15} /> <span class="spacer">Terminal</span>
+    </button>
+    <button class="item web" class:active={store.route.kind === 'games'} onclick={() => store.navigate({ kind: 'games' })}>
+      <Gamepad2 size={15} /> <span class="spacer">Games</span>
+    </button>
+    <button class="item web" class:active={store.route.kind === 'zx'} onclick={() => store.navigate({ kind: 'zx' })}>
+      <Joystick size={15} /> <span class="spacer">ZX Spectrum</span>
+    </button>
+    <button class="item web" class:active={store.route.kind === 'database'} onclick={() => store.navigate({ kind: 'database' })}>
+      <Database size={15} /> <span class="spacer">Database</span>
     </button>
     <button class="item web" class:active={store.route.kind === 'sidex'} onclick={() => store.navigate({ kind: 'sidex' })}>
       <Code size={15} /> <span class="spacer">SideX</span>

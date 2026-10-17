@@ -34,10 +34,30 @@ pub async fn run(state: &Shared, vault: Arc<Vault>, keep: u32) -> ApiResult<Back
     let name = format!("{stem}-{}.radvault", chrono::Local::now().format("%Y%m%d-%H%M%S"));
     let dest = dir.join(&name);
     let d2 = dest.clone();
-    tokio::task::spawn_blocking(move || vault.backup_to(&d2)).await.map_err(ApiErr::internal)??;
+    let v = vault.clone();
+    tokio::task::spawn_blocking(move || v.backup_to(&d2)).await.map_err(ApiErr::internal)??;
+    // The databases (their keys are in the vault backup): `<backup>-databases/`.
+    let dbs = crate::state::db_vault(vault, state, |_, c| crate::routes::db::registry(c)).await?;
+    if !dbs.is_empty() {
+        let to = crate::state::databases_dir(&dest);
+        std::fs::create_dir_all(&to).map_err(ApiErr::internal)?;
+        for (id, key) in dbs {
+            // Fold the write-ahead log into the file, then copy it.
+            if let Ok(c) = state.dbs.connect(&id, &key).await {
+                let _ = rad_db::run_sql(&c, "PRAGMA wal_checkpoint(TRUNCATE)", &[]).await;
+            }
+            for suffix in ["", "-wal"] {
+                let Ok(src) = state.dbs.path(&id).map(|p| std::path::PathBuf::from(format!("{}{suffix}", p.display()))) else { continue };
+                if std::fs::metadata(&src).is_ok_and(|m| m.len() > 0) {
+                    std::fs::copy(&src, to.join(format!("{id}.db{suffix}"))).map_err(ApiErr::internal)?;
+                }
+            }
+        }
+    }
     // Retention
     for old in list(&dir).into_iter().skip(keep as usize) {
-        let _ = std::fs::remove_file(dir.join(old.file));
+        let _ = std::fs::remove_file(dir.join(&old.file));
+        let _ = std::fs::remove_dir_all(crate::state::databases_dir(&dir.join(&old.file)));
     }
     let bytes = std::fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
     tracing::info!("backup written: {}", dest.display());

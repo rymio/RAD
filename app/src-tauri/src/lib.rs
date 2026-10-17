@@ -14,6 +14,9 @@ mod rymnet;
 mod sandbox;
 mod containers;
 mod sidex;
+mod games;
+mod zx;
+mod zxdev;
 mod secrets;
 mod terminal;
 mod term_agent;
@@ -313,6 +316,8 @@ pub fn run() {
             app.manage(sandbox::Sandboxes::default());
             app.manage(containers::Containers::default());
             app.manage(sidex::Sidex::default());
+            app.manage(games::Games::default());
+            app.manage(zx::Zx::default());
             app.manage(mail::Mail::default());
             app.manage(media::Media::default());
             app.manage(rymnet::Rymnet::default());
@@ -451,6 +456,23 @@ pub fn run() {
             containers::container_list,
             containers::container_shared_dir,
             sidex::sidex_status,
+            commands::db_api_info,
+            games::game_build,
+            games::game_run,
+            games::game_stop,
+            games::game_status,
+            games::game_docs,
+            games::game_read_files,
+            zx::zx_attach,
+            zx::zx_keys,
+            zx::zx_joystick,
+            zx::zx_load,
+            zx::zx_save_state,
+            zx::zx_control,
+            zx::zx_power_off,
+            zxdev::zx_tools,
+            zxdev::zx_build,
+            zxdev::zx_check,
             sidex::sidex_open,
             sidex::sidex_forget,
         ])
@@ -468,6 +490,8 @@ pub fn run() {
                 app.state::<terminal::Terminals>().close_all();
                 // Containers power off cleanly (their files are on their drives).
                 app.state::<containers::Containers>().stop_all();
+                app.state::<games::Games>().stop_all();
+                app.state::<zx::Zx>().stop();
                 app.state::<tts::Tts>().stop();
                 let st = app.state::<App>();
                 st.client.set_session(None);

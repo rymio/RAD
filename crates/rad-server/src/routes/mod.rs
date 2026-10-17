@@ -1,6 +1,7 @@
 mod admin;
 mod auth;
 mod chat;
+pub(crate) mod db;
 mod library;
 mod vault;
 
@@ -76,6 +77,18 @@ pub fn router(state: Shared) -> Router {
         .route("/v1/devices", get(admin::list_devices))
         .route("/v1/devices/{id}", delete(admin::revoke_device))
         .route("/v1/devices/pairing-code", post(admin::pairing_code))
+        // databases (Turso) — also for other programs, with API keys
+        .route("/v1/db", get(db::list).post(db::create))
+        .route("/v1/db/{db}", axum::routing::patch(db::rename).delete(db::remove))
+        .route("/v1/db/{db}/tables", get(db::tables).post(db::create_table))
+        .route("/v1/db/{db}/tables/{t}", get(db::get_table).patch(db::rename_table).delete(db::drop_table))
+        .route("/v1/db/{db}/tables/{t}/columns", post(db::add_column))
+        .route("/v1/db/{db}/tables/{t}/columns/{c}", axum::routing::patch(db::rename_column).delete(db::drop_column))
+        .route("/v1/db/{db}/tables/{t}/rows", get(db::rows).post(db::insert))
+        .route("/v1/db/{db}/tables/{t}/rows/{rowid}", get(db::get_row).patch(db::update).delete(db::delete_row))
+        .route("/v1/db/{db}/sql", post(db::sql))
+        .route("/v1/db-keys", get(db::list_keys).post(db::create_key))
+        .route("/v1/db-keys/{id}", delete(db::delete_key))
         .layer(DefaultBodyLimit::max(16 * 1024 * 1024))
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state)

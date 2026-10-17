@@ -1,0 +1,12 @@
+[package]
+name = "rad-zx"
+version.workspace = true
+edition.workspace = true
+description = "RAD's ZX Spectrum: 48K/128K emulation (SPECTRUSTY), TZX/TAP tapes, Z80/SNA snapshots"
+# This crate is MIT like RAD; SPECTRUSTY, which it links, is LGPL-3.0-or-later (RAD's source is
+# published, so it can always be rebuilt against a modified SPECTRUSTY).
+
+[dependencies]
+spectrusty = { version = "0.4", default-features = false, features = ["formats", "peripherals", "audio"] }
+miniz_oxide = "0.8"
+thiserror = "2"

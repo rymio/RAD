@@ -128,6 +128,43 @@ export const rad = {
   sandboxSend: (id: string, paths: string[]) => call<number>('sandbox_send', { id, paths }),
   sandboxSharedDir: (id: string) => call<string>('sandbox_shared_dir', { id }),
 
+  /** Where other programs reach RAD's API (and the file that announces it). */
+  dbApiInfo: () => call<{ url: string | null; discovery_file: string | null; local: boolean }>('db_api_info'),
+  /** Games (ggez): build to check, build and run (streams {phase} / {o}), stop. */
+  gameBuild: (id: string, files: { path: string; content: string }[]) => call<{ ok: boolean; output: string }>('game_build', { id, files }),
+  gameRun(id: string, files: { path: string; content: string }[], assets: { path: string; data: string }[], onEvent: (e: { phase?: string; code?: number | null; o?: string; build_failed?: boolean }) => void) {
+    const ch = new Channel<{ phase?: string; code?: number | null; o?: string; build_failed?: boolean }>();
+    ch.onmessage = onEvent;
+    return call<{ ok: boolean }>('game_run', { id, files, assets, onEvent: ch });
+  },
+  /** Reads files picked or dropped from Finder (to add as game assets): base64, at most 10 MB each. */
+  gameReadFiles: (paths: string[]) => call<{ name: string; size: number; data?: string; error?: string }[]>('game_read_files', { paths }),
+  /** ZX Spectrum: connects the view (messages: picture bytes, or {size, palette} / {status}). */
+  zxAttach(model: '48' | '128', onMsg: (m: ArrayBuffer | Record<string, any>) => void) {
+    const ch = new Channel<ArrayBuffer | Record<string, any>>();
+    ch.onmessage = onMsg;
+    return call<void>('zx_attach', { model, onFrame: ch });
+  },
+  zxKeys: (keys: number) => call<void>('zx_keys', { keys }),
+  zxJoystick: (bits: number) => call<void>('zx_joystick', { bits }),
+  /** Loads a tape (TZX/TAP: reset + LOAD "") or a snapshot (Z80/SNA); data is base64. */
+  zxLoad: (name: string, data: string) => call<{ kind: 'tape' | 'snapshot'; names?: string[] }>('zx_load', { name, data }),
+  zxSaveState: () => call<string>('zx_save_state'),
+  zxControl: (action: string, value?: number) => call<void>('zx_control', { action, value: value ?? null }),
+  zxPowerOff: () => call<void>('zx_power_off'),
+  /** Which Spectrum languages can be built here (BASIC always; assembler when sjasmplus is built). */
+  zxTools: () => call<{ basic: boolean; asm: boolean }>('zx_tools'),
+  /** Builds a Spectrum project ('zx-basic' | 'zx-asm'). */
+  zxBuild: (kind: string, name: string, files: { path: string; content: string }[]) =>
+    call<{ ok: boolean; output: string; errors: { file: string; line: number | null; message: string; basic_line?: number | null; kind?: string }[]; file?: { name: string; data: string } }>('zx_build', { kind, name, files }),
+  /** Runs a built program on a hidden Spectrum: the screen as text, the BASIC report, a crash. */
+  zxCheck: (name: string, data: string, seconds?: number) =>
+    call<{ started: boolean; crashed: boolean; report: { code: string; message: string; line: number; statement: number } | null; screen: string[] }>('zx_check', { name, data, seconds: seconds ?? null }),
+  gameStop: (id: string) => call<void>('game_stop', { id }),
+  /** Searches the local ggez 0.10 docs (guides, examples, API source). */
+  gameDocs: (query: string, limit?: number) =>
+    call<{ available: boolean; results: { file: string; line: number; text: string }[] }>('game_docs', { query, limit: limit ?? null }),
+  gameStatus: () => call<{ running: string[]; building: string[]; rust: boolean }>('game_status'),
   sidexStatus: () => call<T.SidexStatus>('sidex_status'),
   /** Opens SideX (the code editor), on `folder` if given. */
   sidexOpen: (folder?: string) => call<void>('sidex_open', { folder: folder ?? null }),

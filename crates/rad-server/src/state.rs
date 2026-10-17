@@ -53,6 +53,8 @@ pub struct AppState {
     /// Short-lived tokens → blob ids for the loopback media endpoint.
     pub media_tokens: Mutex<HashMap<String, (Arc<Vault>, i64, String)>>,
     pub ffmpeg_ok: std::sync::atomic::AtomicBool,
+    /// SQL databases next to the vault (see routes/db.rs); their keys are in the vault.
+    pub dbs: rad_db::Databases,
     stopped: std::sync::atomic::AtomicBool,
     pub stop_notify: Notify,
     /// Change-log entries this process wrote, so the shared-vault watcher only relays others'.
@@ -64,9 +66,15 @@ pub struct AppState {
 
 pub type Shared = Arc<AppState>;
 
+/// Databases live next to the vault: `<vault file>-databases/`.
+pub fn databases_dir(vault: &std::path::Path) -> PathBuf {
+    PathBuf::from(format!("{}-databases", vault.display()))
+}
+
 impl AppState {
     pub fn new(cfg: Config, devices: DeviceStore, library: Arc<rad_local::Library>) -> Shared {
         let (events, _) = broadcast::channel(512);
+        let dbs = rad_db::Databases::new(databases_dir(&cfg.vault_path));
         Arc::new_cyclic(|me| AppState {
             me: me.clone(),
             cfg,
@@ -83,6 +91,7 @@ impl AppState {
             last_activity: AtomicI64::new(now_ms()),
             media_tokens: Mutex::new(HashMap::new()),
             ffmpeg_ok: std::sync::atomic::AtomicBool::new(false),
+            dbs,
             stopped: std::sync::atomic::AtomicBool::new(false),
             stop_notify: Notify::new(),
             own_seqs: Mutex::new(HashSet::new()),
@@ -140,6 +149,8 @@ impl AppState {
         }
         self.sessions.lock().unwrap().clear();
         self.media_tokens.lock().unwrap().clear();
+        // Their keys were in the vault.
+        self.dbs.close_all();
         if had {
             let _ = self.events.send(Event::Locked);
             tracing::info!("vault locked");

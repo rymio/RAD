@@ -84,6 +84,7 @@ async fn serve_local(app: &AppHandle, st: &App, path: &std::path::Path, replaces
         .await
         .map_err(|e| CmdError::new("local", format!("Couldn't open the vault: {e:#}")))?;
     st.client.set_server(Some(emb.url()), Some(emb.device_token.clone()));
+    write_api_info(app, &emb.url());
     *st.embedded.lock().await = Some(emb);
     let p = path.display().to_string();
     let mut c = st.config();
@@ -95,6 +96,35 @@ async fn serve_local(app: &AppHandle, st: &App, path: &std::path::Path, replaces
     st.save_config(c.clone());
     let _ = app.emit("rad-config", &c);
     st.client.json(Method::GET, "/v1/status", None).await
+}
+
+/// Where other programs on this computer find RAD's API (the in-process server has a new port
+/// each time RAD starts): `<app data>/api.json` = {"url", "pid"}. They authenticate with an API
+/// key made in the Database view.
+fn api_info_file(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_data_dir().ok().map(|d| d.join("api.json"))
+}
+
+fn write_api_info(app: &AppHandle, url: &str) {
+    let Some(p) = api_info_file(app) else { return };
+    let body = serde_json::to_vec_pretty(&json!({ "url": url, "pid": std::process::id(), "api": "RAD", "auth": "Authorization: Bearer <API key from RAD → Database → API keys>" })).unwrap_or_default();
+    if std::fs::write(&p, body).is_ok() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600));
+        }
+    }
+}
+
+/// The API's address for other programs, and the file that announces it.
+#[tauri::command]
+pub fn db_api_info(app: AppHandle, st: State<'_, App>) -> Value {
+    json!({
+        "url": st.client.base().ok(),
+        "discovery_file": api_info_file(&app).map(|p| p.display().to_string()),
+        "local": st.config().mode == "local",
+    })
 }
 
 /// Moves this computer's vault file into `folder` and reopens it from there (locked, so the

@@ -42,7 +42,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../../models/nomic-embed-text-v1.5.Q8_0.gguf": "models/nomic-embed-text-v1.5.Q8_0.gguf"
+      "../../models/nomic-embed-text-v1.5.Q8_0.gguf": "models/nomic-embed-text-v1.5.Q8_0.gguf",
+      "../../assets/ggez-docs/": "ggez-docs/"
     },
     "macOS": {
       "minimumSystemVersion": "11.0"

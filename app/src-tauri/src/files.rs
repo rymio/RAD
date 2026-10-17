@@ -188,6 +188,23 @@ fn move_files(from: &Path, to: &Path, rename: bool, progress: &dyn Fn(u64, u64))
             Err(_) => {}
         }
     }
+    // The vault's databases travel with it (their keys are in it).
+    let (db_from, db_to) = (rad_server::databases_dir(from), rad_server::databases_dir(to));
+    if db_from.is_dir() {
+        // Only inside a folder that exists (never create the destination itself).
+        if !to.parent().is_some_and(|p| p.is_dir()) {
+            return Err(CmdError::new("io", "The destination folder doesn't exist"));
+        }
+        std::fs::create_dir_all(&db_to).map_err(io)?;
+        for e in std::fs::read_dir(&db_from).map_err(io)?.flatten() {
+            let name = e.file_name();
+            if name.to_string_lossy().ends_with("-shm") {
+                let _ = std::fs::remove_file(e.path());
+            } else if e.path().is_file() {
+                files.push((e.path(), db_to.join(name)));
+            }
+        }
+    }
     let total: u64 = files.iter().filter_map(|(f, _)| std::fs::metadata(f).ok()).map(|m| m.len()).sum();
 
     if rename && std::fs::rename(from, to).is_ok() {
@@ -203,6 +220,7 @@ fn move_files(from: &Path, to: &Path, rename: bool, progress: &dyn Fn(u64, u64))
                 for c in &copied {
                     let _ = std::fs::remove_file(c);
                 }
+                let _ = std::fs::remove_dir(&db_to);
                 return Err(e);
             }
             copied.push(b.clone());
@@ -211,6 +229,7 @@ fn move_files(from: &Path, to: &Path, rename: bool, progress: &dyn Fn(u64, u64))
             let _ = std::fs::remove_file(a);
         }
     }
+    let _ = std::fs::remove_dir(&db_from);
     // This computer's (already withdrawn) session folder stays behind otherwise.
     let _ = std::fs::remove_dir_all(rad_server::vault_presence::dir(from));
     progress(total, total);
@@ -278,6 +297,10 @@ mod tests {
         std::fs::write(with_suffix(&v, "-wal"), &wal).unwrap();
         std::fs::write(with_suffix(&v, "-shm"), b"index").unwrap();
         std::fs::create_dir_all(rad_server::vault_presence::dir(&v)).unwrap();
+        let dbs = rad_server::databases_dir(&v);
+        std::fs::create_dir_all(&dbs).unwrap();
+        std::fs::write(dbs.join("db1.db"), b"encrypted db").unwrap();
+        std::fs::write(dbs.join("db1.db-shm"), b"index").unwrap();
         (v, body, wal)
     }
 
@@ -297,7 +320,10 @@ mod tests {
             assert!(!from.exists() && !with_suffix(&from, "-wal").exists() && !with_suffix(&from, "-shm").exists());
             assert!(!rad_server::vault_presence::dir(&from).exists());
             assert!(!with_suffix(&to, ".moving").exists());
-            assert_eq!(seen.lock().unwrap().last().copied(), Some((body.len() as u64 + wal.len() as u64, body.len() as u64 + wal.len() as u64)));
+            assert_eq!(std::fs::read(rad_server::databases_dir(&to).join("db1.db")).unwrap(), b"encrypted db", "the databases travel with the vault");
+            assert!(!rad_server::databases_dir(&from).exists());
+            let total = body.len() as u64 + wal.len() as u64 + 12;
+            assert_eq!(seen.lock().unwrap().last().copied(), Some((total, total)));
         }
     }
 

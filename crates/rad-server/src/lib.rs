@@ -25,6 +25,8 @@ use std::path::PathBuf;
 use anyhow::Context;
 
 pub use state::Shared;
+/// The folder of a vault's databases (Turso), which travels with the vault file.
+pub use state::databases_dir;
 
 /// Unloads the built-in engine's models. Call once before the process exits.
 pub fn shutdown_models() {
