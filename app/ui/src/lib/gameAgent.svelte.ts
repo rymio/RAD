@@ -1,7 +1,7 @@
 /** The Games view's AI agent: writes ggez games with the user. It answers with whole files;
  *  RAD saves them (encrypted), builds the game and hands compiler errors back until it builds. */
 import { rad } from './api';
-import { assetKind, type GameAsset, type GameFile, type GameKind } from './games';
+import { assetKind, isC64, type GameAsset, type GameFile, type GameKind } from './games';
 
 export type GameItem =
   | { kind: 'user'; text: string }
@@ -52,6 +52,53 @@ How to change the game:
 - Make it fun and true to the Spectrum: a title, clear controls shown on screen (O/P/Q/A/space or a Kempston joystick), a score, game over and play again; bright colours on black.
 
 ${basic ? ZX_BASIC : ZX_ASM}
+
+The game's current files:
+
+${listing || '(none yet)'}`;
+}
+const C64_BASIC = `Commodore BASIC V2 (C64) essentials — RAD turns main.bas into a program (PRG) and runs it:
+- Every line starts with a line number (0–63999) and is at most 80 characters as typed (a {CLR}-style code counts as one); statements are separated by ":". IF … THEN runs the rest of the line (no ELSE, WHILE or REPEAT: use GOTO / GOSUB and RETURN). FOR I=1 TO 10 STEP 2 … NEXT I.
+- Variable names: only the FIRST TWO letters count (SCORE and SC are the same variable!), and a name must not contain a keyword anywhere (SCORE holds OR, TOTAL holds TO, FORT holds FOR) — use short names like S, X, Y, SX, LV. ST, TI and TI$ are the system's. Strings A$, whole numbers A%, arrays DIM A(10).
+- Screen: 40 × 25. In strings, write control characters as {CLR}, {HOME}, {DOWN}, {UP}, {LEFT}, {RIGHT}, {RVS ON}, {RVS OFF} and colours {BLACK} {WHITE} {RED} {CYAN} {PURPLE} {GREEN} {BLUE} {YELLOW} {ORANGE} {BROWN} {LIGHT RED} {DARK GRAY} {GRAY} {LIGHT GREEN} {LIGHT BLUE} {LIGHT GRAY}. There's no PRINT AT: use {HOME}, {DOWN}s and TAB(col), or POKE 781,ROW:POKE 782,COL:POKE 783,0:SYS 65520 then PRINT.
+- Fast drawing: POKE straight into screen memory 1024+ROW*40+COL with a screen code (A–Z = 1–26, 0–9 = 48–57, space 32, * 42, < 60, = 61, > 62, @ 0, ball 81, solid block 160) and its colour into 55296+ROW*40+COL (0 black 1 white 2 red 3 cyan 4 purple 5 green 6 blue 7 yellow 8 orange 9 brown 10 light red 11 dark grey 12 grey 13 light green 14 light blue 15 light grey). PEEK the screen for collisions. Border POKE 53280,C; background POKE 53281,C.
+- Keys: GET K$ (doesn't wait; "" if no key). PEEK(197) is the key held now (64 = none; A 10, S 13, W 9, Z 12, X 23, space 60, RETURN 1). Joystick in port 2: J=PEEK(56320) — bit 0 up, 1 down, 2 left, 3 right, 4 fire, and 0 means pushed: IF (J AND 16)=0 THEN fire.
+- Sound (the SID, 54272–54296): POKE 54296,15 for volume; voice 1 frequency 54272 (low) / 54273 (high), attack/decay 54277, sustain/release 54278, then the control register 54276: 17 triangle, 33 sawtooth, 65 pulse (width at 54274/54275), 129 noise — each with the gate on; write 16, 32, 64 or 128 to let the note go.
+- Sprites: 63 bytes of data in a 64-byte block (e.g. block 13 = addresses 832–894), POKE 2040,13 points sprite 0 at it; enable POKE 53269,1; position POKE 53248,X (X over 255: POKE 53264,1) and POKE 53249,Y (visible X 24–343, Y 50–229); colour POKE 53287,C.
+- Random: INT(RND(1)*N). Speed: BASIC is slow (a few hundred statements a second): keep the main loop short and only redraw what moved.
+- Running it needs the C64's own BASIC ROM: with only RAD's free ROMs, RAD can check that it builds but not run it.`;
+
+const C64_ASM = `6502 assembly for the Commodore 64, assembled by 64tass into a PRG (--cbm-prg). RAD loads it and types RUN (or SYS to its load address).
+- Start main.asm with a BASIC line so RUN starts it:
+        * = $0801
+        .word (+), 10
+        .null $9e, format("%d", start)
++       .word 0
+  then the code from a \`start\` label.
+- 64tass syntax: labels in the first column (no colon needed), instructions indented; NAME = value for constants; "-" and "+" are anonymous labels (bne - jumps back to the nearest "-"); .byte / .word / .text / .null (text plus a 0); .enc "screen" makes .text produce screen codes (upper-case letters), .enc "none" switches back; .for i := 0, i < 25, i += 1 … .endfor repeats lines; asl a / lsr a / rol a for the accumulator; $ hex, % binary, #<label / #>label for an address's low/high byte.
+- Take over the machine at start: sei, then lda #$7f / sta $dc0d (no CIA interrupts). Don't call KERNAL or BASIC routines (RAD may be running free replacement ROMs). Frame timing: wait for the raster: lda $d012 / cmp #251 / bne - (once per frame, 50 a second), then read input, update, draw.
+- Screen: $0400–$07E7, 40 × 25 screen codes (A–Z 1–26, 0–9 $30–$39, space $20); colour RAM $D800 + the same offset (0 black 1 white 2 red 3 cyan 4 purple 5 green 6 blue 7 yellow 8 orange 9 brown 10 light red 11 dark grey 12 grey 13 light green 14 light blue 15 light grey). Border $D020, background $D021; lda #$15 / sta $d018 for the upper-case character set. RAD reads the screen as text from $0400, so keep a title and the score in text.
+- Joystick in port 2: lda #$ff / sta $dc00, then lda $dc00 — bit 0 up, 1 down, 2 left, 3 right, 4 fire; 0 means pushed. Keyboard: write a row mask (one bit 0) to $dc00 and read the columns from $dc01 (bit n = column n, 0 = pressed). Rows (bit 0 of $dc00 = row 0) and their columns 0–7: row 0 DEL RETURN →  F7 F1 F3 F5 ↓ · row 1: 3 W A 4 Z S E LSHIFT · row 2: 5 R D 6 C F T X · row 3: 7 Y G 8 B H U V · row 4: 9 I J 0 M K O N · row 5: + P L - . : @ , · row 6: £ * ; HOME RSHIFT = ↑ / · row 7: 1 ← CTRL 2 SPACE C= Q RUN/STOP. Write $ff to $dc00 afterwards.
+- Sprites (8, 24 × 21 pixels): 63 bytes of data per 64-byte block; pointers at $07F8–$07FF (block number = address / 64, e.g. data at $2000 → 128); enable bits $D015; positions $D000/$D001 (sprite 0 X/Y), $D002/$D003 (sprite 1)…, bit 8 of each X in $D010; colours $D027–$D02E; collisions $D01E (sprite–sprite) and $D01F (sprite–background), reading clears them. Visible: X 24–343, Y 50–229.
+- Sound (SID $D400–$D418): $D418 volume (15); voice 1: $D400/$D401 frequency, $D402/$D403 pulse width, $D405 attack/decay, $D406 sustain/release, $D404 control ($11 triangle, $21 sawtooth, $41 pulse, $81 noise with the gate on; clear bit 0 to release). Voices 2 and 3 at $D407 and $D40E.
+- Zero page $FB–$FE is free for pointers; once interrupts are off, $02–$8F can be used too. Random numbers: an 8-bit LFSR (asl a / bcc + / eor #$1d). Decimal scores: sed / adc / cld.`;
+
+function c64Prompt(kind: GameKind, name: string, files: GameFile[]) {
+  const listing = files.map((f) => `=== ${f.path} ===\n${f.content}`).join('\n\n');
+  const basic = kind === 'c64-basic';
+  return `You are a friendly expert Commodore 64 game programmer from the 1980s, helping the user make "${name}", a game for the C64 in ${basic ? 'Commodore BASIC V2' : '6502 assembly (64tass)'}. When the user presses Run, it plays in RAD's C64 emulator.
+
+How to change the game:
+- Reply with a short sentence on what you're doing, then the COMPLETE new content of each file you change, in a fenced block whose info string names the file, exactly like:
+\`\`\`${basic ? 'basic file=main.bas' : 'asm file=main.asm'}
+…the whole file…
+\`\`\`
+- Never send partial files or "…rest unchanged".
+- RAD then builds it and runs it for a few seconds on a C64 with no keys pressed, and tells you the errors${basic ? ' (and the BASIC error, e.g. "?SYNTAX ERROR IN 40")' : ''} or what the screen showed (as text). Fix problems by sending corrected files. When it works, the user plays it.
+- To only talk, reply without file blocks.
+- Make it fun and true to the C64: a title, clear controls shown on screen (a joystick in port 2, and keys too), a score, game over and play again; colourful, with SID sound effects.
+
+${basic ? C64_BASIC : C64_ASM}
 
 The game's current files:
 
@@ -145,7 +192,7 @@ export function parseFiles(reply: string): { text: string; files: GameFile[] } {
   return { text: text.replace(/\n{3,}/g, '\n\n').trim(), files };
 }
 
-/** A build's result: for Spectrum projects `output` also says what the program did when it ran. */
+/** A build's result: for Spectrum and C64 projects `output` also says what the program did when it ran. */
 export interface BuildResult {
   ok: boolean;
   output: string;
@@ -155,7 +202,7 @@ export interface GameIO {
   kind: GameKind;
   files(): GameFile[];
   assets(): GameAsset[];
-  /** Builds (and for Spectrum projects, test-runs) the game. */
+  /** Builds (and for Spectrum and C64 projects, test-runs) the game. */
   build(): Promise<BuildResult>;
   write(files: GameFile[]): Promise<void>;
   /** Saves the conversation (in the encrypted database). */
@@ -227,7 +274,7 @@ export class GameAgent {
         this.status = builds ? 'Fixing the build…' : 'Thinking…';
         const ggez = this.io.kind === 'ggez';
         const docs = ggez ? ((await rad.gameDocs(query, 4).catch(() => null))?.results ?? []) : [];
-        const prompt = ggez ? systemPrompt(this.name, this.io.files(), docs, this.io.assets()) : zxPrompt(this.io.kind, this.name, this.io.files());
+        const prompt = ggez ? systemPrompt(this.name, this.io.files(), docs, this.io.assets()) : isC64(this.io.kind) ? c64Prompt(this.io.kind, this.name, this.io.files()) : zxPrompt(this.io.kind, this.name, this.io.files());
         const r = await rad.assist(prompt, this.turns.slice(-30));
         if (this.stopped) break;
         this.push('assistant', r.content);
@@ -252,7 +299,7 @@ export class GameAgent {
         await this.io.write(files);
         this.items.push({ kind: 'files', paths: files.map((f) => f.path) });
 
-        this.status = !ggez ? (builds ? 'Building and trying it again…' : 'Building and trying it on a Spectrum…') : builds ? 'Building again…' : 'Building the game (the first build takes a minute)…';
+        this.status = !ggez ? (builds ? 'Building and trying it again…' : `Building and trying it on a ${isC64(this.io.kind) ? 'C64' : 'Spectrum'}…`) : builds ? 'Building again…' : 'Building the game (the first build takes a minute)…';
         const item: GameItem = { kind: 'build', ok: null };
         this.items.push(item);
         const b = await this.io.build();

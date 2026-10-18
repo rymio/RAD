@@ -177,6 +177,48 @@ export const rad = {
   /** Runs a built program on a hidden Spectrum: the screen as text, the BASIC report, a crash. */
   zxCheck: (name: string, data: string, seconds?: number) =>
     call<{ started: boolean; crashed: boolean; report: { code: string; message: string; line: number; statement: number } | null; screen: string[] }>('zx_check', { name, data, seconds: seconds ?? null }),
+  /** Commodore 64: connects the view (messages: picture bytes, or {size, palette} / {status}). */
+  c64Attach(onMsg: (m: ArrayBuffer | Record<string, any>) => void) {
+    const ch = new Channel<ArrayBuffer | Record<string, any>>();
+    ch.onmessage = onMsg;
+    return call<void>('c64_attach', { onFrame: ch });
+  },
+  /** Keys held: their places in the keyboard matrix (row × 8 + column; 64 is RESTORE). */
+  c64Keys: (keys: number[]) => call<void>('c64_keys', { keys }),
+  c64Joystick: (bits: number) => call<void>('c64_joystick', { bits }),
+  c64JoystickPort: (port: 1 | 2) => call<void>('c64_joystick_port', { port }),
+  /** Loads a program (PRG/P00/T64), tape (TAP), disk (D64), cartridge (CRT) or save (C64S); base64. */
+  c64Load: (name: string, data: string) => call<{ kind: 'program' | 'tape' | 'disk' | 'cartridge' | 'snapshot'; names?: string[] }>('c64_load', { name, data }),
+  c64InsertDisk: (name: string, data: string) => call<string[]>('c64_insert_disk', { name, data }),
+  c64SaveState: () => call<string>('c64_save_state'),
+  c64Control: (action: string, value?: number) => call<void>('c64_control', { action, value: value ?? null }),
+  c64Memory: () => call<string>('c64_memory'),
+  c64Poke: (addr: number, value: number) => call<void>('c64_poke', { addr, value }),
+  c64Lock: (addr: number, value: number | null) => call<void>('c64_lock', { addr, value }),
+  c64PowerOff: () => call<void>('c64_power_off'),
+  /** Uses the user's ROMs (base64), or the free Open ROMs when null. */
+  c64SetRoms: (chars: string | null, basic: string | null, kernal: string | null) => call<'open' | 'commodore'>('c64_set_roms', { chars, basic, kernal }),
+  c64ReadRoms: (paths: string[]) => call<{ roms: { chars?: string; basic?: string; kernal?: string }; skipped: string[] }>('c64_read_roms', { paths }),
+  c64FindRoms: () => call<string[]>('c64_find_roms'),
+  /** Which C64 languages can be built here (BASIC always; assembler when 64tass is built) and which ROMs run. */
+  c64Tools: () => call<{ basic: boolean; asm: boolean; roms: 'open' | 'commodore' }>('c64_tools'),
+  /** Builds a C64 project ('c64-basic' | 'c64-asm') into a PRG. */
+  c64Build: (kind: string, name: string, files: { path: string; content: string }[]) =>
+    call<{ ok: boolean; output: string; errors: { file: string; line: number | null; message: string; basic_line?: number | null; kind?: string }[]; file?: { name: string; data: string } }>('c64_build', { kind, name, files }),
+  /** Runs a built program on a hidden C64: the screen as text, a BASIC error, a crash (JAM). */
+  c64Check: (name: string, data: string, seconds?: number, basic?: boolean) =>
+    call<{ needs_roms?: boolean; roms: 'open' | 'commodore'; started?: boolean; crashed?: boolean; error?: { message: string; line: number | null } | null; screen?: string[]; border?: number }>('c64_check', { name, data, seconds: seconds ?? null, basic: basic ?? null }),
+  /** The C64 lab: the same as the Spectrum lab's, for C64 games (6502, 64tass). */
+  c64labOpen: (id: string, name: string, data: string, seconds?: number) => call<T.LabSummary>('c64lab_open', { id, name, data, seconds: seconds ?? null }),
+  c64labListing: (id: string, from: number, to: number, notes: T.LabNotes) => call<T.LabLine[]>('c64lab_listing', { id, from, to, notes }),
+  c64labXrefs: (id: string, addr: number, notes: T.LabNotes) => call<{ addr: number; text: string }[]>('c64lab_xrefs', { id, addr, notes }),
+  c64labMemory: (id: string, from: number, len: number) => call<string>('c64lab_memory', { id, from, len }),
+  c64labSource: (id: string, from: number, to: number, notes: T.LabNotes, title: string) => call<{ source: string; verified: boolean; note?: string }>('c64lab_source', { id, from, to, notes, title }),
+  c64labAssemblePatch: (id: string, addr: number, code: string, notes: T.LabNotes) =>
+    call<{ ok: boolean; bytes?: string; end?: number; len?: number; splits?: number | null; messages: string }>('c64lab_assemble_patch', { id, addr, code, notes }),
+  c64labBuild: (id: string, patches: { addr: number; bytes: string }[], check?: boolean) =>
+    call<{ file: { name: string; data: string }; check?: { crashed: boolean; screen: string[]; error: { message: string; line: number | null } | null } }>('c64lab_build', { id, patches, check: check ?? null }),
+  c64labClose: (id: string) => call<void>('c64lab_close', { id }),
   gameStop: (id: string) => call<void>('game_stop', { id }),
   /** Searches the local ggez 0.10 docs (guides, examples, API source). */
   gameDocs: (query: string, limit?: number) =>

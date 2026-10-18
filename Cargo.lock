@@ -5586,6 +5586,7 @@ dependencies = [
  "percent-encoding",
  "portable-pty",
  "rad-api",
+ "rad-c64",
  "rad-server",
  "rad-tunnel",
  "rad-zx",
@@ -5611,6 +5612,17 @@ dependencies = [
  "window-vibrancy 0.6.0",
  "xcap",
  "zeroize",
+]
+
+[[package]]
+name = "rad-c64"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "miniz_oxide 0.8.9",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

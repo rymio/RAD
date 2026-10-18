@@ -15,6 +15,9 @@ mod sandbox;
 mod containers;
 mod sidex;
 mod games;
+mod c64;
+mod c64dev;
+mod c64lab;
 mod zx;
 mod zxdev;
 mod zxlab;
@@ -319,6 +322,8 @@ pub fn run() {
             app.manage(sidex::Sidex::default());
             app.manage(games::Games::default());
             app.manage(zx::Zx::default());
+            app.manage(c64::C64State::default());
+            app.manage(c64lab::C64Lab::default());
             app.manage(zxlab::ZxLab::default());
             app.manage(mail::Mail::default());
             app.manage(media::Media::default());
@@ -465,6 +470,32 @@ pub fn run() {
             games::game_status,
             games::game_docs,
             games::game_read_files,
+            c64::c64_attach,
+            c64::c64_keys,
+            c64::c64_joystick,
+            c64::c64_joystick_port,
+            c64::c64_load,
+            c64::c64_insert_disk,
+            c64::c64_save_state,
+            c64::c64_control,
+            c64::c64_memory,
+            c64::c64_poke,
+            c64::c64_lock,
+            c64::c64_power_off,
+            c64::c64_set_roms,
+            c64::c64_read_roms,
+            c64::c64_find_roms,
+            c64dev::c64_tools,
+            c64dev::c64_build,
+            c64dev::c64_check,
+            c64lab::c64lab_open,
+            c64lab::c64lab_listing,
+            c64lab::c64lab_xrefs,
+            c64lab::c64lab_memory,
+            c64lab::c64lab_source,
+            c64lab::c64lab_assemble_patch,
+            c64lab::c64lab_build,
+            c64lab::c64lab_close,
             zx::zx_attach,
             zx::zx_keys,
             zx::zx_joystick,
@@ -507,6 +538,7 @@ pub fn run() {
                 app.state::<containers::Containers>().stop_all();
                 app.state::<games::Games>().stop_all();
                 app.state::<zx::Zx>().stop();
+                app.state::<c64::C64State>().stop();
                 app.state::<tts::Tts>().stop();
                 let st = app.state::<App>();
                 st.client.set_session(None);

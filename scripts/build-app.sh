@@ -7,6 +7,7 @@
 #   - the Linux sandbox engine (libkrun)    → scripts/build-sandbox.sh (macOS on Apple Silicon)
 #   - SideX, the code editor (VS Code)      → scripts/build-sidex.sh   (skip: RAD_NO_SIDEX=1; macOS)
 #   - ZX Spectrum dev tools (sjasmplus)     → scripts/build-zx-tools.sh
+#   - Commodore 64 dev tools (64tass)       → scripts/build-c64-tools.sh
 # All are incremental, so re-running is quick. Extra arguments go to `cargo tauri build`
 # (e.g. --bundles app). Result: target/release/bundle/…
 #
@@ -26,6 +27,7 @@ triple="$(rustc -vV | sed -n 's/^host: //p')"
 ./scripts/build-tts.sh "$triple"
 ./scripts/build-sandbox.sh "$triple"
 ./scripts/build-zx-tools.sh || echo "warning: building without the ZX Spectrum assembler" >&2
+./scripts/build-c64-tools.sh || echo "warning: building without the C64 assembler" >&2
 [[ "${RAD_NO_SIDEX:-}" == 1 ]] || ./scripts/build-sidex.sh || echo "warning: building without SideX (the code editor)" >&2
 
 # Bundle whichever engines were built: executables as sidecars, libraries into Frameworks.
@@ -102,6 +104,12 @@ if [[ -d "$app" && -x zxtools/bin/sjasmplus ]]; then
   mkdir -p "$app/Contents/Helpers/zx"
   cp zxtools/bin/sjasmplus zxtools/bin/sjasmplus-LICENSE.md "$app/Contents/Helpers/zx/"
   codesign --force --sign "${APPLE_SIGNING_IDENTITY:--}" "$app/Contents/Helpers/zx/sjasmplus"
+fi
+if [[ -d "$app" && -x c64tools/bin/64tass ]]; then
+  # The C64 assembler (Games view, C64 lab), signed with the app's identity.
+  mkdir -p "$app/Contents/Helpers/c64"
+  cp c64tools/bin/64tass c64tools/bin/64tass-LICENSE.txt "$app/Contents/Helpers/c64/"
+  codesign --force --sign "${APPLE_SIGNING_IDENTITY:--}" "$app/Contents/Helpers/c64/64tass"
 fi
 sidex=sidex/target/release/bundle/macos/SideX.app
 if [[ -d "$app" && -d "$sidex" && "${RAD_NO_SIDEX:-}" != 1 ]]; then

@@ -1,7 +1,8 @@
-/** The Spectrum lab's AI: explains how a game works and helps change it. It reads code through
- *  RAD (view ranges, references, memory), writes notes (labels, comments) and patches that RAD
- *  assembles, applies and test-runs on a hidden Spectrum. */
+/** The lab's AI (Spectrum and C64): explains how a game works and helps change it. It reads code
+ *  through RAD (view ranges, references, memory), writes notes (labels, comments) and patches that
+ *  RAD assembles, applies and test-runs on a hidden machine. */
 import { rad } from './api';
+import type { LabMachine } from './labMachine';
 import type { LabNotes, LabSummary } from './types';
 import { hex4, parseAddr, type LabPatch } from './zxlab';
 
@@ -15,6 +16,7 @@ type Turn = { role: 'user' | 'assistant'; content: string };
 
 export interface LabIO {
   id: string;
+  machine: LabMachine;
   name(): string;
   summary(): LabSummary | null;
   notes(): LabNotes;
@@ -28,28 +30,28 @@ export interface LabIO {
 
 const MAX_ROUNDS = 10;
 
-const HARDWARE = `ZX Spectrum 48K essentials for reading its code:
-- Memory: $0000–$3FFF ROM (BASIC, tape routines, font at $3D00); $4000–$57FF screen pixels; $5800–$5AFF colour attributes (32×24 cells: bit 7 flash, 6 bright, 5–3 paper, 2–0 ink); $5B00–$5BFF printer buffer; $5C00–$5CB5 system variables (LAST_K $5C08 last key, FRAMES $5C78 frame counter, UDG $5C7B, CHARS $5C36); BASIC program from PROG ($5CCB usually); machine code usually from $6000–$8000 up. $4000–$7FFF is shared with the ULA (slower, "contended"); $8000–$FFFF is the CPU's alone.
-- Screen pixel address of row y, byte column x: $4000 | ((y&$C0)<<5) | ((y&7)<<8) | ((y&$38)<<2) | x — games often keep a lookup table of row addresses or use "inc h" to step down a character cell.
-- Ports: OUT ($FE),A border (bits 0–2) and speaker (bit 4, toggled in timed loops for sound); IN A,($FE) with A/B = a keyboard half-row ($FE shift–V, $FD A–G, $FB Q–T, $F7 1–5, $EF 0–6, $DF P–Y, $BF enter–H, $7F space–B; bits 0–4, 0 = pressed) and bit 6 = the tape (EAR). IN A,($1F) Kempston joystick (bits: right, left, down, up, fire). OUT (C) with BC=$FFFD/$BFFD: the 128K AY sound chip.
-- Interrupts: IM 1 calls the ROM at $0038 50 times a second; IM 2 games point I at a vector table to run their own interrupt routine (music, timing). HALT waits for the next interrupt (frame sync).
-- Common patterns: lives/score counters as bytes or BCD; "ld a,(lives) / dec a / ld (lives),a" for losing a life; sprite drawing with XOR or OR/AND masks; tables of 8-byte character graphics; LDIR to copy blocks; RST $10 to print a character via the ROM; LD_BYTES ($0556) in custom loaders.`;
-
 function systemPrompt(io: LabIO): string {
   const s = io.summary();
   const n = io.notes();
   const labels = Object.entries(n.labels).map(([a, l]) => `${hex4(+a)} ${l}`).join(', ');
   const comments = Object.entries(n.comments).slice(0, 80).map(([a, c]) => `${hex4(+a)}: ${c}`).join('\n');
   const patches = io.patches().map((p) => `${hex4(p.addr)} ${p.enabled ? 'on' : 'off'} — ${p.note || p.bytes}`).join('\n');
+  const m = io.machine;
+  const c64 = m.id === 'c64';
+  const hardware = c64
+    ? `Chip registers its own code used: ${(s?.hardware ?? []).map((h) => `${hex4(h.addr)} ${h.name ?? h.chip ?? ''}${h.reads ? ` read ×${h.reads}` : ''}${h.writes ? ` written ×${h.writes}` : ''}`).join(', ') || 'none'}.
+${s?.files?.length ? `Files: ${s.files.join(', ')}.` : ''}${s?.sprites?.length ? `\nSprites on at the end: ${s.sprites.map((x) => `#${x.n} data at ${hex4(x.addr)}${x.multicolor ? ' (multicolour)' : ''}`).join(', ')}.` : ''}
+Screen at ${s?.screen_addr != null ? hex4(s.screen_addr) : '?'}, character set at ${s?.charset ? `${hex4(s.charset.addr)}${s.charset.rom ? ' (the ROM font)' : ''}` : '?'}${s?.bitmap != null ? `, bitmap at ${hex4(s.bitmap)}` : ''}.`
+    : `Ports used: ${Object.entries(s?.ports ?? {}).map(([p, c]) => `${p} ×${c}`).join(', ') || 'none'}.
+Tape: ${(s?.tape ?? []).map((b) => (b.header ? `header "${b.header.name}" (${['program', 'number array', 'char array', 'bytes'][b.header.kind] ?? b.header.kind}, ${b.header.length} bytes, ${b.header.kind === 3 ? 'to ' + hex4(b.header.param1) : 'line ' + b.header.param1})` : `${b.length} bytes${b.speed !== 'standard' ? ' (custom loader)' : ''}`)).join('; ') || 'a snapshot'}.`;
   const overview = s
-    ? `Model ${s.model}K. Code entry: ${s.entry != null ? hex4(s.entry) : 'unknown'}. Program range ${hex4(s.range[0])}–${hex4(s.range[1])}. ${s.functions} functions found, ${s.code_bytes} bytes of code seen running, ${s.reachable_bytes} more reachable, ${s.variables} bytes that change (variables).
-Ports used: ${Object.entries(s.ports).map(([p, c]) => `${p} ×${c}`).join(', ') || 'none'}.
-ROM routines called: ${s.rom_calls.map((r) => `${hex4(r.addr)} ${r.name ?? ''} ×${r.count}`).join(', ') || 'none'}.
-Tape: ${s.tape.map((b) => (b.header ? `header "${b.header.name}" (${['program', 'number array', 'char array', 'bytes'][b.header.kind] ?? b.header.kind}, ${b.header.length} bytes, ${b.header.kind === 3 ? 'to ' + hex4(b.header.param1) : 'line ' + b.header.param1})` : `${b.length} bytes${b.speed !== 'standard' ? ' (custom loader)' : ''}`)).join('; ') || 'a snapshot'}.
+    ? `${c64 ? 'Commodore 64.' : `Model ${s.model}K.`} Code entry: ${s.entry != null ? hex4(s.entry) : 'unknown'}. Program range ${hex4(s.range[0])}–${hex4(s.range[1])}. ${s.functions} functions found, ${s.code_bytes} bytes of code seen running, ${s.reachable_bytes} more reachable, ${s.variables} bytes that change (variables).
+${hardware}
+${c64 ? 'KERNAL' : 'ROM'} routines called: ${s.rom_calls.map((r) => `${hex4(r.addr)} ${r.name ?? ''} ×${r.count}`).join(', ') || 'none'}.
 Text found: ${s.strings.slice(0, 25).map((t) => `${hex4(t.addr)} "${t.text}"`).join('; ')}.
 ${s.basic ? `BASIC program:\n${s.basic.slice(0, 3000)}` : 'No BASIC program.'}`
     : '(not analysed yet)';
-  return `You are a friendly expert in ZX Spectrum reverse engineering, helping the user understand and modify "${io.name()}", a Spectrum game, in RAD's Spectrum lab. RAD ran the game in an emulator and traced which addresses really execute, so the disassembly separates code (seen running), reachable code (not run yet) and data. Explain clearly, like a good teacher: what each part does, how the hardware is used, and why the programmers did it that way in the 1980s.
+  return `You are a friendly expert in ${c64 ? 'Commodore 64' : 'ZX Spectrum'} reverse engineering, helping the user understand and modify "${io.name()}", a ${m.name} game, in RAD's ${m.title}. RAD ran the game in an emulator and traced which addresses really execute, so the disassembly separates code (seen running), reachable code (not run yet) and data. Explain clearly, like a good teacher: what each part does, how the hardware is used, and why the programmers did it that way in the 1980s.
 
 What you can do — reply with fenced blocks like these (you get the results back, then continue):
 \`\`\`view
@@ -66,17 +68,16 @@ label 8000 main_loop
 comment 8003 Waits for the next frame
 \`\`\`  (name addresses and explain lines; the user sees them in the code view — add them as you understand the code)
 \`\`\`patch 8123 Infinite lives
-    nop
-    nop
-\`\`\`  (Z80 code assembled at that address with sjasmplus — the program's labels can be used; it's added to the user's patches, applied to the game and test-run for 3 seconds; you get the result)
+${c64 ? '        nop\n        nop' : '    nop\n    nop'}
+\`\`\`  (${m.assembler} — the program's labels can be used; it's added to the user's patches, applied to the game and test-run for 3 seconds; you get the result)
 \`\`\`poke 8123 Start with 9 lives
 09
 \`\`\`  (raw hex bytes written at an address, added as a patch)
 - Addresses are hex. Look before you guess: use view/xrefs/memory to check code before explaining or patching it.
-- Patches must not cut an instruction in half: replace whole instructions (fill leftovers with nop). Keep the same length when changing code inside a routine.
+- Patches must not cut an instruction in half: replace whole instructions (fill leftovers with nop). Keep the same length when changing code inside a routine.${c64 ? "\n- Patches go into the snapshot RAD took after the game started, so changes to start-up code only show when the game restarts (e.g. after game over)." : ''}
 - The game belongs to the user; help them learn and have fun with their own copy.
 
-${HARDWARE}
+${m.hardware}
 
 The game:
 ${overview}
@@ -133,7 +134,7 @@ export class LabAgent {
   }
 
   private async listing(from: number, to: number): Promise<string> {
-    const lines = await rad.zxlabListing(this.io.id, from, Math.min(to, from + 0x800), this.io.notes());
+    const lines = await this.io.machine.listing(this.io.id, from, Math.min(to, from + 0x800), this.io.notes());
     return lines
       .slice(0, 300)
       .map((l) => `${l.label ? l.label + ':\n' : ''}${hex4(l.addr).slice(1)}  ${l.text.padEnd(28)}${l.kind === 'reachable' ? ' [not seen running]' : l.kind !== 'code' ? ` [${l.kind}${l.variable ? ', changes' : ''}]` : ''}${l.comment ? ' ; ' + l.comment : ''}`)
@@ -155,7 +156,7 @@ export class LabAgent {
       case 'xrefs': {
         const a = parseAddr('$' + body.trim().replace(/^\$|^0x/, ''));
         if (a == null) return 'xrefs: not an address';
-        const r = await rad.zxlabXrefs(io.id, a, io.notes());
+        const r = await io.machine.xrefs(io.id, a, io.notes());
         this.items.push({ kind: 'tool', title: `Looked up who uses ${hex4(a)}`, detail: `${r.length} references` });
         return `References to ${hex4(a)}:\n${r.map((x) => `${hex4(x.addr)}  ${x.text}`).join('\n') || '(none in the program)'}`;
       }
@@ -164,7 +165,7 @@ export class LabAgent {
         const from = parseAddr('$' + a.replace(/^\$|^0x/, ''));
         const len = Math.min(parseInt(n ?? '64', 10) || 64, 512);
         if (from == null) return 'memory: not an address';
-        const b = Uint8Array.from(atob(await rad.zxlabMemory(io.id, from, len)), (c) => c.charCodeAt(0));
+        const b = Uint8Array.from(atob(await io.machine.memory(io.id, from, len)), (c) => c.charCodeAt(0));
         const rows: string[] = [];
         for (let i = 0; i < b.length; i += 16) {
           const chunk = [...b.slice(i, i + 16)];
@@ -203,7 +204,7 @@ export class LabAgent {
           if (!bytes || bytes.length % 2) return 'poke: give the bytes as hex pairs';
         } else {
           source = body.replace(/\s+$/, '');
-          const r = await rad.zxlabAssemblePatch(io.id, addr, source, io.notes());
+          const r = await io.machine.assemblePatch(io.id, addr, source, io.notes());
           if (!r.ok || !r.bytes) {
             this.items.push({ kind: 'tool', title: `Patch at ${hex4(addr)} didn't assemble`, detail: r.messages, ok: false });
             return `The patch didn't assemble:\n${r.messages}`;
@@ -217,9 +218,9 @@ export class LabAgent {
         const patch: LabPatch = { id: `p${Date.now()}`, addr, bytes, note, source, enabled: true };
         await io.addPatch(patch);
         const all = io.patches().filter((p) => p.enabled).map((p) => ({ addr: p.addr, bytes: p.bytes }));
-        const b = await rad.zxlabBuild(io.id, all, true);
+        const b = await io.machine.build(io.id, all, true);
         const c = b.check;
-        const result = !c ? 'built' : c.crashed ? 'the patched game crashed (it reset to the start-up screen)' : `the patched game ran 3 s without crashing`;
+        const result = !c ? 'built' : c.crashed ? `the patched game crashed (${io.machine.id === 'c64' ? 'the CPU stopped on a JAM instruction' : 'it reset to the start-up screen'})` : c.problem ? `the patched game stopped with "${c.problem}"` : `the patched game ran 3 s without crashing`;
         this.items.push({ kind: 'tool', title: `${note}: ${bytes.length / 2} bytes at ${hex4(addr)} — ${result}`, detail: c?.screen.join('\n'), ok: !c?.crashed });
         return `Patch "${note}" added (${bytes.length / 2} bytes at ${hex4(addr)}: ${bytes}); ${result}.${c?.screen.length ? `\nScreen after 3 s:\n${c.screen.join('\n')}` : ''}`;
       }

@@ -1,4 +1,4 @@
-/** Spectrum lab projects: a game file, its notes (labels, comments), patches and the AI
+/** Lab projects (Spectrum and C64): a game file, its notes (labels, comments), patches and the AI
  *  conversation, kept in the encrypted Games database. */
 import { api } from './api';
 import { ensure } from './games';
@@ -8,70 +8,83 @@ export interface LabPatch { id: string; addr: number; bytes: string; note: strin
 export interface LabProject { id: string; name: string; file: string; size: number; created_at: number; updated_at: number }
 
 const sql = (q: string, params: unknown[] = []) => api.post<DbResult[]>('/v1/db/Games/sql', { sql: q, params });
-let ready: Promise<void> | null = null;
-
-function ensureLab() {
-  ready ??= (async () => {
-    await ensure();
-    await sql(`CREATE TABLE IF NOT EXISTS zx_lab (id TEXT PRIMARY KEY, name TEXT NOT NULL, file TEXT NOT NULL, data BLOB NOT NULL, size INTEGER NOT NULL,
-      notes TEXT NOT NULL DEFAULT '{}', patches TEXT NOT NULL DEFAULT '[]', chat TEXT NOT NULL DEFAULT '[]', rag_note TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`);
-  })().catch((e) => {
-    ready = null;
-    throw e;
-  });
-  return ready;
-}
-
-export async function projects(): Promise<LabProject[]> {
-  await ensureLab();
-  const [r] = await sql('SELECT id, name, file, size, created_at, updated_at FROM zx_lab ORDER BY updated_at DESC');
-  return r.rows.map((x) => ({ id: x[0] as string, name: x[1] as string, file: x[2] as string, size: x[3] as number, created_at: x[4] as number, updated_at: x[5] as number }));
-}
-
-export async function create(file: string, b64: string, size: number): Promise<string> {
-  await ensureLab();
-  const id = `lab${Date.now()}`;
-  const name = file.replace(/\.(tzx|tap|z80|sna)$/i, '').replace(/_+/g, ' ').trim() || file;
-  const now = Date.now();
-  await sql('INSERT INTO zx_lab (id, name, file, data, size, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)', [id, name, file, { $blob: b64 }, size, now]);
-  return id;
-}
 
 export interface LabState { file: string; data: string; notes: LabNotes; patches: LabPatch[]; chat: unknown[]; ragNote: string | null }
 
-export async function load(id: string): Promise<LabState> {
-  const [r] = await sql('SELECT file, data, notes, patches, chat, rag_note FROM zx_lab WHERE id = ?1', [id]);
-  const x = r.rows[0];
-  if (!x) throw new Error('That lab project is gone');
-  const parse = <T>(s: unknown, d: T): T => {
-    try {
-      return JSON.parse(s as string) ?? d;
-    } catch {
-      return d;
-    }
+/** A machine's lab projects, in their own table (zx_lab for the Spectrum, c64_lab for the C64). */
+export function labDb(table: 'zx_lab' | 'c64_lab', exts: string[]) {
+  let ready: Promise<void> | null = null;
+  const stripExt = new RegExp(`\\.(${exts.join('|')})$`, 'i');
+
+  function ensureLab() {
+    ready ??= (async () => {
+      await ensure();
+      await sql(`CREATE TABLE IF NOT EXISTS ${table} (id TEXT PRIMARY KEY, name TEXT NOT NULL, file TEXT NOT NULL, data BLOB NOT NULL, size INTEGER NOT NULL,
+      notes TEXT NOT NULL DEFAULT '{}', patches TEXT NOT NULL DEFAULT '[]', chat TEXT NOT NULL DEFAULT '[]', rag_note TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`);
+    })().catch((e) => {
+      ready = null;
+      throw e;
+    });
+    return ready;
+  }
+
+  return {
+    async projects(): Promise<LabProject[]> {
+      await ensureLab();
+      const [r] = await sql(`SELECT id, name, file, size, created_at, updated_at FROM ${table} ORDER BY updated_at DESC`);
+      return r.rows.map((x) => ({ id: x[0] as string, name: x[1] as string, file: x[2] as string, size: x[3] as number, created_at: x[4] as number, updated_at: x[5] as number }));
+    },
+
+    async create(file: string, b64: string, size: number): Promise<string> {
+      await ensureLab();
+      const id = `lab${Date.now()}`;
+      const name = file.replace(stripExt, '').replace(/_+/g, ' ').trim() || file;
+      const now = Date.now();
+      await sql(`INSERT INTO ${table} (id, name, file, data, size, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)`, [id, name, file, { $blob: b64 }, size, now]);
+      return id;
+    },
+
+    async load(id: string): Promise<LabState> {
+      const [r] = await sql(`SELECT file, data, notes, patches, chat, rag_note FROM ${table} WHERE id = ?1`, [id]);
+      const x = r.rows[0];
+      if (!x) throw new Error('That lab project is gone');
+      const parse = <T>(s: unknown, d: T): T => {
+        try {
+          return JSON.parse(s as string) ?? d;
+        } catch {
+          return d;
+        }
+      };
+      const notes = parse<LabNotes>(x[2], { labels: {}, comments: {} });
+      return { file: x[0] as string, data: (x[1] as { $blob: string }).$blob, notes: { labels: notes.labels ?? {}, comments: notes.comments ?? {} }, patches: parse(x[3], []), chat: parse(x[4], []), ragNote: (x[5] as string) ?? null };
+    },
+
+    async saveNotes(id: string, notes: LabNotes) {
+      await sql(`UPDATE ${table} SET notes = ?1, updated_at = ?2 WHERE id = ?3`, [JSON.stringify(notes), Date.now(), id]);
+    },
+    async savePatches(id: string, patches: LabPatch[]) {
+      await sql(`UPDATE ${table} SET patches = ?1, updated_at = ?2 WHERE id = ?3`, [JSON.stringify(patches), Date.now(), id]);
+    },
+    async saveChat(id: string, chat: unknown[]) {
+      await sql(`UPDATE ${table} SET chat = ?1 WHERE id = ?2`, [JSON.stringify(chat.slice(-80)), id]);
+    },
+    async setRagNote(id: string, noteId: string) {
+      await sql(`UPDATE ${table} SET rag_note = ?1 WHERE id = ?2`, [noteId, id]);
+    },
+    async rename(id: string, name: string) {
+      await sql(`UPDATE ${table} SET name = ?1, updated_at = ?2 WHERE id = ?3`, [name, Date.now(), id]);
+    },
+    async remove(id: string) {
+      await sql(`DELETE FROM ${table} WHERE id = ?1`, [id]);
+    },
   };
-  const notes = parse<LabNotes>(x[2], { labels: {}, comments: {} });
-  return { file: x[0] as string, data: (x[1] as { $blob: string }).$blob, notes: { labels: notes.labels ?? {}, comments: notes.comments ?? {} }, patches: parse(x[3], []), chat: parse(x[4], []), ragNote: (x[5] as string) ?? null };
 }
 
-export async function saveNotes(id: string, notes: LabNotes) {
-  await sql('UPDATE zx_lab SET notes = ?1, updated_at = ?2 WHERE id = ?3', [JSON.stringify(notes), Date.now(), id]);
-}
-export async function savePatches(id: string, patches: LabPatch[]) {
-  await sql('UPDATE zx_lab SET patches = ?1, updated_at = ?2 WHERE id = ?3', [JSON.stringify(patches), Date.now(), id]);
-}
-export async function saveChat(id: string, chat: unknown[]) {
-  await sql('UPDATE zx_lab SET chat = ?1 WHERE id = ?2', [JSON.stringify(chat.slice(-80)), id]);
-}
-export async function setRagNote(id: string, noteId: string) {
-  await sql('UPDATE zx_lab SET rag_note = ?1 WHERE id = ?2', [noteId, id]);
-}
-export async function rename(id: string, name: string) {
-  await sql('UPDATE zx_lab SET name = ?1, updated_at = ?2 WHERE id = ?3', [name, Date.now(), id]);
-}
-export async function remove(id: string) {
-  await sql('DELETE FROM zx_lab WHERE id = ?1', [id]);
-}
+export type LabDb = ReturnType<typeof labDb>;
+
+/** The Spectrum lab's projects. */
+const zx = labDb('zx_lab', ['tzx', 'tap', 'z80', 'sna']);
+export const { projects, create, load, saveNotes, savePatches, saveChat, setRagNote, rename, remove } = zx;
 
 export const hex4 = (n: number) => '$' + n.toString(16).padStart(4, '0');
 export const hex2 = (n: number) => n.toString(16).padStart(2, '0');

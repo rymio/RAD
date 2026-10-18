@@ -10,6 +10,7 @@
   import * as G from '../lib/games';
   import * as Z from '../lib/zx';
   import { LabAgent } from '../lib/labAgent.svelte';
+  import { LAB_MACHINES, C64_PALETTE, c64Picture, type LabMachineId, type LabTab } from '../lib/labMachine';
   import type { FrameStats, LabLine, LabNotes, LabSummary } from '../lib/types';
   import ZxBoard from './ZxBoard.svelte';
   import Modal from './Modal.svelte';
@@ -19,14 +20,21 @@
     Trash2, MoreHorizontal, Pencil, CircleCheck, CircleX, FileCode, Save, BrainCircuit, RefreshCw, Lock, Unlock, CassetteTape, Cpu,
   } from '@lucide/svelte';
 
-  type Tab = 'overview' | 'code' | 'basic' | 'graphics' | 'text' | 'tape' | 'patches' | 'cheats' | 'board';
-  const TABS: [Tab, string][] = [
-    ['overview', 'Overview'], ['code', 'Code'], ['basic', 'BASIC'], ['graphics', 'Graphics'], ['text', 'Text'], ['tape', 'Tape'],
-    ['patches', 'Patches'], ['cheats', 'Cheats'], ['board', 'Board'],
-  ];
+  /** Which machine's games this lab takes apart (see lib/labMachine.ts). */
+  let { machine = 'zx' }: { machine?: LabMachineId } = $props();
+  // svelte-ignore state_referenced_locally
+  const M = LAB_MACHINES[machine];
+  const C64 = M.id === 'c64';
+  const CURRENT_KEY = C64 ? 'rad-c64lab-current' : 'rad-lab-current';
+
+  type Tab = LabTab;
+  const TAB_LABELS: Record<Tab, string> = {
+    overview: 'Overview', code: 'Code', basic: 'BASIC', graphics: 'Graphics', text: 'Text', tape: 'Tape', patches: 'Patches', cheats: 'Cheats', board: 'Board',
+  };
+  const TABS: [Tab, string][] = M.tabs.map((t) => [t, TAB_LABELS[t]]);
 
   let projects = $state<L.LabProject[]>([]);
-  let current = $state<string | null>(read('rad-lab-current'));
+  let current = $state<string | null>(read(CURRENT_KEY));
   let st = $state<L.LabState | null>(null);
   let summary = $state<LabSummary | null>(null);
   let analysing = $state(false);
@@ -46,19 +54,19 @@
   // ------------------------------------------------------------------ projects
 
   async function refresh() {
-    projects = await L.projects().catch((e) => (store.error(e, 'Couldn’t read the lab projects'), projects));
+    projects = await M.db.projects().catch((e) => (store.error(e, 'Couldn’t read the lab projects'), projects));
   }
 
   async function open(id: string) {
     current = id;
     try {
-      localStorage.setItem('rad-lab-current', id);
+      localStorage.setItem(CURRENT_KEY, id);
     } catch {
       /* private mode */
     }
     summary = null;
     lines = [];
-    st = await L.load(id).catch((e) => (store.error(e, 'Couldn’t open the project'), null));
+    st = await M.db.load(id).catch((e) => (store.error(e, 'Couldn’t open the project'), null));
     if (!st) return;
     agent = new LabAgent(io(id));
     agent.restore(st.chat as any);
@@ -69,7 +77,7 @@
     if (!current || !st) return;
     analysing = true;
     try {
-      summary = await rad.zxlabOpen(current, st.file, st.data, seconds);
+      summary = await M.open(current, st.file, st.data, seconds);
       codeFrom = L.hex4(summary.range[0]);
       codeTo = L.hex4(Math.min(summary.range[1], 0x10000) - 1);
       gfxAddr = L.hex4(summary.range[0]);
@@ -83,12 +91,13 @@
   }
 
   async function addFiles(paths: string[]) {
-    const ok = paths.filter((p) => /\.(tzx|tap|z80|sna)$/i.test(p));
-    if (!ok.length) return paths.length && store.toast('error', 'Not a Spectrum file', 'Use TZX, TAP, Z80 or SNA.');
+    const re = new RegExp(`\\.(${M.exts.join('|')})$`, 'i');
+    const ok = paths.filter((p) => re.test(p));
+    if (!ok.length) return paths.length && store.toast('error', `Not a ${M.name} file`, `Use ${M.exts.map((e) => e.toUpperCase()).join(', ')}.`);
     const files = await rad.gameReadFiles(ok.slice(0, 1)).catch((e) => (store.error(e), []));
     const f = files[0];
     if (!f || f.error || f.data === undefined) return store.toast('error', 'Couldn’t read the file', f?.error ?? '');
-    const id = await L.create(f.name, f.data, f.size);
+    const id = await M.db.create(f.name, f.data, f.size);
     await refresh();
     tab = 'overview';
     open(id);
@@ -96,15 +105,15 @@
 
   async function pick() {
     const { open: o } = await import('@tauri-apps/plugin-dialog');
-    const r = await o({ multiple: false, title: 'Take a Spectrum game apart', filters: [{ name: 'ZX Spectrum tapes and snapshots', extensions: ['tzx', 'tap', 'z80', 'sna'] }] });
+    const r = await o({ multiple: false, title: `Take a ${M.name} game apart`, filters: [{ name: M.fileKinds, extensions: M.exts }] });
     if (typeof r === 'string') addFiles([r]);
   }
 
   async function removeProject() {
     if (!project) return;
     if (!(await ask(`Delete the lab project “${project.name}” with its notes and patches?`, { title: 'Delete project', kind: 'warning' }))) return;
-    await L.remove(project.id).catch((e) => store.error(e));
-    rad.zxlabClose(project.id).catch(() => {});
+    await M.db.remove(project.id).catch((e) => store.error(e));
+    M.close(project.id).catch(() => {});
     current = null;
     st = null;
     summary = null;
@@ -114,13 +123,12 @@
   async function renameProject() {
     if (!project) return;
     const n = window.prompt('Name', project.name)?.trim();
-    if (n && n !== project.name) await L.rename(project.id, n);
+    if (n && n !== project.name) await M.db.rename(project.id, n);
     refresh();
   }
 
   function play(name: string, data: string, title: string) {
-    store.pendingZx = { name, data, title };
-    store.navigate({ kind: 'zx' });
+    M.play(name, data, title);
   }
 
   function playOriginal() {
@@ -132,7 +140,7 @@
   async function setNotes(n: LabNotes) {
     if (!st || !current) return;
     st.notes = n;
-    await L.saveNotes(current, n);
+    await M.db.saveNotes(current, n);
     if (tab === 'code') loadListing();
   }
 
@@ -172,7 +180,7 @@
     if (from == null || to == null || to < from) return store.toast('error', 'Range', 'Use addresses like $8000.');
     loadingCode = true;
     try {
-      lines = await rad.zxlabListing(current, from, to + 1, $state.snapshot(st.notes) as LabNotes);
+      lines = await M.listing(current, from, to + 1, $state.snapshot(st.notes) as LabNotes);
     } catch (e) {
       store.error(e, 'Couldn’t list the code');
     } finally {
@@ -211,7 +219,7 @@
 
   async function showXrefs(addr: number) {
     if (!current || !st) return;
-    xrefs = await rad.zxlabXrefs(current, addr, $state.snapshot(st.notes) as LabNotes).catch(() => []);
+    xrefs = await M.xrefs(current, addr, $state.snapshot(st.notes) as LabNotes).catch(() => []);
   }
 
   const selLine = $derived(lines.find((l) => l.addr === selected) ?? null);
@@ -237,14 +245,13 @@
     if (from == null || to == null) return;
     exportOpen = true;
     exported = null;
-    exported = await rad.zxlabSource(current, from, to + 1, $state.snapshot(st.notes) as LabNotes, project.name).catch((e) => (store.error(e), null));
+    exported = await M.source(current, from, to + 1, $state.snapshot(st.notes) as LabNotes, project.name).catch((e) => (store.error(e), null));
   }
 
   async function exportToGames() {
     if (!exported || !project || !summary) return;
-    let src = exported.source;
-    if (!/^start:/m.test(src) && summary.entry != null) src += `\n; Where the game's code starts (RAD's lab found it running here).\nstart EQU $${summary.entry.toString(16).padStart(4, '0')}\n`;
-    const g = await G.createWithFiles(`${project.name} (disassembly)`, 'zx-asm', [{ path: 'main.asm', content: src }]);
+    const src = M.exportSource(exported.source, summary.entry);
+    const g = await G.createWithFiles(`${project.name} (disassembly)`, M.asmKind, [{ path: 'main.asm', content: src }]);
     exportOpen = false;
     store.toast('success', 'Assembler project made', `${g.name} — in Games. Note: only this range is in it; the rest of memory starts empty.`, 6000);
     store.navigate({ kind: 'games' });
@@ -252,7 +259,7 @@
 
   async function basicToGames() {
     if (!summary?.basic || !project) return;
-    const g = await G.createWithFiles(`${project.name} (BASIC)`, 'zx-basic', [{ path: 'main.bas', content: summary.basic }]);
+    const g = await G.createWithFiles(`${project.name} (BASIC)`, M.basicKind, [{ path: 'main.bas', content: summary.basic }]);
     store.toast('success', 'BASIC project made', g.name, 4000);
     store.navigate({ kind: 'games' });
   }
@@ -263,10 +270,12 @@
   let gfxWidth = $state(1);
   let gfxRows = $state(256);
   let gfxZoom = $state(3);
-  let gfxMode = $state<'rows' | 'chars'>('chars');
+  let gfxMode = $state<'rows' | 'chars' | 'sprites'>('chars');
+  /** C64 sprites: multicolour (pairs of bits) or hires. */
+  let gfxMulti = $state(false);
   let gfxCanvas: HTMLCanvasElement | undefined = $state();
   let gfxHover = $state<string>('');
-  let screens = $state<{ title: string; bytes: Uint8Array }[]>([]);
+  let screens = $state<{ title: string; img: ImageData }[]>([]);
 
   async function drawGfx() {
     if (!current || !gfxCanvas) return;
@@ -274,7 +283,8 @@
     const w = Math.max(1, Math.min(32, gfxWidth));
     const rows = Math.max(8, Math.min(1024, gfxRows));
     const len = Math.min(0x10000 - a, w * rows);
-    const bytes = Uint8Array.from(atob(await rad.zxlabMemory(current, a, len)), (c) => c.charCodeAt(0));
+    if (gfxMode === 'sprites') return drawSprites(a);
+    const bytes = Uint8Array.from(atob(await M.memory(current, a, len)), (c) => c.charCodeAt(0));
     const ctx = gfxCanvas.getContext('2d')!;
     // chars: 8-byte characters, w per row; rows: plain lines of w bytes.
     const cols = gfxMode === 'chars' ? w * 8 : w * 8;
@@ -303,6 +313,37 @@
     ctx.putImageData(img, 0, 0);
   }
 
+  /** C64 sprites: 64-byte blocks (24 × 21 pixels), 8 to a row. */
+  async function drawSprites(a: number) {
+    if (!current || !gfxCanvas) return;
+    const count = Math.max(1, Math.min(256, Math.floor(gfxRows / 8)));
+    const len = Math.min(0x10000 - a, count * 64);
+    const bytes = Uint8Array.from(atob(await M.memory(current, a, len)), (c) => c.charCodeAt(0));
+    const per = 8;
+    const W = per * 26;
+    const H = Math.ceil(count / per) * 23;
+    gfxCanvas.width = W;
+    gfxCanvas.height = H;
+    const ctx = gfxCanvas.getContext('2d')!;
+    const img = ctx.createImageData(W, H);
+    const multi = [[12, 12, 16], [0x70, 0x6d, 0xeb], [240, 240, 250], [0xc4, 0x6c, 0x71]];
+    for (let s = 0; s * 64 < len; s++) {
+      const ox = (s % per) * 26;
+      const oy = Math.floor(s / per) * 23;
+      for (let y = 0; y < 21; y++) {
+        for (let x = 0; x < 24; x++) {
+          const byte = bytes[s * 64 + y * 3 + (x >> 3)] ?? 0;
+          let c: number[];
+          if (gfxMulti) c = multi[(byte >> (6 - ((x & 7) & 6))) & 3];
+          else c = byte & (0x80 >> (x & 7)) ? [240, 240, 250] : [24, 24, 34];
+          const i = ((oy + y) * W + ox + x) * 4;
+          img.data.set([c[0], c[1], c[2], 255], i);
+        }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
   function gfxMove(e: MouseEvent) {
     if (!gfxCanvas) return;
     const r = gfxCanvas.getBoundingClientRect();
@@ -310,31 +351,45 @@
     const y = Math.floor(((e.clientY - r.top) / r.height) * gfxCanvas.height);
     const a = L.parseAddr(gfxAddr) ?? 0;
     const w = gfxWidth;
-    const off = gfxMode === 'chars' ? (Math.floor(y / 8) * w + Math.floor(x / 8)) * 8 + (y % 8) : y * w + Math.floor(x / 8);
+    const off =
+      gfxMode === 'sprites'
+        ? (Math.floor(y / 23) * 8 + Math.floor(x / 26)) * 64 + Math.min(20, y % 23) * 3 + Math.min(2, Math.floor((x % 26) / 8))
+        : gfxMode === 'chars'
+          ? (Math.floor(y / 8) * w + Math.floor(x / 8)) * 8 + (y % 8)
+          : y * w + Math.floor(x / 8);
     gfxHover = L.hex4(a + off);
   }
 
   function gfxPage(dir: number) {
     const a = L.parseAddr(gfxAddr) ?? 0;
-    gfxAddr = L.hex4(Math.max(0, Math.min(0xffff, a + dir * gfxWidth * gfxRows)));
+    const step = gfxMode === 'sprites' ? Math.floor(gfxRows / 8) * 64 : gfxWidth * gfxRows;
+    gfxAddr = L.hex4(Math.max(0, Math.min(0xffff, a + dir * step)));
     drawGfx();
   }
 
   async function loadScreens() {
     if (!current || !summary) return;
-    const out: { title: string; bytes: Uint8Array }[] = [];
+    if (C64) {
+      screens = (summary.pictures ?? []).map((p) => ({ title: p.title, img: c64Picture(p.data, C64_PALETTE) }));
+      return;
+    }
+    const out: { title: string; img: ImageData }[] = [];
     for (const b of summary.tape.filter((b) => b.screen)) {
       const d = Uint8Array.from(atob(await rad.zxlabTapeBlock(current, b.index)), (c) => c.charCodeAt(0));
-      out.push({ title: `Loading screen (tape block ${b.index})`, bytes: d });
+      out.push({ title: `Loading screen (tape block ${b.index})`, img: L.screenToImage(d) });
     }
-    const s = Uint8Array.from(atob(await rad.zxlabMemory(current, 0x4000, 6912)), (c) => c.charCodeAt(0));
-    out.push({ title: 'The screen when the game started', bytes: s });
+    const s = Uint8Array.from(atob(await M.memory(current, 0x4000, 6912)), (c) => c.charCodeAt(0));
+    out.push({ title: 'The screen when the game started', img: L.screenToImage(s) });
     screens = out;
   }
 
-  function screenCanvas(node: HTMLCanvasElement, bytes: Uint8Array) {
-    const draw = (b: Uint8Array) => node.getContext('2d')?.putImageData(L.screenToImage(b), 0, 0);
-    draw(bytes);
+  function screenCanvas(node: HTMLCanvasElement, img: ImageData) {
+    const draw = (i: ImageData) => {
+      node.width = i.width;
+      node.height = i.height;
+      node.getContext('2d')?.putImageData(i, 0, 0);
+    };
+    draw(img);
     return { update: draw };
   }
 
@@ -343,7 +398,7 @@
   let pForm = $state({ addr: '', mode: 'asm' as 'asm' | 'hex', code: '', note: '' });
   let pResult = $state<string | null>(null);
   let testing = $state(false);
-  let testOut = $state<{ crashed: boolean; screen: string[] } | null>(null);
+  let testOut = $state<{ crashed: boolean; screen: string[]; problem: string | null } | null>(null);
 
   function patchHere(addr: number) {
     tab = 'patches';
@@ -360,7 +415,7 @@
       bytes = pForm.code.replace(/[^0-9a-fA-F]/g, '').toLowerCase();
       if (!bytes || bytes.length % 2) return (pResult = 'Give bytes as hex pairs, e.g. 00 00 c9.');
     } else {
-      const r = await rad.zxlabAssemblePatch(current, addr, pForm.code, $state.snapshot(st.notes) as LabNotes);
+      const r = await M.assemblePatch(current, addr, pForm.code, $state.snapshot(st.notes) as LabNotes);
       if (!r.ok || !r.bytes) return (pResult = r.messages || 'It didn’t assemble.');
       if (r.splits != null && !(await ask(`This patch ends inside the instruction at ${L.hex4(r.splits)}, which would break it. Add it anyway?`, { title: 'Patch', kind: 'warning' }))) return;
       bytes = r.bytes;
@@ -373,19 +428,19 @@
   async function addPatchObj(p: L.LabPatch) {
     if (!st || !current) return;
     st.patches = [...st.patches, p];
-    await L.savePatches(current, $state.snapshot(st.patches) as L.LabPatch[]);
+    await M.db.savePatches(current, $state.snapshot(st.patches) as L.LabPatch[]);
   }
 
   async function togglePatch(p: L.LabPatch) {
     if (!st || !current) return;
     p.enabled = !p.enabled;
-    await L.savePatches(current, $state.snapshot(st.patches) as L.LabPatch[]);
+    await M.db.savePatches(current, $state.snapshot(st.patches) as L.LabPatch[]);
   }
 
   async function deletePatch(p: L.LabPatch) {
     if (!st || !current) return;
     st.patches = st.patches.filter((x) => x.id !== p.id);
-    await L.savePatches(current, $state.snapshot(st.patches) as L.LabPatch[]);
+    await M.db.savePatches(current, $state.snapshot(st.patches) as L.LabPatch[]);
   }
 
   const enabledPatches = () => (st?.patches ?? []).filter((p) => p.enabled).map((p) => ({ addr: p.addr, bytes: p.bytes }));
@@ -394,8 +449,8 @@
     if (!current) return;
     testing = true;
     try {
-      const r = await rad.zxlabBuild(current, enabledPatches(), true);
-      testOut = r.check ?? null;
+      const r = await M.build(current, enabledPatches(), true);
+      testOut = r.check;
     } catch (e) {
       store.error(e, 'Couldn’t build it');
     } finally {
@@ -406,7 +461,7 @@
   async function playPatched() {
     if (!current || !project) return;
     try {
-      const r = await rad.zxlabBuild(current, enabledPatches(), false);
+      const r = await M.build(current, enabledPatches(), false);
       play(r.file.name, r.file.data, `${project.name} (patched)`);
     } catch (e) {
       store.error(e, 'Couldn’t build it');
@@ -423,9 +478,9 @@
 
   async function readLive(): Promise<Uint8Array | null> {
     try {
-      return Uint8Array.from(atob(await rad.zxMemory()), (c) => c.charCodeAt(0));
+      return Uint8Array.from(atob(await M.liveMemory()), (c) => c.charCodeAt(0));
     } catch (e) {
-      store.error(e, 'Play the game first (the Spectrum isn’t on)');
+      store.error(e, `Play the game first (the ${M.name} isn’t on)`);
       return null;
     }
   }
@@ -436,7 +491,7 @@
     cheatBase = m;
     liveMem = m;
     candidates = [];
-    for (let a = 0x5b00; a < 0x10000; a++) candidates.push(a);
+    for (let a = 0; a < 0x10000; a++) if (M.cheatable(a)) candidates.push(a);
   }
 
   async function filter(kind: 'down' | 'up' | 'same' | 'changed' | 'equals') {
@@ -454,12 +509,12 @@
   }
 
   async function lockAt(addr: number, value: number) {
-    await rad.zxLock(addr, value).catch((e) => store.error(e));
+    await M.lock(addr, value).catch((e) => store.error(e));
     locks = [...locks.filter((l) => l.addr !== addr), { addr, value }];
   }
 
   async function unlock(addr: number) {
-    await rad.zxLock(addr, null).catch(() => {});
+    await M.lock(addr, null).catch(() => {});
     locks = locks.filter((l) => l.addr !== addr);
   }
 
@@ -539,7 +594,7 @@
   const fnName = $derived.by(() => {
     if (!stats || !summary) return null;
     const pc = stats.pc;
-    if (pc < 0x4000) return 'the ROM (interrupt, BASIC or a ROM routine)';
+    if (M.inRom(pc)) return 'the ROM (interrupt, BASIC or a ROM routine)';
     let best = -1;
     let name: string | null = null;
     for (const [a, n] of Object.entries(st?.notes.labels ?? {})) if (+a <= pc && +a > best) [best, name] = [+a, n];
@@ -561,6 +616,7 @@
   function io(id: string) {
     return {
       id,
+      machine: M,
       name: () => projects.find((p) => p.id === id)?.name ?? 'the game',
       summary: () => summary,
       notes: () => (st ? ($state.snapshot(st.notes) as LabNotes) : { labels: {}, comments: {} }),
@@ -568,7 +624,7 @@
       focus: focusText,
       setNotes,
       addPatch: addPatchObj,
-      persist: (turns: unknown[]) => L.saveChat(id, turns).catch(() => {}),
+      persist: (turns: unknown[]) => M.db.saveChat(id, turns).catch(() => {}),
     };
   }
 
@@ -596,17 +652,17 @@
     saving = true;
     try {
       const projs = await api.get<any[]>('/v1/projects');
-      let p = projs.find((x) => x.name === 'ZX Spectrum Lab');
-      p ??= await api.post<any>('/v1/projects', { name: 'ZX Spectrum Lab', color: '#d7a700' });
+      let p = projs.find((x) => x.name === M.rag.project);
+      p ??= await api.post<any>('/v1/projects', { name: M.rag.project, color: M.rag.color });
       const labels = Object.entries(st.notes.labels).sort((a, b) => +a[0] - +b[0]);
       const comments = Object.entries(st.notes.comments).sort((a, b) => +a[0] - +b[0]);
       const md = [
         `# ${project.name} — how it works`,
-        `Taken apart in RAD's Spectrum lab (${new Date().toLocaleDateString()}). File: ${project.file}.`,
+        `Taken apart in RAD's ${M.title} (${new Date().toLocaleDateString()}). File: ${project.file}.`,
         `## Overview`,
-        `- Machine: ZX Spectrum ${summary.model}K`,
+        `- Machine: ${C64 ? 'Commodore 64' : `ZX Spectrum ${summary.model}K`}`,
         `- Code starts at ${summary.entry != null ? L.hex4(summary.entry) : 'unknown'}; program ${L.hex4(summary.range[0])}–${L.hex4(summary.range[1])}; ${summary.functions} functions`,
-        `- Ports: ${Object.keys(summary.ports).join(', ') || 'none'}`,
+        C64 ? `- Chip registers: ${(summary.hardware ?? []).map((h) => h.name ?? L.hex4(h.addr)).join(', ') || 'none'}` : `- Ports: ${Object.keys(summary.ports).join(', ') || 'none'}`,
         `- ROM routines used: ${summary.rom_calls.map((r) => `${r.name ?? L.hex4(r.addr)}`).join(', ') || 'none'}`,
         summary.basic ? `## BASIC\n\`\`\`\n${summary.basic}\n\`\`\`` : '',
         labels.length ? `## Names\n${labels.map(([a, n]) => `- ${L.hex4(+a)} **${n}**${st!.notes.comments[+a] ? ` — ${st!.notes.comments[+a]}` : ''}`).join('\n')}` : '',
@@ -616,19 +672,19 @@
       ]
         .filter(Boolean)
         .join('\n\n');
-      const note = { title: `${project.name} (Spectrum lab)`, content: md, tags: ['zx-spectrum', 'reverse-engineering'] };
+      const note = { title: `${project.name} (${M.title})`, content: md, tags: M.rag.tags };
       if (st.ragNote) {
         await api.put(`/v1/notes/${st.ragNote}`, note).catch(async () => {
           const n = await api.post<any>(`/v1/projects/${p.id}/notes`, note);
-          await L.setRagNote(current!, String(n.id));
+          await M.db.setRagNote(current!, String(n.id));
           st!.ragNote = String(n.id);
         });
       } else {
         const n = await api.post<any>(`/v1/projects/${p.id}/notes`, note);
-        await L.setRagNote(current, String(n.id));
+        await M.db.setRagNote(current, String(n.id));
         st.ragNote = String(n.id);
       }
-      store.toast('success', 'Saved to RAD', 'In the “ZX Spectrum Lab” project — ask the chat about it.', 4000);
+      store.toast('success', 'Saved to RAD', `In the “${M.rag.project}” project — ask the chat about it.`, 4000);
     } catch (e) {
       store.error(e, 'Couldn’t save it');
     } finally {
@@ -638,9 +694,11 @@
 
   // ------------------------------------------------------------------
 
-  const MAP_COLORS: Record<string, string> = {
-    rom: '#4b4b5a', screen: '#2f7bd8', sysvars: '#7a6a9a', basic: '#c9a227', code: '#2fbf71', reachable: '#1f7a4a', data: '#d07a2a', variables: '#e0475a', empty: '#1b1b22',
-  };
+  const MAP_COLORS: Record<string, string> = C64
+    ? {
+        zeropage: '#7a6a9a', rom: '#4b4b5a', io: '#8a5a9a', cartridge: '#5a6a8a', screen: '#2f7bd8', basic: '#c9a227', code: '#2fbf71', reachable: '#1f7a4a', data: '#d07a2a', variables: '#e0475a', empty: '#1b1b22',
+      }
+    : { rom: '#4b4b5a', screen: '#2f7bd8', sysvars: '#7a6a9a', basic: '#c9a227', code: '#2fbf71', reachable: '#1f7a4a', data: '#d07a2a', variables: '#e0475a', empty: '#1b1b22' };
 
   $effect(() => {
     if (tab === 'code' && summary && !lines.length) loadListing();
@@ -675,7 +733,7 @@
 
 <div class="lv" class:drop={dropping}>
   <header class="drag">
-    <div class="ttl no-drag"><Microscope size={16} /> Spectrum Lab</div>
+    <div class="ttl no-drag"><Microscope size={16} /> {M.title}</div>
     {#if projects.length}
       <select class="select no-drag pick" value={current} onchange={(e) => open((e.currentTarget as HTMLSelectElement).value)}>
         {#each projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
@@ -684,7 +742,7 @@
     {#if analysing}<span class="muted small no-drag"><Loader size={12} class="spin" /> Running and tracing it…</span>{/if}
     <span class="spacer"></span>
     {#if project}
-      <button class="btn sm no-drag" onclick={playOriginal} title="Play the original in the ZX Spectrum view"><Play size={13} /> Play</button>
+      <button class="btn sm no-drag" onclick={playOriginal} title="Play the original in the {C64 ? 'Commodore 64' : 'ZX Spectrum'} view"><Play size={13} /> Play</button>
       <button class="btn sm no-drag" onclick={saveToRad} disabled={saving || !summary} title="Save the notes and explanations to RAD, so the chat can answer questions about this game">
         {#if saving}<Loader size={13} class="spin" />{:else}<BrainCircuit size={13} />{/if} Save to RAD
       </button>
@@ -701,8 +759,8 @@
     <div class="center">
       <div class="intro">
         <div class="big"><Microscope size={30} /></div>
-        <h2>Take a Spectrum game apart</h2>
-        <p>Open a TZX, TAP, Z80 or SNA file. RAD runs it and watches the CPU to tell code from graphics, lists the BASIC and the machine code with names, finds the text and pictures, and shows the data flowing on the board while you play. The AI explains it all and helps you change it — then you play your version.</p>
+        <h2>Take a {M.name} game apart</h2>
+        <p>{M.intro}</p>
         <button class="btn primary" onclick={pick}><Upload size={14} /> Open a game</button>
         <p class="muted small">Or drop a file here. Use games you own or that are free to share.</p>
       </div>
@@ -723,12 +781,12 @@
             <div class="ov">
               <div class="mapwrap">
                 <div class="map" title="Memory, 256 bytes per square: $0000 top-left to $FFFF bottom-right">
-                  {#each summary.map as m, i}<button class="cell" style="background:{MAP_COLORS[m] ?? '#222'}" title="{L.hex4(i * 256)}: {m}" onclick={() => (i >= 0x40 ? goTo(i * 256) : null)}></button>{/each}
+                  {#each summary.map as m, i}<button class="cell" style="background:{MAP_COLORS[m] ?? '#222'}" title="{L.hex4(i * 256)}: {m}" onclick={() => (C64 || i >= 0x40 ? goTo(i * 256) : null)}></button>{/each}
                 </div>
                 <div class="legend">{#each Object.entries(MAP_COLORS) as [k, c]}<span><i style="background:{c}"></i>{k}</span>{/each}</div>
               </div>
               <div class="facts">
-                <div class="fact"><span>Machine</span><strong>{summary.model}K</strong></div>
+                <div class="fact"><span>Machine</span><strong>{C64 ? `C64${summary.cartridge ? ' + cartridge' : ''}` : `${summary.model}K`}</strong></div>
                 <div class="fact"><span>Code starts</span><button class="link" onclick={() => summary?.entry != null && goTo(summary.entry)}>{summary.entry != null ? L.hex4(summary.entry) : '—'}</button></div>
                 <div class="fact"><span>Program</span><strong>{L.hex4(summary.range[0])}–{L.hex4(summary.range[1] - 1)}</strong></div>
                 <div class="fact"><span>Functions</span><strong>{summary.functions}</strong></div>
@@ -740,16 +798,21 @@
               <div class="cols">
                 <div>
                   <div class="section-title">Hardware it uses</div>
-                  {#each Object.entries(summary.ports) as [p, c]}<div class="small">{p} <span class="muted">×{c}</span></div>{:else}<div class="small muted">No ports from its own code.</div>{/each}
+                  {#if C64}
+                    {#each summary.hardware ?? [] as h}<div class="small" title={h.what ?? ''}><span class="mono">{L.hex4(h.addr)}</span> {h.name ?? h.chip} <span class="muted">{h.reads ? `read ×${h.reads}` : ''}{h.reads && h.writes ? ' · ' : ''}{h.writes ? `written ×${h.writes}` : ''}</span></div>{:else}<div class="small muted">No chip registers from its own code.</div>{/each}
+                  {:else}
+                    {#each Object.entries(summary.ports) as [p, c]}<div class="small">{p} <span class="muted">×{c}</span></div>{:else}<div class="small muted">No ports from its own code.</div>{/each}
+                  {/if}
                 </div>
                 <div>
-                  <div class="section-title">ROM routines it calls</div>
+                  <div class="section-title">{C64 ? 'KERNAL routines it calls' : 'ROM routines it calls'}</div>
                   {#each summary.rom_calls as r}<div class="small"><button class="link" onclick={() => goTo(r.addr)}>{r.name ?? L.hex4(r.addr)}</button> <span class="muted">×{r.count}{r.what ? ` — ${r.what}` : ''}</span></div>{:else}<div class="small muted">None.</div>{/each}
                 </div>
               </div>
               {#if screens.length}
-                <div class="screens">{#each screens as s}<figure><canvas width="256" height="192" use:screenCanvas={s.bytes}></canvas><figcaption>{s.title}</figcaption></figure>{/each}</div>
+                <div class="screens">{#each screens as s}<figure><canvas use:screenCanvas={s.img}></canvas><figcaption>{s.title}</figcaption></figure>{/each}</div>
               {/if}
+              {#if C64 && summary.roms === 'open'}<div class="small muted">RAD ran it on the free Open ROMs: games that use the C64’s BASIC (or rare KERNAL routines) may behave differently — add your own C64 ROMs in the Commodore 64 view.</div>{/if}
               <div class="row"><span class="muted small">Trace for</span><input class="input sm num" type="number" min="2" max="120" bind:value={seconds} /><span class="muted small">seconds</span><button class="btn sm" onclick={analyse} disabled={analysing}><RefreshCw size={12} /> Analyse again</button><span class="muted small">Longer runs find more code (RAD presses keys now and then to get past menus).</span></div>
             </div>
           {:else if tab === 'code'}
@@ -800,7 +863,8 @@
               <input class="input sm addr" bind:value={gfxAddr} onchange={drawGfx} title="Address" />
               <label class="small">Width <input class="input sm num" type="number" min="1" max="32" bind:value={gfxWidth} onchange={drawGfx} /> bytes</label>
               <label class="small">Rows <input class="input sm num" type="number" min="8" max="1024" bind:value={gfxRows} onchange={drawGfx} /></label>
-              <select class="select sm" bind:value={gfxMode} onchange={drawGfx}><option value="chars">8×8 characters</option><option value="rows">Plain rows</option></select>
+              <select class="select sm" bind:value={gfxMode} onchange={drawGfx}><option value="chars">8×8 characters</option><option value="rows">Plain rows</option>{#if C64}<option value="sprites">Sprites (24×21)</option>{/if}</select>
+              {#if gfxMode === 'sprites'}<label class="small"><input type="checkbox" bind:checked={gfxMulti} onchange={drawGfx} /> Multicolour</label>{/if}
               <label class="small">Zoom <input type="range" min="1" max="8" bind:value={gfxZoom} /></label>
               <button class="btn sm ghost" onclick={() => gfxPage(-1)}>‹</button><button class="btn sm ghost" onclick={() => gfxPage(1)}>›</button>
               <span class="spacer"></span>
@@ -809,13 +873,20 @@
             <div class="row quick">
               <span class="muted small">Jump to:</span>
               <button class="btn sm ghost" onclick={() => ((gfxAddr = L.hex4(summary!.range[0])), drawGfx())}>Program</button>
-              <button class="btn sm ghost" onclick={() => ((gfxAddr = L.hex4(summary!.udg)), (gfxWidth = 1), drawGfx())}>UDGs</button>
-              <button class="btn sm ghost" onclick={() => ((gfxAddr = '$3d00'), (gfxWidth = 16), (gfxMode = 'chars'), drawGfx())}>ROM font</button>
-              <span class="muted small">Sprites are often 2–4 bytes wide: try widths until shapes appear.</span>
+              {#if C64}
+                {#if summary.charset && !summary.charset.rom}<button class="btn sm ghost" onclick={() => ((gfxAddr = L.hex4(summary!.charset!.addr)), (gfxWidth = 16), (gfxMode = 'chars'), drawGfx())}>Its character set</button>{/if}
+                {#each summary.sprites ?? [] as sp}<button class="btn sm ghost" onclick={() => ((gfxAddr = L.hex4(sp.addr)), (gfxMode = 'sprites'), (gfxMulti = sp.multicolor), drawGfx())}>Sprite {sp.n}</button>{/each}
+                {#if summary.bitmap != null}<button class="btn sm ghost" onclick={() => ((gfxAddr = L.hex4(summary!.bitmap!)), (gfxWidth = 40), (gfxMode = 'chars'), drawGfx())}>Bitmap</button>{/if}
+                <span class="muted small">Sprites are 64-byte blocks; character sets are 2K of 8×8 characters.</span>
+              {:else}
+                <button class="btn sm ghost" onclick={() => ((gfxAddr = L.hex4(summary!.udg)), (gfxWidth = 1), drawGfx())}>UDGs</button>
+                <button class="btn sm ghost" onclick={() => ((gfxAddr = '$3d00'), (gfxWidth = 16), (gfxMode = 'chars'), drawGfx())}>ROM font</button>
+                <span class="muted small">Sprites are often 2–4 bytes wide: try widths until shapes appear.</span>
+              {/if}
             </div>
             <div class="gfx"><canvas bind:this={gfxCanvas} style="width:{(gfxCanvas?.width ?? 8) * gfxZoom}px" onmousemove={gfxMove} onclick={() => gfxHover && goTo(L.parseAddr(gfxHover)!)}></canvas></div>
             {#if screens.length}
-              <div class="screens">{#each screens as s}<figure><canvas width="256" height="192" use:screenCanvas={s.bytes}></canvas><figcaption>{s.title}</figcaption></figure>{/each}</div>
+              <div class="screens">{#each screens as s}<figure><canvas use:screenCanvas={s.img}></canvas><figcaption>{s.title}</figcaption></figure>{/each}</div>
             {/if}
           {:else if tab === 'text'}
             <div class="tlist">
@@ -847,7 +918,7 @@
                 <input class="input sm grow" bind:value={pForm.note} placeholder="What it does, e.g. Infinite lives" />
                 <button class="btn sm primary"><Wrench size={12} /> Add patch</button>
               </div>
-              <textarea class="code" bind:value={pForm.code} rows="4" spellcheck="false" placeholder={pForm.mode === 'asm' ? '    nop\n    nop        ; the program’s labels can be used' : '00 00 c9'}></textarea>
+              <textarea class="code" bind:value={pForm.code} rows="4" spellcheck="false" placeholder={pForm.mode === 'asm' ? M.patchExample : C64 ? 'ea ea 60' : '00 00 c9'}></textarea>
               {#if pResult}<div class="small muted pre">{pResult}</div>{/if}
             </form>
             <div class="plist">
@@ -868,8 +939,8 @@
               <button class="btn sm primary" onclick={playPatched}><Play size={12} /> Play the patched game</button>
             </div>
             {#if testOut}
-              <div class="test" class:bad={testOut.crashed}>
-                <div>{#if testOut.crashed}<CircleX size={13} /> It crashed (reset to the start-up screen) within 3 seconds.{:else}<CircleCheck size={13} /> It ran for 3 seconds.{/if}</div>
+              <div class="test" class:bad={testOut.crashed || !!testOut.problem}>
+                <div>{#if testOut.crashed}<CircleX size={13} /> {M.crashText}{:else if testOut.problem}<CircleX size={13} /> It stopped with “{testOut.problem}”.{:else}<CircleCheck size={13} /> It ran for 3 seconds.{/if}</div>
                 {#if testOut.screen.length}<pre class="mono">{testOut.screen.join('\n')}</pre>{/if}
               </div>
             {/if}

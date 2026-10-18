@@ -1,0 +1,19 @@
+[package]
+name = "rad-c64"
+version.workspace = true
+edition.workspace = true
+description = "RAD's Commodore 64: PAL C64 emulation (floooh's chips), PRG/T64/TAP/D64/CRT files"
+# This crate is MIT like RAD. chips (chips/, built in) is zlib-licensed. The default ROMs
+# (roms/, the MEGA65 Open ROMs) are LGPL-3.0-or-later and are replaced by the user's own
+# Commodore ROMs when they provide them.
+
+[dependencies]
+miniz_oxide = "0.8"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+
+[build-dependencies]
+cc = "1"
+
+[dev-dependencies]
+tempfile = "3"

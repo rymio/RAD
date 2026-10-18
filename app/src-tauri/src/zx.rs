@@ -55,16 +55,17 @@ impl Zx {
     }
 }
 
-/// Sound: samples waiting for the audio device, shared with its callback.
-struct Sound {
-    queue: Arc<Mutex<VecDeque<f32>>>,
-    volume: Arc<Mutex<f32>>,
-    rate: u32,
+/// Sound: samples waiting for the audio device, shared with its callback (the C64 view uses
+/// it too).
+pub(crate) struct Sound {
+    pub(crate) queue: Arc<Mutex<VecDeque<f32>>>,
+    pub(crate) volume: Arc<Mutex<f32>>,
+    pub(crate) rate: u32,
     channels: usize,
     _stream: Option<cpal::Stream>,
 }
 
-fn open_sound() -> Sound {
+pub(crate) fn open_sound() -> Sound {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     let queue = Arc::new(Mutex::new(VecDeque::<f32>::with_capacity(48_000)));
     let volume = Arc::new(Mutex::new(0.8f32));

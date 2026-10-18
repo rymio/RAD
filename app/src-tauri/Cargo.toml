@@ -15,6 +15,7 @@ tauri-build = { version = "2", features = [] }
 rad-tunnel.workspace = true
 rad-api.workspace = true
 rad-zx.workspace = true
+rad-c64.workspace = true
 rad-server = { path = "../../crates/rad-server" }
 serde.workspace = true
 serde_json.workspace = true
@@ -49,7 +50,7 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 webpki-roots = "1"
 mail-parser = "0.11"
 getrandom = "0.2"
-# Sound for the ZX Spectrum view.
+# Sound for the ZX Spectrum and C64 views.
 cpal = "0.18"
 
 [dev-dependencies]

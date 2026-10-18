@@ -60,6 +60,8 @@ class Store {
   pendingTerminal = $state<T.TerminalRequest | null>(null);
   /** A program for the ZX Spectrum view to load (from a Games project): name, base64 data, title. */
   pendingZx = $state<{ name: string; data: string; title: string } | null>(null);
+  /** A program for the C64 view to load (from a Games project): name, base64 data, title. */
+  pendingC64 = $state<{ name: string; data: string; title: string } | null>(null);
   /** Linux sandboxes can run here (engine present). */
   sandboxReady = $state(false);
   pendingBrowserUrl = $state<string | null>(null);

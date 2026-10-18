@@ -10,6 +10,7 @@ members = [
     "crates/rad-tunnel",
     "crates/rad-db",
     "crates/rad-zx",
+    "crates/rad-c64",
     "app/src-tauri",
 ]
 # The web browser engines, the media engine (libVLC), Rymnet and SideX (a checkout made by
@@ -32,6 +33,7 @@ rad-local = { path = "crates/rad-local" }
 rad-tunnel = { path = "crates/rad-tunnel" }
 rad-db = { path = "crates/rad-db" }
 rad-zx = { path = "crates/rad-zx" }
+rad-c64 = { path = "crates/rad-c64" }
 anyhow = "1"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
@@ -66,4 +68,7 @@ opt-level = 3
 [profile.dev.package.spectrusty-audio]
 opt-level = 3
 [profile.dev.package.z80emu]
+opt-level = 3
+# …and the C64's.
+[profile.dev.package.rad-c64]
 opt-level = 3

@@ -3,11 +3,18 @@ import { api } from './api';
 import type { DbInfo, DbResult } from './types';
 import STAR_CATCH from './zx-templates/star-catch.bas?raw';
 import BAT_AND_BALL from './zx-templates/bat-and-ball.asm?raw';
+import C64_STAR_CATCH_BAS from './c64-templates/star-catch.bas?raw';
+import C64_STAR_CATCH_ASM from './c64-templates/star-catch.asm?raw';
+import C64_BLANK_ASM from './c64-templates/blank.asm?raw';
 
-/** What a game is made with: ggez (Rust, runs on this Mac), or for the ZX Spectrum in BASIC or Z80 assembler. */
-export type GameKind = 'ggez' | 'zx-basic' | 'zx-asm';
+/** What a game is made with: ggez (Rust, runs on this Mac), for the ZX Spectrum in BASIC or Z80
+ *  assembler, or for the Commodore 64 in BASIC or 6502 assembler. */
+export type GameKind = 'ggez' | 'zx-basic' | 'zx-asm' | 'c64-basic' | 'c64-asm';
 export interface Game { id: string; name: string; kind: GameKind; created_at: number; updated_at: number }
 export const isZx = (k: GameKind | undefined) => k === 'zx-basic' || k === 'zx-asm';
+export const isC64 = (k: GameKind | undefined) => k === 'c64-basic' || k === 'c64-asm';
+/** Made for an emulated 8-bit computer (built by RAD, played in its emulator view). */
+export const isRetro = (k: GameKind | undefined) => isZx(k) || isC64(k);
 export interface GameFile { path: string; content: string }
 /** A file in the game's `resources/` folder (images, sounds, fonts…). A path ending in `/` is a folder. */
 export interface GameAsset { path: string; size: number; info: string }
@@ -379,6 +386,17 @@ const ZX_BASIC_BLANK = (title: string) => `10 REM ${title.replace(/[^ -~]/g, '')
 50 PAUSE 0: BORDER INT (RND*8): GO TO 50
 `;
 
+/** A title as C64 text: upper case, and only characters a C64 has (no quotes). */
+const c64Text = (title: string) => title.toUpperCase().replace(/[^ !#-Z]/g, '').trim() || 'MY PROGRAM';
+
+const C64_BASIC_BLANK = (title: string) => `10 REM ${c64Text(title)}
+20 POKE 53280,6:POKE 53281,0
+30 PRINT "{CLR}{YELLOW}HELLO, COMMODORE 64!"
+40 PRINT "{DOWN}{WHITE}PRESS A KEY TO CHANGE THE BORDER"
+50 GET K$:IF K$="" THEN 50
+60 POKE 53280,INT(RND(1)*16):GOTO 50
+`;
+
 const ZX_ASM_BLANK = (title: string) => `; ${title.replace(/[^ -~]/g, '')}: Z80 assembly for the ZX Spectrum (sjasmplus).
 ; RAD adds DEVICE ZXSPECTRUM48 and makes a snapshot that starts at \`start\`.
 
@@ -408,6 +426,10 @@ export const TEMPLATES = {
   zxBasic: { label: 'Blank BASIC program', kind: 'zx-basic' as GameKind, files: (_c: string, t: string): GameFile[] => [{ path: 'main.bas', content: ZX_BASIC_BLANK(t) }] },
   zxAsmBat: { label: 'Bat & Ball (playable example)', kind: 'zx-asm' as GameKind, files: (_c: string, _t: string): GameFile[] => [{ path: 'main.asm', content: BAT_AND_BALL }] },
   zxAsm: { label: 'Blank assembler program', kind: 'zx-asm' as GameKind, files: (_c: string, t: string): GameFile[] => [{ path: 'main.asm', content: ZX_ASM_BLANK(t) }] },
+  c64BasicStars: { label: 'Star Catch (playable example)', kind: 'c64-basic' as GameKind, files: (_c: string, _t: string): GameFile[] => [{ path: 'main.bas', content: C64_STAR_CATCH_BAS }] },
+  c64Basic: { label: 'Blank BASIC program', kind: 'c64-basic' as GameKind, files: (_c: string, t: string): GameFile[] => [{ path: 'main.bas', content: C64_BASIC_BLANK(t) }] },
+  c64AsmStars: { label: 'Star Catch (playable example)', kind: 'c64-asm' as GameKind, files: (_c: string, _t: string): GameFile[] => [{ path: 'main.asm', content: C64_STAR_CATCH_ASM }] },
+  c64Asm: { label: 'Blank assembler program', kind: 'c64-asm' as GameKind, files: (_c: string, t: string): GameFile[] => [{ path: 'main.asm', content: C64_BLANK_ASM.replaceAll('TITLE', c64Text(t)) }] },
 };
 
 /** How each kind is described in the New game dialog. */
@@ -415,4 +437,6 @@ export const KINDS: { kind: GameKind; label: string; note: string; templates: (k
   { kind: 'ggez', label: 'ggez (Rust)', note: 'Modern 2D games in a window on this Mac.', templates: ['dodge', 'blank'] },
   { kind: 'zx-basic', label: 'ZX Spectrum — BASIC', note: 'Sinclair BASIC, like the type-in games of 1983. Simple, a bit slow, lots of charm.', templates: ['zxBasicStars', 'zxBasic'] },
   { kind: 'zx-asm', label: 'ZX Spectrum — Z80 assembler', note: 'How the classic games were made: full speed, smooth movement.', templates: ['zxAsmBat', 'zxAsm'] },
+  { kind: 'c64-basic', label: 'Commodore 64 — BASIC', note: 'BASIC V2 with PEEKs and POKEs, like the listings in 1984’s magazines. Needs your own C64 ROMs to run.', templates: ['c64BasicStars', 'c64Basic'] },
+  { kind: 'c64-asm', label: 'Commodore 64 — 6502 assembler', note: 'Sprites, SID sound and smooth scrolling: how C64 games were really made.', templates: ['c64AsmStars', 'c64Asm'] },
 ];

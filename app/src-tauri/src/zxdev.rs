@@ -14,8 +14,8 @@ use crate::client::{CmdError, CmdResult};
 
 #[derive(Deserialize)]
 pub struct SrcFile {
-    path: String,
-    content: String,
+    pub(crate) path: String,
+    pub(crate) content: String,
 }
 
 /// A build folder name no other build (at the same millisecond) shares.

@@ -7,6 +7,7 @@
   import { store } from '../lib/state.svelte';
   import { renderMarkdown } from '../lib/markdown';
   import * as G from '../lib/games';
+  import * as C64 from '../lib/c64';
   import { GameAgent } from '../lib/gameAgent.svelte';
   import Modal from './Modal.svelte';
   import Menu from './Menu.svelte';
@@ -121,6 +122,7 @@
       build: async () => {
         const cur = games.find((x) => x.id === id);
         if (cur && G.isZx(cur.kind)) return zxBuildAndCheck(cur);
+        if (cur && G.isC64(cur.kind)) return c64BuildAndCheck(cur);
         return rad.gameBuild(id, files.map((f) => ({ path: f.path, content: f.content })));
       },
       write: async (changed) => {
@@ -413,9 +415,48 @@
     return { ok: true, output: `It built and ran for 3 seconds with no keys pressed.${ended}${screen}`, file: b.file };
   }
 
+  /** Builds a C64 project, and test-runs it for the agent: what happened, in words. */
+  async function c64BuildAndCheck(g: G.Game): Promise<{ ok: boolean; output: string; file?: { name: string; data: string } }> {
+    const b = await rad.c64Build(g.kind, g.name, files.map((f) => ({ path: f.path, content: f.content })));
+    if (!b.ok || !b.file) return { ok: false, output: b.output };
+    const c = await rad.c64Check(b.file.name, b.file.data, 3, g.kind === 'c64-basic');
+    if (c.needs_roms)
+      return { ok: true, output: 'It built (the tokenizer accepted every line). RAD has only the free replacement ROMs, which can’t run BASIC programs, so it wasn’t test-run: check the program carefully yourself.', file: b.file };
+    const screen = c.screen?.length ? `\nThe screen showed:\n\`\`\`\n${c.screen.join('\n')}\n\`\`\`` : '\nThe screen was blank (no text on it — maybe a bitmap mode, or nothing drawn).';
+    if (!c.started) return { ok: false, output: `It built, but it didn't load and start on the C64.${screen}`, file: b.file };
+    if (c.crashed) return { ok: false, output: `It built, but it crashed: the CPU stopped on a JAM instruction (it ran into data or bad code) within 3 seconds.${screen}`, file: b.file };
+    if (c.error && c.error.message !== 'BREAK')
+      return { ok: false, output: `It built, but stopped with the error "?${c.error.message}"${c.error.line != null ? ` in line ${c.error.line}` : ''}.${screen}`, file: b.file };
+    const ended = g.kind === 'c64-basic' && c.screen?.at(-1) === 'READY.' ? ' The program ended (back at READY.) — a game should keep running.' : ' It was still running (good).';
+    return { ok: true, output: `It built and ran for 3 seconds with no keys pressed.${ended}${screen}`, file: b.file };
+  }
+
   async function run() {
     if (!game || running || building) return;
     await flush();
+    if (G.isC64(game.kind)) {
+      out = '';
+      append(`Building ${game.name} for the Commodore 64…\n`);
+      phase = 'building';
+      try {
+        const b = await rad.c64Build(game.kind, game.name, files.map((f) => ({ path: f.path, content: f.content })));
+        append(b.output + '\n');
+        if (!b.ok || !b.file) {
+          phase = 'failed';
+          append('\n✖ It didn’t build — see above, or ask the agent to fix it.\n');
+          return;
+        }
+        if (game.kind === 'c64-basic' && c64Tools.roms === 'open') append('\nNote: BASIC programs need the C64’s own ROMs — add them in the Commodore 64 view (Free ROMs → C64 ROMs).\n');
+        append(`\n▶ Playing ${b.file.name} in the Commodore 64 view.\n`);
+        phase = null;
+        store.pendingC64 = { name: b.file.name, data: b.file.data, title: game.name };
+        store.navigate({ kind: 'c64' });
+      } catch (e: any) {
+        phase = 'failed';
+        append(`\n${e?.message ?? e}\n`);
+      }
+      return;
+    }
     if (G.isZx(game.kind)) {
       out = '';
       append(`Building ${game.name} for the ZX Spectrum…\n`);
@@ -488,9 +529,14 @@
     ggez: ['Make it a space shooter with asteroids', 'Add lives and a high score', 'Add a main menu and pause with P', 'Make it a two-player pong'],
     'zx-basic': ['Add a title screen with a flashing "press any key"', 'Make the stars fall faster as the score grows', 'Use a user-defined graphic for the catcher', 'Make it a snake game'],
     'zx-asm': ['Make the ball speed up every 5 hits', 'Add bricks to knock out at the top', 'Add a high score and lives', 'Add a beep when the ball hits a wall'],
+    'c64-basic': ['Make the catcher a sprite', 'Add a SID sound when a star is caught', 'Add a title screen and high score', 'Make it a snake game'],
+    'c64-asm': ['Make the catcher a hardware sprite', 'Add SID sound effects', 'Add a title screen with a colour-cycling logo', 'Make several stars fall at once'],
   };
   const IDEAS = $derived(IDEAS_BY_KIND[game?.kind ?? 'ggez']);
   let zxTools = $state<{ basic: boolean; asm: boolean }>({ basic: true, asm: true });
+  let c64Tools = $state<{ basic: boolean; asm: boolean; roms: 'open' | 'commodore' }>({ basic: true, asm: true, roms: 'open' });
+  const missingTool = (k: G.GameKind) => (k === 'zx-asm' && !zxTools.asm) || (k === 'c64-asm' && !c64Tools.asm);
+  const toolNote = (k: G.GameKind) => (k === 'zx-asm' ? 'Needs the assembler: run ./scripts/build-zx-tools.sh' : 'Needs the assembler: run ./scripts/build-c64-tools.sh');
 
   $effect(() => {
     agent?.items.length;
@@ -502,6 +548,11 @@
     refresh().then(() => open(selId));
     refreshStatus();
     rad.zxTools().then((t) => (zxTools = t)).catch(() => {});
+    C64.loadRoms()
+      .catch(() => {})
+      .then(() => rad.c64Tools())
+      .then((t) => (c64Tools = t))
+      .catch(() => {});
     const un = listen('games-changed', () => refreshStatus());
     // Files dragged in from Finder: into the folder under the pointer (or the selected one).
     const folderAt = (x: number, y: number) => {
@@ -588,6 +639,8 @@
       {:else}
         {#if G.isZx(game.kind)}
           <button class="btn sm primary no-drag" onclick={run} disabled={game.kind === 'zx-asm' && !zxTools.asm} title={game.kind === 'zx-asm' && !zxTools.asm ? 'The Z80 assembler isn’t built: run ./scripts/build-zx-tools.sh' : 'Build it and play it on the ZX Spectrum (⌘↵)'}><Play size={13} /> Run on Spectrum</button>
+        {:else if G.isC64(game.kind)}
+          <button class="btn sm primary no-drag" onclick={run} disabled={game.kind === 'c64-asm' && !c64Tools.asm} title={game.kind === 'c64-asm' && !c64Tools.asm ? 'The 6502 assembler isn’t built: run ./scripts/build-c64-tools.sh' : 'Build it and play it on the Commodore 64 (⌘↵)'}><Play size={13} /> Run on C64</button>
         {:else}
           <button class="btn sm primary no-drag" onclick={run} disabled={!status.rust} title="Build and play (⌘↵)"><Play size={13} /> Run</button>
         {/if}
@@ -633,7 +686,7 @@
           </div>
         {/each}
 
-        {#if !G.isZx(game.kind)}
+        {#if !G.isRetro(game.kind)}
         <div class="sh assets-h">
           <span class="section-title" title="The game's resources/ folder: load files with paths like &quot;/sprites/player.png&quot;">Assets</span>
           <span class="muted cnt">{assetCount || ''}</span>
@@ -743,7 +796,7 @@
               {/if}
             </div>
           </div>
-          <pre class="out selectable" bind:this={outEl}>{out || (G.isZx(game.kind) ? 'Press Run on Spectrum (⌘↵): RAD builds the tape and plays it in the ZX Spectrum view.' : status.rust ? 'Press Run (⌘↵) to build and play. Build output and the game’s messages show here.' : 'Rust isn’t installed on this Mac — install it from https://rustup.rs to build and run games.')}</pre>
+          <pre class="out selectable" bind:this={outEl}>{out || (G.isZx(game.kind) ? 'Press Run on Spectrum (⌘↵): RAD builds the tape and plays it in the ZX Spectrum view.' : G.isC64(game.kind) ? 'Press Run on C64 (⌘↵): RAD builds the program and plays it in the Commodore 64 view.' : status.rust ? 'Press Run (⌘↵) to build and play. Build output and the game’s messages show here.' : 'Rust isn’t installed on this Mac — install it from https://rustup.rs to build and run games.')}</pre>
         </div>
       </section>
     </div>
@@ -755,8 +808,8 @@
     <label><span>Name</span><input class="input" bind:value={form.name} placeholder="e.g. Space Dodge" /></label>
     <div class="kinds">
       {#each G.KINDS as k (k.kind)}
-        <button type="button" class="kind" class:on={G.TEMPLATES[form.template].kind === k.kind} onclick={() => (form.template = k.templates[0])} disabled={k.kind === 'zx-asm' && !zxTools.asm}>
-          <strong>{k.label}</strong><span>{k.kind === 'zx-asm' && !zxTools.asm ? 'Needs the assembler: run ./scripts/build-zx-tools.sh' : k.note}</span>
+        <button type="button" class="kind" class:on={G.TEMPLATES[form.template].kind === k.kind} onclick={() => (form.template = k.templates[0])} disabled={missingTool(k.kind)}>
+          <strong>{k.label}</strong><span>{missingTool(k.kind) ? toolNote(k.kind) : k.note}</span>
         </button>
       {/each}
     </div>
