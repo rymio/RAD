@@ -49,6 +49,8 @@ if [[ $install_deps == 1 ]]; then
     libxcb1-dev libxrandr-dev libdbus-1-dev libpipewire-0.3-dev libwayland-dev libegl-dev libgbm-dev
     # text-to-speech engine (llama.cpp / ggml)
     cmake g++ git
+    # sound for the ZX Spectrum, C64 and DOS views (ALSA, through cpal); unzip for 64tass
+    libasound2-dev unzip
     # browser engine (Servo + SpiderMonkey)
     clang llvm-dev libclang-dev m4 python3 gperf libunwind-dev libfreetype6-dev libfontconfig1-dev
     libharfbuzz-dev libgl1-mesa-dri libgles2-mesa-dev libegl1-mesa-dev libudev-dev libxkbcommon-dev
@@ -64,6 +66,7 @@ missing=()
 command -v cargo >/dev/null || missing+=("Rust — curl https://sh.rustup.rs -sSf | sh")
 command -v cmake >/dev/null || missing+=("cmake — re-run with --install-deps")
 pkg-config --exists webkit2gtk-4.1 2>/dev/null || missing+=("WebKitGTK 4.1 — re-run with --install-deps")
+pkg-config --exists alsa 2>/dev/null || missing+=("ALSA (libasound2-dev, for sound) — re-run with --install-deps")
 if ! command -v node >/dev/null || (( $(node -p 'process.versions.node.split(".")[0]') < 18 )); then
   missing+=("Node.js 18 or newer — e.g. curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs")
 fi
@@ -81,6 +84,10 @@ triple="$(rustc -vV | sed -n 's/^host: //p')"
 [[ $browser == 1 ]] && ./scripts/build-browser.sh "$triple"
 [[ $chromium == 1 ]] && ./scripts/build-chromium.sh
 ./scripts/build-tts.sh "$triple"
+# The retro computers' tools: Z80 and 6502 assemblers, the DOS engine (each optional).
+./scripts/build-zx-tools.sh || echo "warning: building without the ZX Spectrum assembler" >&2
+./scripts/build-c64-tools.sh || echo "warning: building without the C64 assembler" >&2
+[[ "${RAD_NO_DOS:-}" == 1 ]] || ./scripts/build-dos.sh || echo "warning: building without the DOS engine" >&2
 
 # Bundle whichever engines are built for this platform. Engines from an earlier build with
 # --no-browser left out on purpose stay out.
@@ -90,12 +97,20 @@ for b in rad-browser mio-tts-server; do
   [[ -f "app/src-tauri/binaries/$b-$triple" ]] && bins+=("\"binaries/$b\"")
 done
 # The Chromium engine is a folder (executable + CEF libraries); it ships as a resource.
-resources=""
+res=()
 built=("${bins[@]}")
 if [[ $chromium == 1 && -d browser/rad-chromium/target/bundle/rad-chromium ]]; then
-  resources=",\"resources\":{\"$PWD/browser/rad-chromium/target/bundle/rad-chromium/**/*\":\"rad-chromium/\"}"
+  res+=("\"$PWD/browser/rad-chromium/target/bundle/rad-chromium/**/*\":\"rad-chromium/\"")
   built+=("rad-chromium")
 fi
+# Folders RAD finds next to it as resources: zx/, c64/ (assemblers) and rad-dos/ (DOS engine).
+if [[ -x zxtools/bin/sjasmplus ]]; then res+=("\"$PWD/zxtools/bin/*\":\"zx/\""); built+=("sjasmplus"); fi
+if [[ -x c64tools/bin/64tass ]]; then res+=("\"$PWD/c64tools/bin/*\":\"c64/\""); built+=("64tass"); fi
+if [[ "${RAD_NO_DOS:-}" != 1 && -x dos/rad-dos/target/bundle/rad-dos/rad-dos ]]; then
+  res+=("\"$PWD/dos/rad-dos/target/bundle/rad-dos/*\":\"rad-dos/\""); built+=("rad-dos")
+fi
+resources=""
+if [[ ${#res[@]} -gt 0 ]]; then resources=",\"resources\":{$(IFS=,; echo "${res[*]}")}"; fi
 cfg="$PWD/target/rad-bundle.conf.json"
 mkdir -p target
 (IFS=,; echo "{\"bundle\":{\"externalBin\":[${bins[*]:-}]$resources}}") > "$cfg"

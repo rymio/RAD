@@ -3,6 +3,8 @@ Builds the RAD desktop app for Windows 10/11 (x64 or ARM64) with its engines ins
   - the web browser engine (Servo)        -> scripts/build-browser.sh   (skip: -NoBrowser)
   - the Chromium engine (CEF)             -> scripts/build-chromium.sh  (skip: -NoChromium)
   - the text-to-speech engine (MioTTS)    -> scripts/build-tts.sh
+  - the Z80 and 6502 assemblers           -> scripts/build-zx-tools.sh, build-c64-tools.sh
+  - the DOS engine (DOSBox Pure; x64 only) -> scripts/build-dos.sh     (skip: -NoDos)
   - the Linux sandbox engine is macOS-only for now and is left out.
 Result: target\release\bundle\nsis\RAD_<version>_x64-setup.exe (and \msi\*.msi with -Bundles nsis,msi)
 
@@ -20,6 +22,7 @@ param(
     [switch]$InstallDeps,
     [switch]$NoBrowser,
     [switch]$NoChromium,
+    [switch]$NoDos,
     [string]$Bundles = "nsis",
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$TauriArgs = @()
 )
@@ -95,6 +98,12 @@ Run-Bash "./scripts/fetch-models.sh"
 if (-not $NoBrowser) { Run-Bash "./scripts/build-browser.sh $host_triple" }
 if (-not $NoChromium) { Run-Bash "./scripts/build-chromium.sh" }
 Run-Bash "./scripts/build-tts.sh $host_triple"
+# The retro computers' tools (each optional: a failure leaves that part out).
+$retro = @("build-zx-tools.sh", "build-c64-tools.sh")
+if (-not $NoDos) { $retro += "build-dos.sh" }
+foreach ($s in $retro) {
+    try { Run-Bash "./scripts/$s" } catch { Write-Warning "building without $s ($_)" }
+}
 
 # Bundle whichever engines are built (Tauri adds the target triple and .exe itself).
 $bins = @()
@@ -108,14 +117,24 @@ $cfg = Join-Path $root "target\rad-bundle.conf.json"
 # (single-item arrays, a BOM) that Tauri's config parser rejects.
 $list = ($bins | ForEach-Object { '"' + $_ + '"' }) -join ","
 # The Chromium engine is a folder (rad-chromium.exe + CEF's DLLs and data); it ships as a resource.
-$resources = ""
+$res = @()
 $built = @($bins)
 $chromiumDir = Join-Path $root "browser\rad-chromium\target\bundle\rad-chromium"
 if (-not $NoChromium -and (Test-Path (Join-Path $chromiumDir "rad-chromium.exe"))) {
     $src = ($chromiumDir -replace '\\', '/') + "/**/*"
-    $resources = ",""resources"":{""$src"":""rad-chromium/""}"
+    $res += """$src"":""rad-chromium/"""
     $built += "rad-chromium"
 }
+# Folders RAD finds next to it as resources: zx\, c64\ (assemblers) and rad-dos\ (DOS engine).
+$slash = $root -replace '\\', '/'
+if (Test-Path "zxtools\bin\sjasmplus.exe") { $res += """$slash/zxtools/bin/*"":""zx/"""; $built += "sjasmplus" }
+if (Test-Path "c64tools\bin\64tass.exe") { $res += """$slash/c64tools/bin/*"":""c64/"""; $built += "64tass" }
+if (-not $NoDos -and (Test-Path "dos\rad-dos\target\bundle\rad-dos\rad-dos.exe")) {
+    $res += """$slash/dos/rad-dos/target/bundle/rad-dos/*"":""rad-dos/"""
+    $built += "rad-dos"
+}
+$resources = ""
+if ($res.Count) { $resources = ",""resources"":{" + ($res -join ",") + "}" }
 [IO.File]::WriteAllText($cfg, "{""bundle"":{""externalBin"":[$list]$resources}}")
 
 # ------------------------------------------------------------------ app

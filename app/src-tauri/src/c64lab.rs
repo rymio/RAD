@@ -156,7 +156,7 @@ fn assemble(asm: &Path, root: &Path, src: &str) -> Result<(Vec<u8>, BTreeMap<Str
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let r = (|| {
         std::fs::write(dir.join("src.asm"), src).map_err(|e| e.to_string())?;
-        let out = std::process::Command::new(asm).args(["-q", "-b", "-o", "out.bin", "-l", "labels.txt", "src.asm"]).current_dir(&dir).output().map_err(|e| e.to_string())?;
+        let out = crate::helper_command(asm).args(["-q", "-b", "-o", "out.bin", "-l", "labels.txt", "src.asm"]).current_dir(&dir).output().map_err(|e| e.to_string())?;
         let msgs = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
         if !out.status.success() {
             return Err(msgs);
@@ -333,7 +333,7 @@ mod tests {
     const STAR_CATCH: &str = include_str!("../../ui/src/lib/c64-templates/star-catch.asm");
 
     fn tass() -> Option<std::path::PathBuf> {
-        let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../c64tools/bin/64tass");
+        let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../c64tools/bin").join(if cfg!(windows) { "64tass.exe" } else { "64tass" });
         p.is_file().then_some(p)
     }
 

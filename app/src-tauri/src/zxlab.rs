@@ -146,7 +146,7 @@ fn assemble_out(asm: &Path, root: &Path, src: &str, from: u16, to: u32) -> Resul
     let full = format!("    DEVICE ZXSPECTRUM48\n{src}\n    SAVEBIN \"__out.bin\", ${from:04x}, {}\n", to - from as u32);
     let r = (|| {
         std::fs::write(dir.join("src.asm"), full).map_err(|e| e.to_string())?;
-        let out = std::process::Command::new(asm).args(["--nologo", "--msg=war", "src.asm"]).current_dir(&dir).output().map_err(|e| e.to_string())?;
+        let out = crate::helper_command(asm).args(["--nologo", "--msg=war", "src.asm"]).current_dir(&dir).output().map_err(|e| e.to_string())?;
         let msgs = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
         if !out.status.success() {
             return Err(msgs);
@@ -309,7 +309,7 @@ mod tests {
 
     #[test]
     fn patch_a_game_and_play_it() {
-        let asm = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../zxtools/bin/sjasmplus");
+        let asm = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../zxtools/bin").join(crate::zxdev::SJASMPLUS);
         if !asm.is_file() {
             return eprintln!("skipped: ./scripts/build-zx-tools.sh");
         }

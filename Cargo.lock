@@ -5612,6 +5612,7 @@ dependencies = [
  "window-vibrancy 0.6.0",
  "xcap",
  "zeroize",
+ "zip 9.0.1",
 ]
 
 [[package]]

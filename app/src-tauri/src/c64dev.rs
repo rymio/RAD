@@ -3,7 +3,6 @@
 //! so the AI agent sees errors and what's on the screen.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 
 use base64::Engine as _;
@@ -18,17 +17,19 @@ fn b64(data: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(data)
 }
 
+const TASS: &str = if cfg!(windows) { "64tass.exe" } else { "64tass" };
+
 /// 64tass: in RAD's bundle (Contents/Helpers/c64) or, in development, c64tools/bin.
 pub(crate) fn tass(app: &AppHandle) -> Option<PathBuf> {
     let mut c: Vec<PathBuf> = Vec::new();
     if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(PathBuf::from)) {
-        c.push(dir.join("../Helpers/c64/64tass"));
+        c.push(dir.join("../Helpers/c64").join(TASS));
     }
     if let Ok(d) = app.path().resource_dir() {
-        c.push(d.join("c64/64tass"));
+        c.push(d.join("c64").join(TASS));
     }
     if cfg!(debug_assertions) {
-        c.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../c64tools/bin/64tass"));
+        c.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../c64tools/bin").join(TASS));
     }
     c.into_iter().find(|p| p.is_file())
 }
@@ -88,7 +89,7 @@ pub(crate) fn write_files(dir: &Path, files: &[SrcFile]) -> CmdResult<()> {
 
 /// Runs 64tass on `main` in `dir`: (assembled program, its errors and warnings, the output).
 pub(crate) fn run_tass(asm: &Path, dir: &Path, main: &str, extra: &[&str]) -> CmdResult<(Option<Vec<u8>>, Vec<Value>, String)> {
-    let out = Command::new(asm)
+    let out = crate::helper_command(asm)
         .args(["--cbm-prg", "-q", "-o", "__rad_out.prg"])
         .args(extra)
         .arg(main)
@@ -189,7 +190,7 @@ mod tests {
     const BLANK_ASM: &str = include_str!("../../ui/src/lib/c64-templates/blank.asm");
 
     fn tass_dev() -> Option<PathBuf> {
-        let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../c64tools/bin/64tass");
+        let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../c64tools/bin").join(TASS);
         p.is_file().then_some(p)
     }
 

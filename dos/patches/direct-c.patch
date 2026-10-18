@@ -1,0 +1,26 @@
+diff --git a/dosbox_pure_libretro.cpp b/dosbox_pure_libretro.cpp
+index f9a91bf..99a3963 100644
+--- a/dosbox_pure_libretro.cpp
++++ b/dosbox_pure_libretro.cpp
+@@ -2742,6 +2742,13 @@ static void init_dosbox(bool forcemenu = false, bool reinit = false, const std::
+ 				union_underlay = new memoryDrive();
+ 				if (path) DBP_SetDriveLabelFromContentPath(union_underlay, path, 'C', path_file, path_ext);
+ 			}
++			else if (getenv("RAD_DOS_DIRECT_C"))
++			{
++				// RAD: C: is the user's hard disk folder, written directly (no save overlay)
++				Drives['C'-'A'] = union_underlay;
++				mem_writeb(Real2Phys(dos.tables.mediaid) + ('C'-'A') * 9, union_underlay->GetMediaByte());
++				goto RAD_C_MOUNTED;
++			}
+ 			else
+ 			{
+ 				Drives['C'-'A'] = union_underlay; // set for DBP_GetSaveFile
+@@ -2752,6 +2759,7 @@ static void init_dosbox(bool forcemenu = false, bool reinit = false, const std::
+ 			Drives['C'-'A'] = uni;
+ 			mem_writeb(Real2Phys(dos.tables.mediaid) + ('C'-'A') * 9, uni->GetMediaByte());
+ 		}
++		RAD_C_MOUNTED:;
+ 	}
+ 
+ 	// Detect content year and auto mapping

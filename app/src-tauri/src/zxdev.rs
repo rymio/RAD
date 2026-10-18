@@ -3,7 +3,6 @@
 //! hidden Spectrum, so the AI agent sees errors and what's on the screen.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use base64::Engine as _;
 use serde::Deserialize;
@@ -28,17 +27,19 @@ fn b64(data: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(data)
 }
 
+pub(crate) const SJASMPLUS: &str = if cfg!(windows) { "sjasmplus.exe" } else { "sjasmplus" };
+
 /// sjasmplus: in RAD's bundle (Contents/Helpers/zx) or, in development, zxtools/bin.
 pub(crate) fn sjasmplus(app: &AppHandle) -> Option<PathBuf> {
     let mut c: Vec<PathBuf> = Vec::new();
     if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(PathBuf::from)) {
-        c.push(dir.join("../Helpers/zx/sjasmplus"));
+        c.push(dir.join("../Helpers/zx").join(SJASMPLUS));
     }
     if let Ok(d) = app.path().resource_dir() {
-        c.push(d.join("zx/sjasmplus"));
+        c.push(d.join("zx").join(SJASMPLUS));
     }
     if cfg!(debug_assertions) {
-        c.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../zxtools/bin/sjasmplus"));
+        c.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../zxtools/bin").join(SJASMPLUS));
     }
     c.into_iter().find(|p| p.is_file())
 }
@@ -103,7 +104,7 @@ fn assemble(asm: &Path, root: &Path, name: &str, files: &[SrcFile]) -> CmdResult
             if has_device { "" } else { "    DEVICE ZXSPECTRUM48\n" }
         );
         std::fs::write(dir.join("__rad_build.asm"), wrapper).map_err(|e| CmdError::new("io", e.to_string()))?;
-        let out = Command::new(asm)
+        let out = crate::helper_command(asm)
             .args(["--nologo", "--msg=war", "__rad_build.asm"])
             .current_dir(&dir)
             .output()
@@ -194,7 +195,7 @@ mod tests {
     }
 
     fn sjasm() -> Option<PathBuf> {
-        let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../zxtools/bin/sjasmplus");
+        let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../zxtools/bin").join(SJASMPLUS);
         p.is_file().then_some(p)
     }
 

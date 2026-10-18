@@ -1,0 +1,22 @@
+[package]
+name = "rad-dos"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+authors = ["Robert <robert@rymtechsystems.com>"]
+description = "RAD's DOS engine: a libretro host for DOSBox Pure, driven over stdin/stdout, for the DOS view"
+
+# DOSBox Pure (GPL-2.0-or-later) is loaded into this process, so like the media and browser
+# engines this is its own workspace and runs as a separate process next to the app: RAD itself
+# never links it. This program is GPL-2.0-or-later too.
+[workspace]
+
+[dependencies]
+libloading = "0.8"
+serde_json = "1"
+cpal = "0.18"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true

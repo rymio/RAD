@@ -166,7 +166,8 @@ export type Route =
   | { kind: 'zx' }
   | { kind: 'zxlab' }
   | { kind: 'c64' }
-  | { kind: 'c64lab' };
+  | { kind: 'c64lab' }
+  | { kind: 'dos' };
 
 /** Something the assistant asks the app to do (see crates/rad-server/src/agent.rs). */
 export interface AgentAction { kind: 'ssh' | 'open_url' | 'terminal' | string; host?: string; user?: string; port?: number; identity_file?: string; url?: string }

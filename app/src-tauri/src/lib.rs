@@ -16,6 +16,7 @@ mod containers;
 mod sidex;
 mod games;
 mod c64;
+mod dos;
 mod c64dev;
 mod c64lab;
 mod zx;
@@ -47,6 +48,19 @@ pub struct App {
     pub events_task: Mutex<Option<tokio::task::AbortHandle>>,
     /// Standalone mode: the in-process RAD server.
     pub embedded: tokio::sync::Mutex<Option<rad_server::embedded::Embedded>>,
+}
+
+/// A helper program's command (assemblers, the DOS engine): on Windows it gets no console
+/// window of its own.
+pub(crate) fn helper_command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Command {
+    #[allow(unused_mut)]
+    let mut c = std::process::Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    c
 }
 
 pub fn now_ms() -> i64 {
@@ -323,6 +337,7 @@ pub fn run() {
             app.manage(games::Games::default());
             app.manage(zx::Zx::default());
             app.manage(c64::C64State::default());
+            app.manage(dos::Dos::default());
             app.manage(c64lab::C64Lab::default());
             app.manage(zxlab::ZxLab::default());
             app.manage(mail::Mail::default());
@@ -470,6 +485,16 @@ pub fn run() {
             games::game_status,
             games::game_docs,
             games::game_read_files,
+            dos::dos_status,
+            dos::dos_start,
+            dos::dos_frame,
+            dos::dos_send,
+            dos::dos_stop,
+            dos::dos_files,
+            dos::dos_programs,
+            dos::dos_import,
+            dos::dos_delete,
+            dos::dos_mkdir,
             c64::c64_attach,
             c64::c64_keys,
             c64::c64_joystick,
@@ -539,6 +564,7 @@ pub fn run() {
                 app.state::<games::Games>().stop_all();
                 app.state::<zx::Zx>().stop();
                 app.state::<c64::C64State>().stop();
+                app.state::<dos::Dos>().stop();
                 app.state::<tts::Tts>().stop();
                 let st = app.state::<App>();
                 st.client.set_session(None);

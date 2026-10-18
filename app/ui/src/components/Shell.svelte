@@ -25,6 +25,7 @@
   import LabView from './LabView.svelte';
   import C64View from './C64View.svelte';
   import C64LabView from './C64LabView.svelte';
+  import DosView from './DosView.svelte';
   import CommandPalette from './CommandPalette.svelte';
   import VpnToggle from './VpnToggle.svelte';
   import { UploadCloud, PanelLeftOpen } from '@lucide/svelte';
@@ -65,11 +66,11 @@
     getCurrentWebview()
       .onDragDropEvent((ev) => {
         const p = ev.payload;
-        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab'].includes(store.route.kind);
+        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos'].includes(store.route.kind);
         else if (p.type === 'leave') dragging = false;
         else if (p.type === 'drop') {
           dragging = false;
-          if (['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab'].includes(store.route.kind)) return;
+          if (['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos'].includes(store.route.kind)) return;
           uploadTo(p.paths);
         }
       })
@@ -145,6 +146,8 @@
       <C64View />
     {:else if store.route.kind === 'c64lab'}
       <C64LabView />
+    {:else if store.route.kind === 'dos'}
+      <DosView />
     {:else if store.route.kind === 'games'}
       <GamesView />
     {:else if store.route.kind === 'database'}

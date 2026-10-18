@@ -219,6 +219,19 @@ export const rad = {
   c64labBuild: (id: string, patches: { addr: number; bytes: string }[], check?: boolean) =>
     call<{ file: { name: string; data: string }; check?: { crashed: boolean; screen: string[]; error: { message: string; line: number | null } | null } }>('c64lab_build', { id, patches, check: check ?? null }),
   c64labClose: (id: string) => call<void>('c64lab_close', { id }),
+  /** The DOS PC (DOSBox Pure in its own process, see app/src-tauri/src/dos.rs). */
+  dosStatus: () => call<{ engine: boolean; running: boolean; hdd: string; used: number }>('dos_status'),
+  dosStart: (settings: Record<string, unknown>) => call<void>('dos_start', { settings }),
+  /** The latest picture (see lib/dos.ts decodeFrame). */
+  dosFrame: () => invoke<ArrayBuffer>('dos_frame'),
+  dosSend: (cmd: Record<string, unknown>) => call<void>('dos_send', { cmd }),
+  dosStop: () => call<void>('dos_stop'),
+  dosFiles: (path?: string) => call<{ name: string; dir: boolean; size: number }[]>('dos_files', { path: path ?? null }),
+  dosPrograms: () => call<string[]>('dos_programs'),
+  /** Copies ZIPs (unpacked), folders and files from this Mac onto drive C: (into C:\GAMES by default). */
+  dosImport: (paths: string[], into?: string) => call<string[]>('dos_import', { paths, into: into ?? null }),
+  dosDelete: (path: string) => call<void>('dos_delete', { path }),
+  dosMkdir: (path: string) => call<void>('dos_mkdir', { path }),
   gameStop: (id: string) => call<void>('game_stop', { id }),
   /** Searches the local ggez 0.10 docs (guides, examples, API source). */
   gameDocs: (query: string, limit?: number) =>

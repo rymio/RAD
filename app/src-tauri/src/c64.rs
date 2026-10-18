@@ -413,8 +413,25 @@ pub async fn c64_read_roms(paths: Vec<String>) -> CmdResult<Value> {
 /// KERNAL), or none.
 #[tauri::command]
 pub fn c64_find_roms() -> Vec<String> {
-    let mut dirs: Vec<PathBuf> = vec!["/opt/homebrew/share/vice/C64".into(), "/usr/local/share/vice/C64".into(), "/usr/share/vice/C64".into()];
-    for apps in ["/Applications".to_string(), format!("{}/Applications", std::env::var("HOME").unwrap_or_default())] {
+    let mut dirs: Vec<PathBuf> = vec![
+        "/opt/homebrew/share/vice/C64".into(),
+        "/usr/local/share/vice/C64".into(),
+        "/usr/share/vice/C64".into(),
+        "/usr/lib/vice/C64".into(),
+        "/usr/lib64/vice/C64".into(),
+    ];
+    // Where VICE gets unpacked or installed: macOS apps, Windows program folders and downloads.
+    let env = |k: &str| std::env::var(k).unwrap_or_default();
+    let roots = [
+        "/Applications".to_string(),
+        format!("{}/Applications", env("HOME")),
+        env("ProgramFiles"),
+        env("ProgramFiles(x86)"),
+        format!("{}\\Programs", env("LOCALAPPDATA")),
+        format!("{}\\Downloads", env("USERPROFILE")),
+        format!("{}\\Desktop", env("USERPROFILE")),
+    ];
+    for apps in roots.iter().filter(|r| !r.is_empty() && !r.starts_with('\\')) {
         if let Ok(rd) = std::fs::read_dir(&apps) {
             for e in rd.flatten() {
                 let n = e.file_name().to_string_lossy().to_lowercase();
