@@ -8,6 +8,7 @@
 #   - SideX, the code editor (VS Code)      → scripts/build-sidex.sh   (skip: RAD_NO_SIDEX=1; macOS)
 #   - ZX Spectrum dev tools (sjasmplus)     → scripts/build-zx-tools.sh
 #   - Commodore 64 dev tools (64tass)       → scripts/build-c64-tools.sh
+#   - the DOS engine (DOSBox Pure)          → scripts/build-dos.sh     (skip: RAD_NO_DOS=1)
 # All are incremental, so re-running is quick. Extra arguments go to `cargo tauri build`
 # (e.g. --bundles app). Result: target/release/bundle/…
 #
@@ -28,6 +29,7 @@ triple="$(rustc -vV | sed -n 's/^host: //p')"
 ./scripts/build-sandbox.sh "$triple"
 ./scripts/build-zx-tools.sh || echo "warning: building without the ZX Spectrum assembler" >&2
 ./scripts/build-c64-tools.sh || echo "warning: building without the C64 assembler" >&2
+[[ "${RAD_NO_DOS:-}" == 1 ]] || ./scripts/build-dos.sh || echo "warning: building without the DOS engine" >&2
 [[ "${RAD_NO_SIDEX:-}" == 1 ]] || ./scripts/build-sidex.sh || echo "warning: building without SideX (the code editor)" >&2
 
 # Bundle whichever engines were built: executables as sidecars, libraries into Frameworks.
@@ -110,6 +112,14 @@ if [[ -d "$app" && -x c64tools/bin/64tass ]]; then
   mkdir -p "$app/Contents/Helpers/c64"
   cp c64tools/bin/64tass c64tools/bin/64tass-LICENSE.txt "$app/Contents/Helpers/c64/"
   codesign --force --sign "${APPLE_SIGNING_IDENTITY:--}" "$app/Contents/Helpers/c64/64tass"
+fi
+dos=dos/rad-dos/target/bundle/rad-dos
+if [[ -d "$app" && -x "$dos/rad-dos" && "${RAD_NO_DOS:-}" != 1 ]]; then
+  # The DOS engine (DOS view): its own program with DOSBox Pure next to it.
+  rm -rf "$app/Contents/Helpers/rad-dos"
+  ditto "$dos" "$app/Contents/Helpers/rad-dos"
+  codesign --force --sign "${APPLE_SIGNING_IDENTITY:--}" "$app/Contents/Helpers/rad-dos/dosbox_pure_libretro.dylib"
+  codesign --force --sign "${APPLE_SIGNING_IDENTITY:--}" "$app/Contents/Helpers/rad-dos/rad-dos"
 fi
 sidex=sidex/target/release/bundle/macos/SideX.app
 if [[ -d "$app" && -d "$sidex" && "${RAD_NO_SIDEX:-}" != 1 ]]; then
