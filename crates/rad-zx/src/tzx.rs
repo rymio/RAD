@@ -523,9 +523,16 @@ pub struct Pulses {
     /// The tape asked to be stopped (a 0 ms pause, or "stop in 48K mode").
     stopped: bool,
     pending: Option<(bool, u64)>,
+    /// The rest of a long pulse that was split (see `emit`).
+    split: std::collections::VecDeque<NonZeroU32>,
     total: u64,
     elapsed: u64,
 }
+
+/// The longest pulse handed to the emulator: SPECTRUSTY can't take one over ~7.3 million
+/// T-states (~2 s; a frame-relative timestamp would overflow), so longer ones (long pauses) are
+/// split. A standard 1 s pause stays whole.
+const MAX_PULSE: u64 = 6_000_000;
 
 impl Pulses {
     /// `cpu_hz`: the machine's clock (3 500 000 for a 48K, 3 546 900 for a 128K).
@@ -536,6 +543,7 @@ impl Pulses {
             scale: (cpu_hz as u64, 3_500_000),
             stopped: false,
             pending: None,
+            split: Default::default(),
             total,
             elapsed: 0,
         }
@@ -569,6 +577,9 @@ impl Iterator for Pulses {
     type Item = NonZeroU32;
 
     fn next(&mut self) -> Option<NonZeroU32> {
+        if let Some(p) = self.split.pop_front() {
+            return Some(p);
+        }
         if self.stopped {
             return None;
         }
@@ -596,8 +607,23 @@ impl Iterator for Pulses {
 impl Pulses {
     fn emit(&mut self, tstates: u64) -> NonZeroU32 {
         self.elapsed += tstates;
-        let scaled = tstates * self.scale.0 / self.scale.1;
-        NonZeroU32::new(scaled.clamp(1, u32::MAX as u64) as u32).unwrap()
+        let scaled = (tstates * self.scale.0 / self.scale.1).max(1);
+        if scaled <= MAX_PULSE {
+            return NonZeroU32::new(scaled as u32).unwrap();
+        }
+        // An odd number of pieces: the extra edges come in pairs, so the level after the long
+        // pulse is what it would have been (some loaders care about polarity).
+        let mut k = scaled.div_ceil(MAX_PULSE);
+        if k % 2 == 0 {
+            k += 1;
+        }
+        let piece = scaled / k;
+        let last = scaled - piece * (k - 1);
+        for _ in 1..k - 1 {
+            self.split.push_back(NonZeroU32::new(piece as u32).unwrap());
+        }
+        self.split.push_back(NonZeroU32::new(last as u32).unwrap());
+        NonZeroU32::new(piece as u32).unwrap()
     }
 }
 

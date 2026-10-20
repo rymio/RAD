@@ -123,6 +123,23 @@ The engine is [mio-tts-cpp](https://github.com/mmnga/mio-tts-cpp) (MIT; llama.cp
 
 Licences: MioTTS-0.1B is under the Falcon-LLM licence, MioCodec is MIT, and WavLM is CC BY-SA 3.0.
 
+## Gilgamesh (talk face to face)
+
+**Gilgamesh** in the sidebar is a spoken conversation with RAD through a talking head. Choose a photo of a face, press the microphone, and talk.
+
+- **The face.** The photo becomes a talking head: lips follow the speech, the eyes blink and glance, the head moves slightly and breathes, and the face shows a mood (happy, amused, concerned, surprised, thinking). The answer chooses the mood with a tag such as `[happy]`, which is never shown or read aloud. A clear, front-facing portrait with closed lips works best.
+- **Listening.** Speech is recognised on this computer by **NVIDIA Parakeet TDT 0.6B v3** (25 European languages, with punctuation; about 670 MB, downloaded once from the Gilgamesh view and checksum-verified). **Silero VAD** finds speech, and live captions show what has been heard. The turn ends after a pause, which is shorter when your words end a sentence.
+- **Talking.** The answer comes from the normal RAD chat, so it uses your vault, memories and actions (“open a terminal” works). It is saved as the “Gilgamesh” chat. Each sentence is spoken with MioTTS as soon as it's written; the voice is chosen in Gilgamesh's settings.
+- **Turn-taking.** In **Hands-free** mode, talking over Gilgamesh stops him when **I'm using headphones** is on. Through speakers the microphone is ignored while he speaks, so he doesn't hear himself; <kbd>Esc</kbd> stops him. In **Push to talk** mode, hold <kbd>Space</kbd> while you talk.
+- **Privacy.** The photo is processed on this computer and kept only in the vault. Audio stays in memory, and the microphone is released when you leave the view.
+
+How it works:
+- **Face:** MediaPipe Face Landmarker, bundled and run locally, finds 478 face landmarks. The face is then animated with WebGL as a triangle mesh over the photo (`app/ui/src/lib/gilgamesh/`). The inside of the mouth is drawn where the lips part.
+- **Lips:** they are driven by analysing each sentence's audio before it plays: loudness and the balance of formant bands give jaw, “ee” and “oo” shapes, and the mouth moves slightly ahead of the sound.
+- **Speech to text:** this runs in the app (`app/src-tauri/src/stt.rs`) on [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), which is linked statically. The microphone is read with cpal.
+
+Licences: Parakeet TDT 0.6B v3 is CC BY 4.0, Silero VAD is MIT, and sherpa-onnx and MediaPipe are Apache-2.0.
+
 ## Linux sandboxes
 
 **Terminal → Sandboxes…** creates small Linux machines for playing with Python and scripts, isolated from your Mac. They need macOS on Apple Silicon.

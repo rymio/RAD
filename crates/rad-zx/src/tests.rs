@@ -225,6 +225,27 @@ fn every_tape_kind_loads_on_48k_and_128k() {
 }
 
 #[test]
+fn long_pauses_dont_stop_the_tape() {
+    // Pauses of several seconds between blocks (Speedlock tapes have them): once fed to the
+    // ULA as single pulses, they overflowed SPECTRUSTY's timestamps and stopped the emulator.
+    let [h, d] = <[Vec<u8>; 2]>::try_from(rom_blocks()).unwrap();
+    let mut a = vec![0x10];
+    w16(&mut a, 8000);
+    w16(&mut a, h.len() as u32);
+    a.extend(&h);
+    let mut b = vec![0x20];
+    w16(&mut b, 6000);
+    let mut c = vec![0x10];
+    w16(&mut c, 9000);
+    w16(&mut c, d.len() as u32);
+    c.extend(&d);
+    let file = tzx([a, b, c]);
+    for model in [Model::Spectrum48, Model::Spectrum128] {
+        assert!(load_and_run(model, "pauses.tzx", &file).is_some(), "{model:?} didn't load it");
+    }
+}
+
+#[test]
 fn picture_and_sound() {
     let mut zx = Spectrum::new(Model::Spectrum48);
     let (w, h) = zx.size();
@@ -447,4 +468,56 @@ fn spots_a_crash() {
     let boot = zx.screen_text();
     let r = BasicRun { started: true, report: None, screen: boot };
     assert!(r.crashed());
+}
+
+/// Debugging a real tape: RAD_TZX=<file> cargo test -p rad-zx debug_tape -- --ignored --nocapture
+#[test]
+#[ignore]
+fn debug_tape() {
+    let path = std::env::var("RAD_TZX").unwrap();
+    let data = std::fs::read(&path).unwrap();
+    let blocks = tzx::parse(&data).unwrap();
+    for (i, d) in tzx::describe(&blocks).iter().enumerate() {
+        println!("block {i}: {d}");
+    }
+    for (i, b) in blocks.iter().enumerate() {
+        let d = match b {
+            tzx::Block::Pulses(p) => format!("pulses x{} first {:?}", p.len(), p.first()),
+            tzx::Block::Data { zero, one, used_bits, data } => format!("data {} bytes zero {zero} one {one} bits {used_bits}", data.len()),
+            tzx::Block::Direct { tstates_per_sample, data, .. } => format!("direct {} bytes @{tstates_per_sample}", data.len()),
+            tzx::Block::Symbols(s) => format!("symbols x{}", s.len()),
+            other => format!("{other:?}").chars().take(80).collect(),
+        };
+        println!("  [{i}] {d}");
+    }
+    let mut zx = Spectrum::new(Model::Spectrum48);
+    zx.load(&path, &data).unwrap();
+    let mut after = 0;
+    for sec in 1..=600u32 {
+        for _ in 0..50 {
+            zx.run_frame();
+            zx.skip_audio();
+        }
+        if zx.tape_state().is_some_and(|(p, pr, _)| !p && pr > 0.99) {
+            after += 1;
+            if after > 15 {
+                break;
+            }
+        }
+        if sec % 20 == 0 {
+            let t = zx.tape_state().map(|(p, pr, _)| (p, pr));
+            println!("{sec}s pc {:04x} turbo {} tape {:?} screen {:?}", zx.pc(), zx.is_turbo(), t, zx.screen_text().first());
+        }
+    }
+    println!("end pc {:04x} tape {:?}", zx.pc(), zx.tape_state().map(|(p, pr, _)| (p, pr)));
+    if let Ok(out) = std::env::var("RAD_ZX_OUT") {
+        let (w, h) = zx.size();
+        let mut px = vec![0u8; w * h];
+        zx.render(&mut px);
+        let mut ppm = format!("P6 {w} {h} 255\n").into_bytes();
+        for p in px {
+            ppm.extend(PALETTE[p as usize]);
+        }
+        std::fs::write(out, ppm).unwrap();
+    }
 }

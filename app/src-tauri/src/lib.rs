@@ -25,6 +25,7 @@ mod zxlab;
 mod secrets;
 mod terminal;
 mod term_agent;
+mod stt;
 mod tray;
 mod tts;
 mod vpn;
@@ -331,6 +332,7 @@ pub fn run() {
             app.manage(terminal::Terminals::default());
             app.manage(term_agent::Agents::default());
             app.manage(tts::Tts::default());
+            app.manage(stt::Stt::default());
             app.manage(sandbox::Sandboxes::default());
             app.manage(containers::Containers::default());
             app.manage(sidex::Sidex::default());
@@ -456,6 +458,13 @@ pub fn run() {
             tts::tts_speak,
             tts::tts_add_voice,
             tts::tts_delete_voice,
+            stt::stt_status,
+            stt::stt_download,
+            stt::stt_remove,
+            stt::stt_listen,
+            stt::stt_stop,
+            stt::stt_pause,
+            stt::stt_finish,
             sandbox::sandbox_status,
             sandbox::sandbox_create,
             sandbox::sandbox_reset,
@@ -566,6 +575,7 @@ pub fn run() {
                 app.state::<c64::C64State>().stop();
                 app.state::<dos::Dos>().stop();
                 app.state::<tts::Tts>().stop();
+                app.state::<stt::Stt>().stop();
                 let st = app.state::<App>();
                 st.client.set_session(None);
                 let emb = tauri::async_runtime::block_on(async { st.embedded.lock().await.take() });

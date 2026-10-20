@@ -8,7 +8,7 @@
   import Menu from './Menu.svelte';
   import Modal from './Modal.svelte';
   import VpnToggle from './VpnToggle.svelte';
-  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, Cog, FileCode, Code, Database, Gamepad2, Joystick, Microscope, Keyboard, FlaskConical, Computer } from '@lucide/svelte';
+  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, Cog, FileCode, Code, Database, Gamepad2, Joystick, Microscope, Keyboard, FlaskConical, Computer, ScanFace } from '@lucide/svelte';
 
   let newProjectOpen = $state(false);
   let npName = $state('');
@@ -94,6 +94,9 @@
   </button>
 
   <div class="scroll">
+    <button class="item web" class:active={store.route.kind === 'gilgamesh'} onclick={() => store.navigate({ kind: 'gilgamesh' })}>
+      <ScanFace size={15} /> <span class="spacer">Gilgamesh</span>
+    </button>
     <button class="item web" class:active={store.route.kind === 'browser'} onclick={() => store.navigate({ kind: 'browser' })}>
       <Globe size={15} /> <span class="spacer">Web Browser</span>
     </button>

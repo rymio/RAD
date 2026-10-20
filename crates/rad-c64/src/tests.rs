@@ -233,3 +233,63 @@ fn loads_from_tape() {
     assert_eq!(c.border_color(), 8, "{:?}", c.screen_text());
     assert!(c.tape_state().unwrap().1 > 0.9);
 }
+
+/// Debugging a real disk: RAD_D64=<file> cargo test -p rad-c64 debug_d64 -- --ignored --nocapture
+#[test]
+#[ignore]
+fn debug_d64() {
+    let path = std::env::var("RAD_D64").unwrap();
+    let data = std::fs::read(&path).unwrap();
+    let d = formats::D64::parse(&data).unwrap();
+    println!("title {:?}", d.title());
+    for e in d.directory() {
+        let f = d.read(&e);
+        println!("{:<18} {} {:>4} blocks  load ${:04x}  {} bytes", e.name, e.kind, e.blocks, u16::from_le_bytes([f.first().copied().unwrap_or(0), f.get(1).copied().unwrap_or(0)]), f.len());
+    }
+    let mut c = C64::new(open());
+    c.load("game.d64", &data).unwrap();
+    let out = std::env::var("RAD_OUT").unwrap_or_else(|_| "/tmp".into());
+    let (w, h) = c.size();
+    let mut px = vec![0u8; w * h];
+    for sec in 1..=30u32 {
+        // Press space, then fire, now and then (title screens).
+        match sec {
+            10 | 20 => c.set_keys(&[keys::named("SPACE").unwrap()]),
+            11 | 21 => c.set_keys(&[]),
+            14 | 24 => c.set_joystick(joy::FIRE),
+            15 | 25 => c.set_joystick(0),
+            _ => {}
+        }
+        frames(&mut c, 50);
+        if sec % 3 == 0 {
+            c.render(&mut px);
+            let mut ppm = format!("P6 {w} {h} 255\n").into_bytes();
+            for p in &px {
+                ppm.extend(PALETTE[*p as usize]);
+            }
+            std::fs::write(format!("{out}/c64_{sec:02}.ppm"), ppm).unwrap();
+            println!("--- {sec}s pc ${:04x} starting {} jammed {} screen {:?}", c.pc(), c.is_starting(), c.jammed(), c.screen_text());
+        }
+    }
+}
+
+#[test]
+fn autostarts_like_a_c64() {
+    // A loader over $02A7–$0303 that points BASIC's main-loop vector ($0302) at itself: after
+    // LOAD"*",8,1 the C64 runs it straight away (whatever BASIC the ROMs have), and RAD doesn't
+    // type RUN into it. It sets a green border and waits.
+    let mut prg = vec![0xa7, 0x02];
+    let code = [0xa9, 0x05, 0x8d, 0x20, 0xd0, 0x4c, 0xac, 0x02]; // lda #5 / sta $d020 / jmp *
+    let mut body = vec![0u8; 0x0304 - 0x02a7];
+    body[..code.len()].copy_from_slice(&code);
+    body[0x0302 - 0x02a7] = 0xa7;
+    body[0x0303 - 0x02a7] = 0x02;
+    prg.extend(body);
+    let d = formats::D64::build("auto", "aa", &[("boot", &prg)]).unwrap();
+    let mut c = C64::new(open());
+    c.load("auto.d64", &d.data).unwrap();
+    frames(&mut c, 300);
+    assert_eq!(c.border_color(), 5, "{:?}", c.screen_text());
+    assert!(!c.is_starting());
+    assert!(!c.screen_text().iter().any(|r| r == "RUN"), "RUN wasn't typed: {:?}", c.screen_text());
+}

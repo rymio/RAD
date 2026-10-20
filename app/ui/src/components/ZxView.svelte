@@ -67,6 +67,7 @@
       fit();
     }
     if (m.status) status = m.status;
+    if (m.error) store.toast('error', 'ZX Spectrum', m.error);
   }
 
   function draw() {

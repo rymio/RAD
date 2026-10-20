@@ -193,32 +193,18 @@ fn run(rx: Receiver<Cmd>, model: Model) {
             continue;
         }
 
-        if zx.is_turbo() {
-            // Fast loading: as many frames as fit in one frame's time, silently.
-            let until = Instant::now() + FRAME;
-            sound.queue.lock().unwrap().clear();
-            while zx.is_turbo() && Instant::now() < until {
-                zx.run_frame();
-                zx.skip_audio();
+        // An emulator fault (a panic) shouldn't leave the view frozen on its last picture: the
+        // Spectrum restarts and the page is told.
+        let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_frames(&mut zx, &sound, &mut samples, stats, &mut prev_mem, &out, tape_audible)));
+        if let Err(e) = ran {
+            let why = e.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| e.downcast_ref::<String>().cloned()).unwrap_or_default();
+            eprintln!("zx: the emulator stopped: {why}");
+            let model = zx.model();
+            zx = Spectrum::new(model);
+            zx.set_sample_rate(sound.rate);
+            if let Some(ch) = &out {
+                let _ = ch.send(InvokeResponseBody::Json(json!({ "error": format!("The Spectrum hit an emulator error and restarted ({why}).") }).to_string()));
             }
-        } else {
-            if stats {
-                let st = rad_zx::lab::frame_with_stats(&mut zx, &mut prev_mem);
-                if let Some(ch) = &out {
-                    let _ = ch.send(InvokeResponseBody::Json(json!({ "stats": st }).to_string()));
-                }
-            } else {
-                zx.run_frame();
-            }
-            zx.audio(&mut samples, tape_audible);
-            let mut q = sound.queue.lock().unwrap();
-            // Keep latency low: never more than ~120 ms queued.
-            let max = (sound.rate as usize * 2) * 12 / 100;
-            if q.len() + samples.len() > max {
-                let drop = (q.len() + samples.len() - max).min(q.len());
-                q.drain(..drop);
-            }
-            q.extend(samples.iter().copied());
         }
 
         // The picture, when it changed.
@@ -256,6 +242,37 @@ fn run(rx: Receiver<Cmd>, model: Model) {
             next = Instant::now();
         }
     }
+}
+
+/// One tick of the emulator thread: a frame (several while fast loading) and its sound.
+fn run_frames(zx: &mut Spectrum, sound: &Sound, samples: &mut Vec<f32>, stats: bool, prev_mem: &mut Vec<u8>, out: &Option<Channel<InvokeResponseBody>>, tape_audible: bool) {
+    if zx.is_turbo() {
+        // Fast loading: as many frames as fit in one frame's time, silently.
+        let until = Instant::now() + Duration::from_micros(19_968);
+        sound.queue.lock().unwrap().clear();
+        while zx.is_turbo() && Instant::now() < until {
+            zx.run_frame();
+            zx.skip_audio();
+        }
+        return;
+    }
+    if stats {
+        let st = rad_zx::lab::frame_with_stats(zx, prev_mem);
+        if let Some(ch) = out {
+            let _ = ch.send(InvokeResponseBody::Json(json!({ "stats": st }).to_string()));
+        }
+    } else {
+        zx.run_frame();
+    }
+    zx.audio(samples, tape_audible);
+    let mut q = sound.queue.lock().unwrap();
+    // Keep latency low: never more than ~120 ms queued.
+    let max = (sound.rate as usize * 2) * 12 / 100;
+    if q.len() + samples.len() > max {
+        let drop = (q.len() + samples.len() - max).min(q.len());
+        q.drain(..drop);
+    }
+    q.extend(samples.iter().copied());
 }
 
 fn model_of(m: &str) -> Model {

@@ -484,6 +484,9 @@ impl C64 {
         let at = u16::from_le_bytes([self.m.peek(0xbb), self.m.peek(0xbc)]);
         let name: Vec<u8> = (0..len).map(|i| self.m.peek(at.wrapping_add(i))).collect();
         let secondary = self.m.peek(0xb9);
+        // BASIC's main-loop vector before the load (autostarting programs replace it).
+        let imain = u16::from_le_bytes([self.m.ram()[0x302], self.m.ram()[0x303]]);
+        let mut autostart = None;
         let file = if name == b"$" {
             let mut v = vec![0x01, 0x08];
             v.extend(disk.d64.listing(0x0801));
@@ -505,6 +508,17 @@ impl C64 {
                     }
                 }
                 let end = start.wrapping_add(body.len() as u16);
+                // A program loaded over the vectors at $0300 that points BASIC's main loop at
+                // itself starts as soon as LOAD returns to BASIC. Some BASICs (the Open ROMs')
+                // don't go through that vector, so RAD starts it here, as a C64 would.
+                let covers = |a: u32| (start as u32) <= a && a < start as u32 + body.len() as u32;
+                if !verify && covers(0x302) && covers(0x303) {
+                    let target = u16::from_le_bytes([self.m.ram()[0x302], self.m.ram()[0x303]]);
+                    let rom = (0xa000..0xc000).contains(&target) || target >= 0xe000;
+                    if target != imain && !rom {
+                        autostart = Some(target);
+                    }
+                }
                 let [lo, hi] = end.to_le_bytes();
                 r.x = lo;
                 r.y = hi;
@@ -519,6 +533,16 @@ impl C64 {
                 r.p |= 1;
                 self.m.poke(0x90, 0x42);
             }
+        }
+        if let Some(target) = autostart {
+            // RAD's own LOAD/RUN typing is done with: the program has taken over.
+            self.steps.clear();
+            self.typing.clear();
+            self.m.poke(0xc6, 0);
+            r.s = 0xfa;
+            self.m.set_regs(&r);
+            self.m.jump(target);
+            return;
         }
         // Return to the caller (an RTS).
         let ram = self.m.ram();

@@ -1,9 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { ClientConfig } from './types';
+import { stripMoods } from './gilgamesh/text';
 
 /** Readable text: no code, links, citations or Markdown marks. */
 export function speakable(md: string): string {
-  return md
+  return stripMoods(md)
     .replace(/<think>[\s\S]*?<\/think>/g, ' ')
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/`([^`]+)`/g, '$1')

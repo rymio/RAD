@@ -190,6 +190,8 @@ struct Tape {
     pulses: tzx::Pulses,
     playing: bool,
     names: Vec<String>,
+    /// T-states of tape already handed to the ULA beyond the current frame's start.
+    ahead: u64,
 }
 
 /// What a loaded file was.
@@ -235,6 +237,7 @@ impl Spectrum {
         if let Some(t) = &mut self.tape {
             t.pulses = tzx::Pulses::new(t.blocks.clone(), self.m.cpu_hz(), self.m.model() == Model::Spectrum48);
             t.playing = false;
+            t.ahead = 0;
         }
     }
 
@@ -278,7 +281,7 @@ impl Spectrum {
                 let names = tzx::describe(&blocks);
                 // 128K-only tapes (or anything with a 128K hint) get a 128K; others the model chosen.
                 let pulses = tzx::Pulses::new(blocks.clone(), self.m.cpu_hz(), self.m.model() == Model::Spectrum48);
-                self.tape = Some(Tape { blocks, pulses, playing: false, names: names.clone() });
+                self.tape = Some(Tape { blocks, pulses, playing: false, names: names.clone(), ahead: 0 });
                 self.reset();
                 self.type_load();
                 Ok(Loaded::Tape { names })
@@ -333,6 +336,7 @@ impl Spectrum {
         if let Some(t) = &mut self.tape {
             t.pulses = tzx::Pulses::new(t.blocks.clone(), self.m.cpu_hz(), self.m.model() == Model::Spectrum48);
             t.playing = false;
+            t.ahead = 0;
         }
         self.turbo = false;
     }
@@ -377,6 +381,7 @@ impl Spectrum {
         let turbo = &mut self.turbo;
         let prev = &mut self.prev_ear_count;
         let typing_done = self.typing.is_empty();
+        let frame_ts: u64 = if self.m.model() == Model::Spectrum48 { 69_888 } else { 70_908 };
         with_zx!(&mut self.m, zx => {
             if zx.ula.get_key_state() != keys {
                 zx.ula.set_key_state(keys);
@@ -403,12 +408,21 @@ impl Spectrum {
             }
             zx.ula.ensure_next_frame();
             if let Some(t) = tape.as_mut().filter(|t| t.playing) {
-                let mut feed = (&mut t.pulses).peekable();
-                if feed.peek().is_some() {
-                    zx.ula.feed_ear_in(&mut feed, Some(1));
-                } else {
-                    t.playing = false;
-                    *turbo = false;
+                // Only hand over more tape when what's queued runs out within two frames: each
+                // feed adds at least one pulse, and SPECTRUSTY's timestamps overflow a few
+                // seconds ahead (long pauses would get there).
+                t.ahead = t.ahead.saturating_sub(frame_ts);
+                if t.ahead < frame_ts * 2 {
+                    let mut fed = 0u64;
+                    let mut feed = (&mut t.pulses).inspect(|d| fed += d.get() as u64).peekable();
+                    if feed.peek().is_some() {
+                        zx.ula.feed_ear_in(&mut feed, Some(1));
+                    } else {
+                        t.playing = false;
+                        *turbo = false;
+                    }
+                    drop(feed);
+                    t.ahead += fed;
                 }
             }
             match trace.as_mut() {

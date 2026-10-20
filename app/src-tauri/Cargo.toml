@@ -52,6 +52,8 @@ mail-parser = "0.11"
 getrandom = "0.2"
 # Sound for the ZX Spectrum and C64 views.
 cpal = "0.18"
+# Speech to text for Gilgamesh: Silero VAD + Parakeet (onnxruntime, linked statically).
+sherpa-onnx = "=1.13.8"
 # DOS view: games added as ZIP files are unpacked onto drive C:.
 zip = { version = "9", default-features = false, features = ["deflate"] }
 
