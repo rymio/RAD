@@ -7,7 +7,7 @@
   import DocIcon from './DocIcon.svelte';
   import { Copy, Check, RotateCcw, Pencil, CircleAlert, Sparkles, Volume2, Square, Loader } from '@lucide/svelte';
   import { speech } from '../lib/speech.svelte';
-  import { stripMoods } from '../lib/gilgamesh/text';
+  import { stripTags, isGilgamesh } from '../lib/gilgamesh/text';
 
   let {
     message,
@@ -38,7 +38,7 @@
   let html = $state('');
   let raf = 0;
   $effect(() => {
-    const src = message.role === 'assistant' ? stripMoods(message.content) : message.content;
+    const src = message.role === 'assistant' && isGilgamesh(message.content) ? stripTags(message.content) : message.content;
     const n = message.citations.length;
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(() => (html = renderMarkdown(src, n)));

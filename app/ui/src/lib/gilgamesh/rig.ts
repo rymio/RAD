@@ -1,12 +1,18 @@
 // The face rig: a triangle mesh over the photo, built from the 478 face landmarks plus rings
 // around the head and the photo's border, and a set of expression shapes. Each shape moves some
 // landmarks (the "controls") and spreads smoothly to their neighbours; a frame is the rest mesh,
-// turned a little with the head, plus a weighted sum of shapes.
+// turned a little with the head, plus a weighted sum of shapes. "L" and "R" shapes are one side
+// of the face as seen in the photo (a lopsided smile, one raised brow, a wink).
 
 import Delaunator from 'delaunator';
 import type { Avatar } from './face';
 
-export const SHAPES = ['jaw', 'wide', 'round', 'smile', 'frown', 'browUp', 'blink', 'gazeX', 'gazeY'] as const;
+export const SHAPES = [
+  'jaw', 'wide', 'round', 'press',
+  'smile', 'smileL', 'smileR', 'frown', 'sad',
+  'browUp', 'browL', 'browR', 'squint', 'eyesWide',
+  'blink', 'blinkL', 'blinkR', 'gazeX', 'gazeY',
+] as const;
 export type Shape = (typeof SHAPES)[number];
 
 export interface Rig {
@@ -253,15 +259,15 @@ export function buildRig(a: Avatar): Rig {
   const smile = new Map<number, V2>();
   for (const i of LIPS) {
     const curve = Math.abs(xr(i)) ** 1.5;
-    smile.set(i, vec(0.028 * xr(i), isCorner(i) ? -0.036 : byLip(i, -0.004 - 0.014 * curve, -0.02 * curve)));
+    smile.set(i, vec(0.032 * xr(i), isCorner(i) ? -0.045 : byLip(i, -0.004 - 0.041 * curve, -0.045 * curve)));
   }
-  for (const i of CHEEK) smile.set(i, vec(0.008 * side(i), [123, 352, 147, 376].includes(i) ? -0.012 : -0.026));
+  for (const i of CHEEK) smile.set(i, vec(0.009 * side(i), [123, 352, 147, 376].includes(i) ? -0.014 : -0.03));
   for (const e of EYES) for (const i of e.lower) smile.set(i, vec(0, -0.007));
   anchor(smile, NOSE, JAW_A, JAW_B, BROW_A, BROW_B, FOREHEAD_LOW, EYES.flatMap((e) => [...e.upper, ...e.corners]));
 
   const frown = new Map<number, V2>();
   for (const i of [...CO, ...CI]) frown.set(i, vec(0, 0.022));
-  for (const i of LIPS) if (!isCorner(i)) frown.set(i, vec(0, byLip(i, 0, 0.004 * Math.abs(xr(i)))));
+  for (const i of LIPS) if (!isCorner(i)) frown.set(i, vec(0, 0.022 * Math.abs(xr(i)) ** 1.5));
   for (const i of BROW_INNER) frown.set(i, vec(-0.014 * side(i), 0.022));
   for (const i of [70, 46, 300, 276]) frown.set(i, vec(0, -0.004));
   anchor(frown, NOSE, eyeAll, FOREHEAD_TOP);
@@ -274,8 +280,9 @@ export function buildRig(a: Avatar): Rig {
 
   // Closing an eye: the upper lid, the crease above it (part way) and the iris come down to the
   // lower lid, each straight down to where the lower lid is at its own position across.
-  const blink = new Map<number, V2>();
-  for (const e of EYES) {
+  const blinkEye = EYES.map(() => new Map<number, V2>());
+  EYES.forEach((e, ei) => {
+    const blink = blinkEye[ei];
     const lid = [e.corners[0], ...e.lower, e.corners[1]].map(P).sort((a, b) => dot(a, right) - dot(b, right));
     const dropTo = (i: number, frac: number, gap: number): V2 => {
       const q = P(i), x = dot(q, right);
@@ -291,8 +298,55 @@ export function buildRig(a: Avatar): Rig {
     for (const u of e.upper) blink.set(u, dropTo(u, 1, g));
     for (const c of e.crease) blink.set(c, dropTo(c, 0.42, g));
     if (hasIris) for (const i of e.iris) blink.set(i, dropTo(i, 1, g * 0.5));
+    anchor(blink, EYES.flatMap((e) => [...e.lower, ...e.corners]), BROW_A, BROW_B);
+  });
+  // Which eye is on the left of the photo.
+  const leftEye = dot(P(EYES[0].corners[0]), right) < dot(P(EYES[1].corners[0]), right) ? 0 : 1;
+
+  // ---- more expressions
+  // Sad: the inner ends of the brows rise and meet, the mouth corners fall, the chin pushes the
+  // lower lip up a little, the upper lids droop.
+  const sad = new Map<number, V2>();
+  for (const i of BROW_INNER) sad.set(i, vec(-0.009 * side(i), -0.028));
+  for (const i of [70, 46, 300, 276, 63, 293]) sad.set(i, vec(0, 0.005));
+  for (const i of [...CO, ...CI]) sad.set(i, vec(0, 0.03));
+  for (const i of LIPS) if (!isCorner(i)) sad.set(i, vec(0, 0.03 * Math.abs(xr(i)) ** 1.5 + byLip(i, 0, -0.006 * (1 - xr(i) ** 2))));
+  for (const e of EYES) for (const i of e.upper) sad.set(i, vec(0, 0.004));
+  anchor(sad, NOSE, FOREHEAD_TOP, EYES.flatMap((e) => [...e.lower, ...e.corners, ...e.iris]));
+
+  // Squint (laughing, doubting, a real smile): lower lids and the cheek under them rise, upper
+  // lids come down a little. The bottom of the iris goes with the lower lid, so it never pokes out.
+  const squint = new Map<number, V2>();
+  // Eyes wide (surprise, excitement): upper lids and creases rise.
+  const eyesWide = new Map<number, V2>();
+  for (const e of EYES) {
+    for (const i of e.lower) squint.set(i, vec(0, -0.009));
+    for (const i of e.upper) squint.set(i, vec(0, 0.005));
+    for (const i of e.upper) eyesWide.set(i, vec(0, -0.008));
+    for (const i of e.crease) eyesWide.set(i, vec(0, -0.005));
+    if (hasIris) {
+      const c = P(e.iris[0]);
+      const r = Math.max(1, ...e.iris.map((i) => len(sub(P(i), c))));
+      for (const i of e.iris) {
+        const below = Math.max(0, dot(sub(P(i), c), down) / r);
+        squint.set(i, vec(0, -0.009 * below));
+        eyesWide.set(i, zero);
+      }
+    }
   }
-  anchor(blink, EYES.flatMap((e) => [...e.lower, ...e.corners]), BROW_A, BROW_B);
+  for (const i of [117, 118, 119, 100, 47, 346, 347, 348, 329, 277]) squint.set(i, vec(0, -0.007));
+  anchor(squint, EYES.flatMap((e) => e.corners), BROW_A, BROW_B, NOSE);
+  for (const i of [...BROW_A, ...BROW_B]) eyesWide.set(i, vec(0, -0.008));
+  anchor(eyesWide, EYES.flatMap((e) => [...e.lower, ...e.corners]), FOREHEAD_TOP);
+
+  // Pressed lips (hmm, thinking, holding back): both lips roll in and thin, corners tuck in.
+  const press = new Map<number, V2>();
+  for (const i of LIPS) {
+    const outer = UO.includes(i) || LO.includes(i) || CO.includes(i);
+    const dy = isCorner(i) ? 0 : byLip(i, outer ? 0.009 : 0.003, outer ? -0.011 : -0.004);
+    press.set(i, vec(-0.008 * xr(i), dy));
+  }
+  anchor(press, NOSE, JAW_A, JAW_B, CHEEK);
 
   const gazeX = new Map<number, V2>();
   const gazeY = new Map<number, V2>();
@@ -315,10 +369,32 @@ export function buildRig(a: Avatar): Rig {
     smile: field(smile, 0.09),
     frown: field(frown, 0.06),
     browUp: field(browUp, 0.07),
-    blink: field(blink, 0.025),
+    blink: new Float32Array(0),
+    blinkL: field(blinkEye[leftEye], 0.025),
+    blinkR: field(blinkEye[1 - leftEye], 0.025),
+    sad: field(sad, 0.06),
+    squint: field(squint, 0.035),
+    eyesWide: field(eyesWide, 0.03),
+    press: field(press, 0.05),
+    smileL: new Float32Array(0),
+    smileR: new Float32Array(0),
+    browL: new Float32Array(0),
+    browR: new Float32Array(0),
     gazeX: field(gazeX, 0.008),
     gazeY: field(gazeY, 0.008),
   };
+  shapes.blink = shapes.blinkL.map((v, k) => v + shapes.blinkR[k]);
+  // One side of the face: the shape fades out across the middle of the face.
+  const leftness = new Float32Array(n);
+  for (let v = 0; v < n; v++) {
+    const xl = dot(sub([pts[v * 2], pts[v * 2 + 1]], center), right) / faceW;
+    leftness[v] = 1 - smooth(-0.12, 0.12, xl);
+  }
+  const half = (f: Float32Array, left: boolean) => f.map((d, k) => d * (left ? leftness[k >> 1] : 1 - leftness[k >> 1]));
+  shapes.smileL = half(shapes.smile, true);
+  shapes.smileR = half(shapes.smile, false);
+  shapes.browL = half(shapes.browUp, true);
+  shapes.browR = half(shapes.browUp, false);
 
   // ---- triangles: made with the lower lip moved down a little (only the lips move), so no
   // triangle bridges the lips; the slivers between them, made only of inner-lip points, are

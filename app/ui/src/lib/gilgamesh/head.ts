@@ -1,21 +1,40 @@
 // Draws the talking head with WebGL2 and keeps it alive: blinking, glancing, small head
-// movements and breathing, a mood on the face, and lips that follow the speech track.
+// movements and breathing, a mood on the face and in the way the head is held, gestures (nod,
+// head shake, tilt, wink, laugh), small nods while listening, brows that lift on stressed words,
+// and lips that follow the speech track.
 
 import { buildRig, posed, SHAPES, type Pose, type Rig, type Shape } from './rig';
 import { sample, type Track } from './lipsync';
 import type { Avatar } from './face';
-import type { Mood } from './text';
+import type { Gesture, Mood } from './text';
 
 export type Attention = 'idle' | 'listening' | 'thinking' | 'speaking';
 
-const MOOD_SHAPES: Record<Mood, Partial<Record<Shape, number>>> = {
-  neutral: {},
-  happy: { smile: 0.75, browUp: 0.12 },
-  amused: { smile: 1, browUp: 0.3 },
-  concerned: { frown: 0.75 },
-  surprised: { browUp: 1, jaw: 0.08 },
-  thinking: { frown: 0.25, browUp: 0.15 },
+type Shapes = Partial<Record<Shape, number>>;
+
+/** Each mood: the face, and how the head is held (degrees: down, tilt; gaze down). */
+const MOODS: Record<Mood, { face: Shapes; pitch?: number; roll?: number; look?: number }> = {
+  neutral: { face: {} },
+  happy: { face: { smile: 0.85, squint: 0.35, browUp: 0.12 } },
+  amused: { face: { smile: 1, squint: 0.55, browUp: 0.25, smileL: 0.15 } },
+  excited: { face: { smile: 0.9, eyesWide: 0.7, browUp: 0.6 }, pitch: -1 },
+  concerned: { face: { frown: 0.6, sad: 0.35 }, pitch: 1 },
+  sad: { face: { sad: 1, press: 0.15 }, pitch: 2.5, look: 0.35 },
+  surprised: { face: { browUp: 1, eyesWide: 0.9, jaw: 0.12 }, pitch: -1.5 },
+  curious: { face: { browL: 0.9, smileR: 0.2, eyesWide: 0.3 }, roll: 4 },
+  skeptical: { face: { browR: 0.9, squint: 0.5, smileL: 0.45, press: 0.25 }, roll: -2, pitch: 1 },
+  thinking: { face: { press: 0.35, frown: 0.2, browL: 0.2 } },
+  playful: { face: { smileL: 0.7, smileR: 0.3, squint: 0.3, browR: 0.25 }, roll: 2 },
+  sympathetic: { face: { sad: 0.35, smile: 0.3 }, roll: 3, pitch: 1 },
+  serious: { face: { frown: 0.3, press: 0.25 } },
+  proud: { face: { smile: 0.55, squint: 0.2, press: 0.15 }, pitch: -2.5 },
 };
+
+/** How long each gesture takes, in ms. */
+const GESTURE_MS: Record<Gesture | 'ack', number> = { nod: 900, shake: 1100, tilt: 2600, wink: 450, laugh: 1400, ack: 700 };
+
+/** Small expressions now and then while idle or listening. */
+const IDLE: Shapes[] = [{ press: 0.25 }, { smile: 0.2 }, { browUp: 0.2 }, { smileL: 0.25 }, { squint: 0.2 }];
 
 const FACE_VS = `#version 300 es
 in vec2 pos; in vec2 uv;
@@ -127,6 +146,13 @@ export class Head {
   speech: { track: Track; time: () => number } | null = null;
 
   private cur: Record<Shape, number> = Object.fromEntries(SHAPES.map((s) => [s, 0])) as Record<Shape, number>;
+  private shownMood: Mood = 'neutral';
+  private gestures: { name: Gesture | 'ack'; start: number }[] = [];
+  private headBias = { pitch: 0, roll: 0, look: 0 };
+  private lastEnergy = 0;
+  private flashAt = -1e9;
+  private idle: { shapes: Shapes; start: number; ms: number } | null = null;
+  private nextIdle = performance.now() + 6000;
   private nextBlink = performance.now() + 1500;
   private blinkStart = -1;
   private gaze = { x: 0, y: 0, tx: 0, ty: 0, next: 0 };
@@ -236,6 +262,63 @@ export class Head {
     this.blinkStart = performance.now();
   }
 
+  gesture(name: Gesture) {
+    const now = performance.now();
+    this.gestures = this.gestures.filter((g) => g.name !== name && now - g.start < GESTURE_MS[g.name]);
+    this.gestures.push({ name, start: now });
+  }
+
+  /** A small nod: "I'm following". */
+  acknowledge() {
+    const now = performance.now();
+    if (this.gestures.some((g) => now - g.start < GESTURE_MS[g.name])) return;
+    this.gestures.push({ name: 'ack', start: now });
+  }
+
+  /** Shapes and head movement from the gestures under way. */
+  private gestureOffsets(now: number) {
+    const add: Shapes = {};
+    const plus = (s: Shape, v: number) => (add[s] = (add[s] ?? 0) + v);
+    let pitch = 0, yaw = 0, roll = 0;
+    const deg = Math.PI / 180;
+    this.gestures = this.gestures.filter((g) => now - g.start < GESTURE_MS[g.name]);
+    for (const g of this.gestures) {
+      const u = (now - g.start) / GESTURE_MS[g.name];
+      const env = Math.sin(Math.PI * Math.min(1, u * 1.2));
+      switch (g.name) {
+        case 'nod':
+          pitch += 4 * deg * Math.sin(2 * Math.PI * 2 * u) * (1 - u);
+          break;
+        case 'ack':
+          pitch += 1.6 * deg * Math.sin(2 * Math.PI * u) * (1 - u);
+          plus('smile', 0.1 * env);
+          break;
+        case 'shake':
+          yaw += 6 * deg * Math.sin(2 * Math.PI * 1.5 * u) * (1 - u) ** 0.7;
+          break;
+        case 'tilt':
+          roll += 5 * deg * Math.min(1, u / 0.12, (1 - u) / 0.2);
+          plus('browL', 0.3 * env);
+          break;
+        case 'wink': {
+          const t = u * GESTURE_MS.wink;
+          plus('blinkL', t < 90 ? t / 90 : t < 210 ? 1 : Math.max(0, 1 - (t - 210) / 240));
+          plus('smileL', 0.45 * env);
+          plus('squint', 0.15 * env);
+          break;
+        }
+        case 'laugh':
+          plus('smile', 0.55 * env);
+          plus('squint', 0.55 * env);
+          plus('browUp', 0.2 * env);
+          plus('jaw', 0.2 * Math.abs(Math.sin(2 * Math.PI * 3.5 * u)) * (1 - u));
+          pitch += -1.5 * deg * Math.abs(Math.sin(2 * Math.PI * 3.5 * u)) * (1 - u);
+          break;
+      }
+    }
+    return { add, pitch, yaw, roll };
+  }
+
   private pose(now: number): Pose {
     const t = (now - this.start) / 1000;
     const speaking = this.attention === 'speaking' && this.speech;
@@ -246,26 +329,58 @@ export class Head {
 
     // ---- target shapes: mood + attention + speech
     const target: Record<Shape, number> = Object.fromEntries(SHAPES.map((s) => [s, 0])) as Record<Shape, number>;
-    const mood = this.attention === 'thinking' ? 'thinking' : this.mood;
-    for (const [s, v] of Object.entries(MOOD_SHAPES[mood])) target[s as Shape] += v;
+    const mood: Mood = this.attention === 'thinking' ? 'thinking' : this.mood;
+    if (mood !== this.shownMood) {
+      this.shownMood = mood;
+      if (mood === 'playful') this.gesture('wink');
+    }
+    const m = MOODS[mood] ?? MOODS.neutral;
+    for (const [s, v] of Object.entries(m.face)) target[s as Shape] += v;
     if (this.attention === 'listening') {
       target.browUp += 0.12;
       target.smile += 0.12;
     }
+    // Small expressions now and then, when nothing else is going on.
+    if (!speaking && this.attention !== 'thinking' && mood === 'neutral' && !this.gestures.length) {
+      if (!this.idle && now >= this.nextIdle) this.idle = { shapes: IDLE[Math.floor(Math.random() * IDLE.length)], start: now, ms: rand(1200, 2200) };
+    }
+    if (this.idle) {
+      const u = (now - this.idle.start) / this.idle.ms;
+      if (u >= 1) {
+        this.idle = null;
+        this.nextIdle = now + rand(7000, 14000);
+      } else for (const [s, v] of Object.entries(this.idle.shapes)) target[s as Shape] += v * Math.sin(Math.PI * u);
+    }
     // Talking: less smile, so the lips can move.
-    if (speaking) target.smile *= 0.6;
+    if (speaking) {
+      target.smile *= 0.6;
+      target.smileL *= 0.6;
+      target.smileR *= 0.6;
+      target.press *= 0.3;
+    }
     const jaw = lips(tr?.jaw);
     target.jaw += jaw;
     target.wide += lips(tr?.wide) * 0.9;
     target.round += lips(tr?.round) * 0.9;
     target.browUp += energy * 0.12;
+    // The brows lift on some stressed words (a sudden rise in loudness).
+    if (speaking && energy - this.lastEnergy > 0.18 && now - this.flashAt > 1800 && Math.random() < 0.5) this.flashAt = now;
+    this.lastEnergy += (energy - this.lastEnergy) * 0.25;
+    const flash = now - this.flashAt;
+    if (flash < 450) target.browUp += 0.35 * Math.sin((Math.PI * flash) / 450);
 
     // Ease toward the targets: the mouth follows the track closely, the rest more slowly.
     for (const s of SHAPES) {
-      if (s === 'blink' || s === 'gazeX' || s === 'gazeY') continue;
+      if (s === 'blink' || s === 'blinkL' || s === 'blinkR' || s === 'gazeX' || s === 'gazeY') continue;
       const k = s === 'jaw' || s === 'wide' || s === 'round' ? 0.6 : 0.08;
       this.cur[s] += (target[s] - this.cur[s]) * k;
     }
+    // The head is held differently in some moods.
+    const hb = this.headBias;
+    hb.pitch += ((m.pitch ?? 0) - hb.pitch) * 0.04;
+    hb.roll += ((m.roll ?? 0) - hb.roll) * 0.04;
+    hb.look += ((m.look ?? 0) - hb.look) * 0.06;
+    const gst = this.gestureOffsets(now);
 
     // ---- blinking: every 2–6 s, sometimes twice
     if (now >= this.nextBlink) {
@@ -278,7 +393,9 @@ export class Head {
       blink = b < 70 ? b / 70 : b < 170 ? 1 - (b - 70) / 100 : 0;
       if (b >= 170) this.blinkStart = -1;
     }
-    this.cur.blink = blink;
+    this.cur.blink = 0;
+    this.cur.blinkL = blink;
+    this.cur.blinkR = blink;
 
     // ---- where the eyes look: mostly at the user, with small glances
     const g = this.gaze;
@@ -298,18 +415,24 @@ export class Head {
     g.x += (g.tx - g.x) * 0.35;
     g.y += (g.ty - g.y) * 0.35;
     this.cur.gazeX = g.x;
-    this.cur.gazeY = g.y + blink * 0.3;
+    this.cur.gazeY = g.y + blink * 0.3 + hb.look;
 
     // ---- head: slow sway, breathing, nodding along with speech
     const calm = this.attention === 'listening' ? 0.6 : 1;
     this.nod += ((speaking ? energy : 0) - this.nod) * 0.06;
     const deg = Math.PI / 180;
+    const shapes = { ...this.cur };
+    for (const [s, v] of Object.entries(gst.add)) shapes[s as Shape] += v;
+    shapes.blinkL = Math.min(1, shapes.blinkL);
+    shapes.blinkR = Math.min(1, shapes.blinkR);
+    // A closing eye takes the squint with it (the lids would cross).
+    shapes.squint *= 1 - Math.max(shapes.blinkL, shapes.blinkR);
     return {
-      yaw: wiggle(t, 1.3) * 2.2 * deg * calm + g.x * 1.0 * deg,
-      pitch: wiggle(t, 4.1) * 1.5 * deg * calm + this.nod * 2.2 * deg + (this.attention === 'thinking' ? -1.5 * deg : 0),
-      roll: wiggle(t, 7.7) * 1.2 * deg * calm + (this.attention === 'listening' ? 1.2 * deg : 0),
+      yaw: wiggle(t, 1.3) * 2.2 * deg * calm + g.x * 1.0 * deg + gst.yaw,
+      pitch: wiggle(t, 4.1) * 1.5 * deg * calm + this.nod * 2.2 * deg + (this.attention === 'thinking' ? -1.5 * deg : 0) + hb.pitch * deg + gst.pitch,
+      roll: wiggle(t, 7.7) * 1.2 * deg * calm + (this.attention === 'listening' ? 1.2 * deg : 0) + hb.roll * deg + gst.roll,
       lift: Math.sin(t * ((2 * Math.PI) / 4.6)) * 0.0025,
-      shapes: { ...this.cur },
+      shapes,
     };
   }
 

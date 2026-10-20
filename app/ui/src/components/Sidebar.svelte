@@ -3,12 +3,13 @@
   import { musicEngine } from '../lib/media.svelte';
   import { api } from '../lib/api';
   import { dayBucket, PROJECT_COLORS } from '../lib/util';
-  import type { Chat } from '../lib/types';
+  import type { Chat, Route } from '../lib/types';
   import Logo from './Logo.svelte';
   import Menu from './Menu.svelte';
   import Modal from './Modal.svelte';
   import VpnToggle from './VpnToggle.svelte';
-  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, Cog, FileCode, Code, Database, Gamepad2, Joystick, Microscope, Keyboard, FlaskConical, Computer, ScanFace } from '@lucide/svelte';
+  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, Cog, FileCode, Code, Database, Gamepad2, Joystick, Microscope, Keyboard, FlaskConical, Computer, ScanFace, ChevronRight, AppWindow, MonitorPlay, Wrench, Cpu } from '@lucide/svelte';
+  import type { Component } from 'svelte';
 
   let newProjectOpen = $state(false);
   let npName = $state('');
@@ -18,6 +19,78 @@
   let showArchived = $state(false);
 
   const isMac = document.documentElement.dataset.os === 'macos';
+
+  // ---- the app's views: everyday ones at the top, the rest in groups that fold away
+  interface View { label: string; icon: Component<any>; route: Route }
+  const same = (a: Route, b: Route) => a.kind === b.kind && (a.kind !== 'container' || (b.kind === 'container' && a.type === b.type));
+  const isActive = (v: View) => same(store.route, v.route);
+
+  const MAIN: View[] = [
+    { label: 'Gilgamesh', icon: ScanFace, route: { kind: 'gilgamesh' } },
+    { label: 'Terminal', icon: SquareTerminal, route: { kind: 'terminal' } },
+    { label: 'Files', icon: FolderOpen, route: { kind: 'files' } },
+    { label: 'Calendar', icon: CalendarDays, route: { kind: 'calendar' } },
+    { label: 'Email', icon: Mail, route: { kind: 'email' } },
+  ];
+  const GROUPS: { id: string; label: string; icon: Component<any>; views: View[] }[] = [
+    {
+      id: 'browsers', label: 'Browsers', icon: AppWindow, views: [
+        { label: 'Web Browser', icon: Globe, route: { kind: 'browser' } },
+        { label: 'Chromium', icon: Compass, route: { kind: 'chromium' } },
+        { label: 'TOR', icon: Shield, route: { kind: 'tor' } },
+      ],
+    },
+    {
+      id: 'media', label: 'Media', icon: MonitorPlay, views: [
+        { label: 'Music', icon: Music, route: { kind: 'music' } },
+        { label: 'Video', icon: Clapperboard, route: { kind: 'video' } },
+      ],
+    },
+    {
+      id: 'emulators', label: 'Emulators', icon: Cpu, views: [
+        { label: 'ZX Spectrum', icon: Joystick, route: { kind: 'zx' } },
+        { label: 'Spectrum Lab', icon: Microscope, route: { kind: 'zxlab' } },
+        { label: 'Commodore 64', icon: Keyboard, route: { kind: 'c64' } },
+        { label: 'C64 Lab', icon: FlaskConical, route: { kind: 'c64lab' } },
+        { label: 'DOS PC', icon: Computer, route: { kind: 'dos' } },
+      ],
+    },
+    {
+      id: 'dev', label: 'Development', icon: Wrench, views: [
+        { label: 'SideX', icon: Code, route: { kind: 'sidex' } },
+        { label: 'Games', icon: Gamepad2, route: { kind: 'games' } },
+        { label: 'Database', icon: Database, route: { kind: 'database' } },
+        { label: 'Rust Container', icon: Cog, route: { kind: 'container', type: 'rust' } },
+        { label: 'Python Container', icon: FileCode, route: { kind: 'container', type: 'python' } },
+      ],
+    },
+    {
+      id: 'rymnet', label: 'Rymnet', icon: Network, views: [
+        { label: 'RYMNET', icon: Network, route: { kind: 'rymnet' } },
+        { label: 'RYMWIN', icon: Monitor, route: { kind: 'rymwin' } },
+      ],
+    },
+  ];
+
+  // Which groups are open is remembered on this computer.
+  const OPEN_KEY = 'rad-sidebar-groups';
+  let open = $state<Record<string, boolean>>(
+    (() => {
+      try {
+        return JSON.parse(localStorage.getItem(OPEN_KEY) ?? '{}');
+      } catch {
+        return {};
+      }
+    })(),
+  );
+  function toggleGroup(id: string) {
+    open = { ...open, [id]: !open[id] };
+    try {
+      localStorage.setItem(OPEN_KEY, JSON.stringify(open));
+    } catch {
+      // Not remembered this time.
+    }
+  }
 
   const activeProjects = $derived(store.projects.filter((p) => !p.archived));
   const archived = $derived(store.projects.filter((p) => p.archived));
@@ -94,73 +167,27 @@
   </button>
 
   <div class="scroll">
-    <button class="item web" class:active={store.route.kind === 'gilgamesh'} onclick={() => store.navigate({ kind: 'gilgamesh' })}>
-      <ScanFace size={15} /> <span class="spacer">Gilgamesh</span>
-    </button>
-    <button class="item web" class:active={store.route.kind === 'browser'} onclick={() => store.navigate({ kind: 'browser' })}>
-      <Globe size={15} /> <span class="spacer">Web Browser</span>
-    </button>
-    <button class="item web" class:active={store.route.kind === 'chromium'} onclick={() => store.navigate({ kind: 'chromium' })}>
-      <Compass size={15} /> <span class="spacer">Chromium</span>
-    </button>
-    <button class="item web" class:active={store.route.kind === 'tor'} onclick={() => store.navigate({ kind: 'tor' })}>
-      <Shield size={15} /> <span class="spacer">TOR</span>
-    </button>
-    <button class="item web" class:active={store.route.kind === 'terminal'} onclick={() => store.navigate({ kind: 'terminal' })}>
-      <SquareTerminal size={15} /> <span class="spacer">Terminal</span>
-    </button>
-    <button class="item web" class:active={store.route.kind === 'games'} onclick={() => store.navigate({ kind: 'games' })}>
-      <Gamepad2 size={15} /> <span class="spacer">Games</span>
-    </button>
-    <button class="item web" class:active={store.route.kind === 'zx'} onclick={() => store.navigate({ kind: 'zx' })}>
-      <Joystick size={15} /> <span class="spacer">ZX Spectrum</span>
-    </button>
-    <button class="item web" class:active={store.route.kind === 'zxlab'} onclick={() => store.navigate({ kind: 'zxlab' })}>
-      <Microscope size={15} /> <span class="spacer">Spectrum Lab</span>
-    </button>
-    <button class="item web" class:active={store.route.kind === 'c64'} onclick={() => store.navigate({ kind: 'c64' })}>
-      <Keyboard size={15} /> <span class="spacer">Commodore 64</span>
-    </button>
-    <button class="item web" class:active={store.route.kind === 'c64lab'} onclick={() => store.navigate({ kind: 'c64lab' })}>
-      <FlaskConical size={15} /> <span class="spacer">C64 Lab</span>
-    </button>
-    <button class="item web" class:active={store.route.kind === 'dos'} onclick={() => store.navigate({ kind: 'dos' })}>
-      <Computer size={15} /> <span class="spacer">DOS PC</span>
-    </button>
-    <button class="item web" class:active={store.route.kind === 'database'} onclick={() => store.navigate({ kind: 'database' })}>
-      <Database size={15} /> <span class="spacer">Database</span>
-    </button>
-    <button class="item web" class:active={store.route.kind === 'sidex'} onclick={() => store.navigate({ kind: 'sidex' })}>
-      <Code size={15} /> <span class="spacer">SideX</span>
-    </button>
-    <button class="item web" class:active={store.route.kind === 'container' && store.route.type === 'rust'} onclick={() => store.navigate({ kind: 'container', type: 'rust' })}>
-      <Cog size={15} /> <span class="spacer">Rust Container</span>
-    </button>
-    <button class="item web" class:active={store.route.kind === 'container' && store.route.type === 'python'} onclick={() => store.navigate({ kind: 'container', type: 'python' })}>
-      <FileCode size={15} /> <span class="spacer">Python Container</span>
-    </button>
-    <button class="item web" class:active={store.route.kind === 'files'} onclick={() => store.navigate({ kind: 'files' })}>
-      <FolderOpen size={15} /> <span class="spacer">Files</span>
-    </button>
-    <button class="item web" class:active={store.route.kind === 'calendar'} onclick={() => store.navigate({ kind: 'calendar' })}>
-      <CalendarDays size={15} /> <span class="spacer">Calendar</span>
-    </button>
-    <button class="item web" class:active={store.route.kind === 'email'} onclick={() => store.navigate({ kind: 'email' })}>
-      <Mail size={15} /> <span class="spacer">Email</span>
-    </button>
-    <button class="item web" class:active={store.route.kind === 'music'} onclick={() => store.navigate({ kind: 'music' })}>
-      <Music size={15} /> <span class="spacer">Music</span>
-      {#if musicEngine.status.state === 'playing'}<span class="playing" title="Playing"><i></i><i></i><i></i></span>{/if}
-    </button>
-    <button class="item web" class:active={store.route.kind === 'video'} onclick={() => store.navigate({ kind: 'video' })}>
-      <Clapperboard size={15} /> <span class="spacer">Video</span>
-    </button>
-    <button class="item web" class:active={store.route.kind === 'rymnet'} onclick={() => store.navigate({ kind: 'rymnet' })}>
-      <Network size={15} /> <span class="spacer">RYMNET</span>
-    </button>
-    <button class="item web" class:active={store.route.kind === 'rymwin'} onclick={() => store.navigate({ kind: 'rymwin' })}>
-      <Monitor size={15} /> <span class="spacer">RYMWIN</span>
-    </button>
+    {#snippet view(v: View, sub = false)}
+      <button class="item web" class:sub-item={sub} class:active={isActive(v)} onclick={() => store.navigate(v.route)}>
+        <v.icon size={15} /> <span class="spacer">{v.label}</span>
+        {#if v.route.kind === 'music' && musicEngine.status.state === 'playing'}<span class="playing" title="Playing"><i></i><i></i><i></i></span>{/if}
+      </button>
+    {/snippet}
+    {#each MAIN as v}{@render view(v)}{/each}
+    {#each GROUPS as g (g.id)}
+      {@const inside = g.views.some(isActive)}
+      <button class="item web group" aria-expanded={!!open[g.id]} onclick={() => toggleGroup(g.id)}>
+        <g.icon size={15} /> <span class="spacer">{g.label}</span>
+        {#if g.id === 'media' && !open[g.id] && musicEngine.status.state === 'playing'}<span class="playing" title="Playing"><i></i><i></i><i></i></span>{/if}
+        <span class="chev" class:open={open[g.id]}><ChevronRight size={14} /></span>
+      </button>
+      {#if open[g.id]}
+        {#each g.views as v}{@render view(v, true)}{/each}
+      {:else if inside}
+        <!-- A folded group still shows the view that's open. -->
+        {#each g.views.filter(isActive) as v}{@render view(v, true)}{/each}
+      {/if}
+    {/each}
     <div class="sect">
       <div class="sect-h">
         <span class="section-title">Projects</span>
@@ -371,6 +398,22 @@
   }
   .item.web :global(svg) {
     color: var(--accent);
+  }
+  .item.sub-item {
+    padding-left: 22px;
+    height: 30px;
+  }
+  .chev {
+    display: grid;
+    place-items: center;
+    color: var(--text-4);
+    transition: transform var(--t-fast) var(--ease);
+  }
+  .chev :global(svg) {
+    color: var(--text-4);
+  }
+  .chev.open {
+    transform: rotate(90deg);
   }
   .item.empty,
   .item.sub {

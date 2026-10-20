@@ -7,7 +7,9 @@
   import { gilgamesh } from '../lib/gilgamesh/gilgamesh.svelte';
   import { prepareAvatar, avatarImage } from '../lib/gilgamesh/face';
   import { Head } from '../lib/gilgamesh/head';
-  import { Mic, MicOff, ImageUp, SlidersHorizontal, RotateCcw, Loader, Download, Headphones, SendHorizontal, MessageSquareText, Hand, Square, X, CircleAlert, ScanFace } from '@lucide/svelte';
+  import { MOODS, GESTURES, type Mood, type Gesture } from '../lib/gilgamesh/text';
+  import type { Citation } from '../lib/types';
+  import { Mic, MicOff, ImageUp, SlidersHorizontal, RotateCcw, Loader, Download, Headphones, SendHorizontal, MessageSquareText, Hand, Square, X, CircleAlert, ScanFace, History, Trash2, FileText, MessageSquare, Check } from '@lucide/svelte';
 
   interface TtsStatus { installed: boolean; engine: boolean; dev_build: boolean; bytes: number; downloading: { done: number; total: number } | null; voices: { key: string; name: string }[] }
   interface SttStatus { installed: boolean; bytes: number; downloading: { done: number; total: number } | null }
@@ -25,6 +27,9 @@
   let typed = $state('');
   let headError = $state<string | null>(null);
   let transcriptEl = $state<HTMLDivElement | null>(null);
+  let panel = $state<'now' | 'earlier'>('now');
+  let confirmForget = $state<number | null>(null);
+  let previewTimer: ReturnType<typeof setTimeout> | undefined;
 
   const g = gilgamesh;
   const ready = $derived(!!tts?.installed && !!tts?.engine && !!stt?.installed);
@@ -37,10 +42,40 @@
       case 'starting': return 'Starting…';
       case 'listening': return ptt ? (g.holding ? 'Listening…' : 'Hold Space to talk') : 'Listening';
       case 'hearing': return 'Hearing you…';
-      case 'thinking': return 'Thinking…';
+      case 'thinking': return g.status || 'Thinking…';
       case 'speaking': return g.settings.headphones || ptt ? 'Speaking — talk to interrupt' : 'Speaking';
     }
   });
+
+  const titleOf = (t: string) => t.replace(/^Gilgamesh:\s*/, '') || 'Conversation';
+  function when(ms: number) {
+    const d = new Date(ms), now = new Date();
+    const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    const days = Math.round((new Date(now.toDateString()).getTime() - new Date(d.toDateString()).getTime()) / 864e5);
+    if (days === 0) return `Today ${time}`;
+    if (days === 1) return `Yesterday ${time}`;
+    return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
+  }
+
+  function openSource(c: Citation) {
+    if (c.chat_id) store.navigate({ kind: 'chat', id: c.chat_id });
+    else store.navigate({ kind: 'project', id: c.project_id, doc: c.document_id });
+  }
+
+  async function resume(id: number) {
+    panel = 'now';
+    await g.resume(id);
+  }
+
+  /** Shows a mood (for a few seconds) or a gesture on the face. */
+  function preview(x: Mood | Gesture) {
+    const h = g.head;
+    if (!h) return;
+    if ((GESTURES as readonly string[]).includes(x)) return h.gesture(x as Gesture);
+    h.mood = x as Mood;
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(() => g.head && g.phase !== 'speaking' && (g.head.mood = 'neutral'), 3500);
+  }
 
   async function refresh() {
     [tts, stt] = await Promise.all([invoke<TtsStatus>('tts_status').catch(() => null), invoke<SttStatus>('stt_status').catch(() => null)]);
@@ -266,14 +301,55 @@
 
       {#if showTranscript}
         <aside class="transcript">
-          <div class="th">Conversation</div>
-          <div class="turns selectable" bind:this={transcriptEl}>
-            {#each g.turns as t}
-              <div class="turn {t.who}"><span class="who">{t.who === 'you' ? 'You' : 'Gilgamesh'}</span><p>{t.text}</p></div>
-            {:else}
-              <p class="empty">What you say and his answers appear here. The conversation is also saved as the “Gilgamesh” chat, so he remembers it.</p>
-            {/each}
+          <div class="tabs">
+            <button class:on={panel === 'now'} onclick={() => (panel = 'now')}><MessageSquareText size={13} /> This conversation</button>
+            <button class:on={panel === 'earlier'} onclick={() => (panel = 'earlier')}><History size={13} /> Earlier{#if g.conversations.length > 1}<span class="count">{g.conversations.length - (g.settings.chatId ? 1 : 0)}</span>{/if}</button>
           </div>
+          {#if panel === 'now'}
+            <div class="turns selectable" bind:this={transcriptEl}>
+              {#each g.turns as t}
+                <div class="turn {t.who}">
+                  <span class="who">{t.who === 'you' ? 'You' : 'Gilgamesh'}</span>
+                  {#if t.text}<p>{t.text}</p>{/if}
+                  {#if t.actions?.length}
+                    <div class="chips">
+                      {#each t.actions as a}<span class="chip act" class:bad={!a.ok}>{#if a.ok}<Check size={12} />{:else}<CircleAlert size={12} />{/if}{a.label}</span>{/each}
+                    </div>
+                  {/if}
+                  {#if t.sources?.length}
+                    <div class="chips">
+                      {#each t.sources as c}
+                        <button class="chip src" title={c.snippet} onclick={() => openSource(c)}>{#if c.chat_id}<MessageSquare size={12} />{:else}<FileText size={12} />{/if}<span class="truncate">{c.title}</span></button>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
+              {:else}
+                <p class="empty">What you say and his answers appear here. Gilgamesh keeps every conversation: he remembers what you talked about, knows what’s in your vault, and can take notes, add to your calendar, open things and play music when you ask.</p>
+              {/each}
+            </div>
+          {:else}
+            <div class="turns">
+              <button class="btn sm new" onclick={() => (g.newConversation(), (panel = 'now'))}><RotateCcw size={13} /> Start a new conversation</button>
+              {#each g.conversations as c (c.id)}
+                <div class="conv" class:current={c.id === g.settings.chatId}>
+                  <button class="cbody" onclick={() => resume(c.id)} title="Continue this conversation">
+                    <span class="ct truncate">{titleOf(c.title)}</span>
+                    <span class="cw">{when(c.updated)}{c.id === g.settings.chatId ? ' · now' : ''}</span>
+                    {#if c.summary}<span class="cs">{c.summary}</span>{/if}
+                  </button>
+                  {#if confirmForget === c.id}
+                    <button class="btn sm danger" onclick={() => (g.forget(c.id), (confirmForget = null))}>Delete</button>
+                    <button class="icon-btn sm" title="Keep" onclick={() => (confirmForget = null)}><X size={13} /></button>
+                  {:else}
+                    <button class="icon-btn sm" title="Delete this conversation" onclick={() => (confirmForget = c.id)}><Trash2 size={13} /></button>
+                  {/if}
+                </div>
+              {:else}
+                <p class="empty">Your conversations with Gilgamesh will be listed here, so you can come back to them. After each one he writes himself a short recap, which he remembers next time.</p>
+              {/each}
+            </div>
+          {/if}
         </aside>
       {/if}
 
@@ -294,6 +370,10 @@
             {#each tts?.voices ?? [] as v}<option value={v.key}>{v.name}</option>{/each}
           </select>
           <small class="fine">Speed and volume are shared with read-aloud (Settings → Voice), where you can also make a voice from a recording.</small>
+          <span class="label">Expressions <small>(try them)</small></span>
+          <div class="moods">
+            {#each [...MOODS, ...GESTURES] as m}<button class="mood" onclick={() => preview(m)}>{m}</button>{/each}
+          </div>
           <span class="label">Face</span>
           <div class="row">
             <button class="btn sm" onclick={() => fileInput?.click()} disabled={preparing}>{#if preparing}<Loader size={14} class="spin" />{:else}<ImageUp size={14} />{/if} Change photo</button>
@@ -576,13 +656,144 @@
     flex-direction: column;
     min-height: 0;
   }
-  .th {
-    padding: 12px 14px 8px;
+  .tabs {
+    display: flex;
+    gap: 2px;
+    margin: 10px 12px 8px;
+    padding: 3px;
+    border-radius: var(--r-sm);
+    background: var(--surface-2);
+  }
+  .tabs button {
+    flex: 1;
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: none;
+    padding: 5px 6px;
+    border-radius: var(--r-xs);
+    font: inherit;
     font-size: 12px;
-    font-weight: 600;
+    color: var(--text-2);
+    cursor: pointer;
+  }
+  .tabs button.on {
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: var(--shadow-sm);
+  }
+  .count {
+    font-size: 11px;
+    padding: 0 6px;
+    border-radius: 99px;
+    background: var(--surface-3);
     color: var(--text-3);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 6px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
+    padding: 3px 8px;
+    border-radius: 99px;
+    font: inherit;
+    font-size: 11.5px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-2);
+  }
+  .chip.act {
+    background: var(--success-soft);
+    border-color: transparent;
+  }
+  .chip.act.bad {
+    background: var(--warning-soft);
+  }
+  .chip.src {
+    cursor: pointer;
+  }
+  .chip.src:hover {
+    border-color: var(--border-strong);
+    color: var(--text);
+  }
+  .new {
+    align-self: flex-start;
+  }
+  .conv {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+    border-radius: var(--r);
+    padding: 2px;
+  }
+  .conv.current {
+    background: var(--accent-softer);
+  }
+  .cbody {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    text-align: left;
+    border: none;
+    background: none;
+    padding: 6px 8px;
+    border-radius: var(--r-sm);
+    font: inherit;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .cbody:hover {
+    background: var(--surface-hover);
+  }
+  .ct {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .cw {
+    font-size: 11.5px;
+    color: var(--text-3);
+  }
+  .cs {
+    font-size: 12px;
+    color: var(--text-2);
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .moods {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .mood {
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    border-radius: 99px;
+    padding: 3px 9px;
+    font: inherit;
+    font-size: 11.5px;
+    color: var(--text-2);
+    cursor: pointer;
+  }
+  .mood:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+  }
+  .label small {
+    font-weight: 400;
   }
   .turns {
     flex: 1;
