@@ -7,6 +7,7 @@
   import { toUrl, hostOf } from '../lib/web';
   import type { BrowserEngine, BrowserState, BrowserTab } from '../lib/types';
   import BrowserChat from './BrowserChat.svelte';
+  import { activity } from '../lib/gilgamesh/observe.svelte';
   import { ArrowLeft, ArrowRight, RotateCw, Plus, X, Lock, Globe, Camera, FileDown, Loader, MessageSquare, ZoomIn, ZoomOut, Home, TriangleAlert, Star, Download, FolderOpen, FolderInput, Check } from '@lucide/svelte';
 
   /** Which engine renders this view: Servo ("Web Browser"), Chromium or Tor. */
@@ -40,6 +41,13 @@
   let downloads = $state<{ id: number; name: string; path: string; received: number; total: number; state: string; vault?: 'saving' | 'saved' }[]>([]);
 
   const tab = $derived(tabs.find((t) => t.id === active) ?? null);
+  // Gilgamesh sees the page that's open.
+  $effect(() => {
+    const route = kind === 'servo' ? 'browser' : kind;
+    if (route !== 'browser' && route !== 'chromium' && route !== 'tor') return;
+    activity.seen(route, tab?.url ? `showing the page “${tab.title || hostOf(tab.url) || tab.url}” (${tab.url})${tabs.length > 1 ? `; ${tabs.length} tabs open` : ''}` : null);
+    return () => activity.seen(route, null);
+  });
   const bookmarked = $derived(!!tab?.url && store.bookmarks.some((b) => b.url === tab.url));
 
   function toggleBookmark() {

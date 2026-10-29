@@ -6,6 +6,7 @@
   import { formatBytes } from '../lib/util';
   import type { MailFolder, MailMessage, MailSummary } from '../lib/types';
   import EmailChat from './EmailChat.svelte';
+  import { activity } from '../lib/gilgamesh/observe.svelte';
   import {
     Mail, Inbox, Send, FileEdit, Archive, ShieldAlert, Trash2, Star, Folder, Search, RefreshCw, Settings, Loader, Paperclip, MailOpen, X, ImageOff, FileText, Code,
   } from '@lucide/svelte';
@@ -33,6 +34,11 @@
   let host: HTMLDivElement | undefined = $state();
 
   const unread = $derived(list.filter((m) => !m.seen).length);
+  // Gilgamesh sees the folder and the email being read (not its text).
+  $effect(() => {
+    activity.seen('email', `in the ${folder} folder (${total} emails, ${unread} unread on screen)${open ? `; reading “${open.subject}” from ${open.from}` : ''}`);
+    return () => activity.seen('email', null);
+  });
   const folderLabel = $derived(folders.find((f) => f.name === folder)?.label ?? 'Inbox');
 
   onMount(() => {

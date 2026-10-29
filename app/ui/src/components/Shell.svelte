@@ -1,10 +1,13 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { getCurrentWebview } from '@tauri-apps/api/webview';
   import { listen } from '@tauri-apps/api/event';
   import { store } from '../lib/state.svelte';
   import { rad } from '../lib/api';
   import Sidebar from './Sidebar.svelte';
+  import { gilgamesh } from '../lib/gilgamesh/gilgamesh.svelte';
+  import { activity } from '../lib/gilgamesh/observe.svelte';
+  import { MicOff } from '@lucide/svelte';
   import ChatView from './ChatView.svelte';
   import ProjectView from './ProjectView.svelte';
   import Settings from './Settings.svelte';
@@ -62,8 +65,19 @@
     for (const e of errs) store.toast('error', 'Upload failed', e.error);
   }
 
+  // Gilgamesh is with you in every view while the vault is open: he notices where you go (a small
+  // nod if he's listening), and is put away when the vault locks.
+  $effect(() => {
+    const r = store.route;
+    untrack(() => {
+      activity.visit(r);
+      if (gilgamesh.phase === 'listening') gilgamesh.head.acknowledge();
+    });
+  });
+
   onMount(() => {
-    const un: Array<() => void> = [];
+    gilgamesh.load().catch((e) => store.error(e, 'Couldn’t load Gilgamesh'));
+    const un: Array<() => void> = [() => gilgamesh.unload()];
     getCurrentWebview()
       .onDragDropEvent((ev) => {
         const p = ev.payload;
@@ -106,7 +120,13 @@
 <div class="shell">
   {#if store.sidebarCollapsed}
     <button class="icon-btn sb-open no-drag" class:mac={document.documentElement.dataset.os === 'macos'} title="Show sidebar (⌘\)" onclick={() => store.toggleSidebar()}><PanelLeftOpen size={17} /></button>
-    <div class="vpn-float" class:mac={document.documentElement.dataset.os === 'macos'}><VpnToggle /></div>
+    <div class="vpn-float" class:mac={document.documentElement.dataset.os === 'macos'}>
+      <VpnToggle />
+      {#if gilgamesh.phase !== 'off'}
+        <!-- The sidebar (with his microphone) is hidden: the microphone still shows. -->
+        <button class="icon-btn mic-float" title="Gilgamesh is listening — turn the microphone off" onclick={() => gilgamesh.stop()}><MicOff size={15} /></button>
+      {/if}
+    </div>
   {:else}
     <Sidebar />
   {/if}
@@ -192,6 +212,12 @@
     z-index: 60;
     top: 11px;
     left: 44px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .mic-float {
+    color: var(--danger);
   }
   .vpn-float.mac {
     left: 114px;

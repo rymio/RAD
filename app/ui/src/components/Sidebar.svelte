@@ -8,6 +8,7 @@
   import Menu from './Menu.svelte';
   import Modal from './Modal.svelte';
   import VpnToggle from './VpnToggle.svelte';
+  import GilgameshDock from './GilgameshDock.svelte';
   import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, Cog, FileCode, Code, Database, Gamepad2, Joystick, Microscope, Keyboard, FlaskConical, Computer, ScanFace, ChevronRight, AppWindow, MonitorPlay, Wrench, Cpu } from '@lucide/svelte';
   import type { Component } from 'svelte';
 
@@ -83,14 +84,19 @@
       }
     })(),
   );
-  function toggleGroup(id: string) {
-    open = { ...open, [id]: !open[id] };
+  function setOpen(id: string, v: boolean) {
+    open = { ...open, [id]: v };
     try {
       localStorage.setItem(OPEN_KEY, JSON.stringify(open));
     } catch {
       // Not remembered this time.
     }
   }
+  // Going to a view (from here, ⌘K or an action) opens its group, so all its views show.
+  $effect(() => {
+    const g = GROUPS.find((g) => g.views.some((v) => same(store.route, v.route)));
+    if (g && !open[g.id]) setOpen(g.id, true);
+  });
 
   const activeProjects = $derived(store.projects.filter((p) => !p.archived));
   const archived = $derived(store.projects.filter((p) => p.archived));
@@ -166,6 +172,8 @@
     <Search size={15} /> <span class="spacer">Search or jump to…</span> <span class="kbd">⌘K</span>
   </button>
 
+  <GilgameshDock />
+
   <div class="scroll">
     {#snippet view(v: View, sub = false)}
       <button class="item web" class:sub-item={sub} class:active={isActive(v)} onclick={() => store.navigate(v.route)}>
@@ -175,17 +183,13 @@
     {/snippet}
     {#each MAIN as v}{@render view(v)}{/each}
     {#each GROUPS as g (g.id)}
-      {@const inside = g.views.some(isActive)}
-      <button class="item web group" aria-expanded={!!open[g.id]} onclick={() => toggleGroup(g.id)}>
+      <button class="item web group" aria-expanded={!!open[g.id]} onclick={() => setOpen(g.id, !open[g.id])}>
         <g.icon size={15} /> <span class="spacer">{g.label}</span>
         {#if g.id === 'media' && !open[g.id] && musicEngine.status.state === 'playing'}<span class="playing" title="Playing"><i></i><i></i><i></i></span>{/if}
         <span class="chev" class:open={open[g.id]}><ChevronRight size={14} /></span>
       </button>
       {#if open[g.id]}
         {#each g.views as v}{@render view(v, true)}{/each}
-      {:else if inside}
-        <!-- A folded group still shows the view that's open. -->
-        {#each g.views.filter(isActive) as v}{@render view(v, true)}{/each}
       {/if}
     {/each}
     <div class="sect">

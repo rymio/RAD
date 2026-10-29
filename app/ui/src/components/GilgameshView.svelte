@@ -4,12 +4,12 @@
   import { listen } from '@tauri-apps/api/event';
   import { store } from '../lib/state.svelte';
   import { formatBytes } from '../lib/util';
-  import { gilgamesh } from '../lib/gilgamesh/gilgamesh.svelte';
+  import { gilgamesh, MAX_FACES } from '../lib/gilgamesh/gilgamesh.svelte';
   import { prepareAvatar, avatarImage } from '../lib/gilgamesh/face';
   import { Head } from '../lib/gilgamesh/head';
   import { MOODS, GESTURES, type Mood, type Gesture } from '../lib/gilgamesh/text';
   import type { Citation } from '../lib/types';
-  import { Mic, MicOff, ImageUp, SlidersHorizontal, RotateCcw, Loader, Download, Headphones, SendHorizontal, MessageSquareText, Hand, Square, X, CircleAlert, ScanFace, History, Trash2, FileText, MessageSquare, Check } from '@lucide/svelte';
+  import { Mic, MicOff, ImageUp, SlidersHorizontal, RotateCcw, Loader, Download, Headphones, SendHorizontal, MessageSquareText, Hand, Square, X, CircleAlert, ScanFace, History, Trash2, FileText, MessageSquare, Check, Plus, Shuffle } from '@lucide/svelte';
 
   interface TtsStatus { installed: boolean; engine: boolean; dev_build: boolean; bytes: number; downloading: { done: number; total: number } | null; voices: { key: string; name: string }[] }
   interface SttStatus { installed: boolean; bytes: number; downloading: { done: number; total: number } | null }
@@ -20,7 +20,9 @@
   let sttProgress = $state<{ done: number; total: number } | null>(null);
   let canvas = $state<HTMLCanvasElement | null>(null);
   let fileInput = $state<HTMLInputElement | null>(null);
-  let preparing = $state(false);
+  let preparing = $state<{ done: number; total: number } | null>(null);
+  let dragging = $state(false);
+  let confirmRemove = $state<string | null>(null);
   let warnings = $state<string[]>([]);
   let showSettings = $state(false);
   let showTranscript = $state(true);
@@ -70,11 +72,10 @@
   /** Shows a mood (for a few seconds) or a gesture on the face. */
   function preview(x: Mood | Gesture) {
     const h = g.head;
-    if (!h) return;
     if ((GESTURES as readonly string[]).includes(x)) return h.gesture(x as Gesture);
     h.mood = x as Mood;
     clearTimeout(previewTimer);
-    previewTimer = setTimeout(() => g.head && g.phase !== 'speaking' && (g.head.mood = 'neutral'), 3500);
+    previewTimer = setTimeout(() => g.phase !== 'speaking' && (g.head.mood = 'neutral'), 3500);
   }
 
   async function refresh() {
@@ -89,11 +90,9 @@
     const un: Array<() => void> = [];
     listen<any>('tts-progress', (e) => !e.payload.done && (ttsProgress = e.payload)).then((u) => un.push(u));
     listen<any>('stt-progress', (e) => !e.payload.done && (sttProgress = e.payload)).then((u) => un.push(u));
-    return () => {
-      un.forEach((u) => u());
-      // Leaving the view ends the conversation: the microphone is never left on unseen.
-      g.stop();
-    };
+    // Leaving the view doesn't end the conversation: Gilgamesh carries on in the sidebar, where
+    // the microphone shows and can be turned off.
+    return () => un.forEach((u) => u());
   });
 
   // The talking head lives as long as the canvas and the avatar.
@@ -102,20 +101,20 @@
     const c = canvas;
     if (!a || !c) return;
     let head: Head | null = null;
+    let off = () => {};
     let dead = false;
     headError = null;
     avatarImage(a)
       .then((img) => {
         if (dead) return;
         head = new Head(c, a, img);
-        g.head = head;
-        if (g.phase !== 'off') head.attention = 'listening';
+        off = g.head.add(head);
       })
       .catch((e) => (headError = e?.message ?? String(e)));
     return () => {
       dead = true;
+      off();
       head?.destroy();
-      if (g.head === head) g.head = null;
     };
   });
 
@@ -149,28 +148,59 @@
     }
   }
 
-  async function pickPhoto(e: Event) {
-    const f = (e.target as HTMLInputElement).files?.[0];
+  function pickPhotos(e: Event) {
+    const files = [...((e.target as HTMLInputElement).files ?? [])];
     (e.target as HTMLInputElement).value = '';
-    if (!f) return;
-    preparing = true;
+    addPhotos(files);
+  }
+
+  /** Finds the face in each photo and adds the ones that work as Gilgamesh's faces. */
+  async function addPhotos(files: File[]) {
+    files = files.filter((f) => f.type.startsWith('image/'));
+    if (!files.length || preparing) return;
+    const room = MAX_FACES - g.settings.faces.length;
+    if (room <= 0) return store.error(new Error(`Gilgamesh can keep up to ${MAX_FACES} faces; remove one first`));
+    files = files.slice(0, room);
+    preparing = { done: 0, total: files.length };
     warnings = [];
+    const many = files.length > 1;
+    const name = (f: File) => f.name.replace(/\.[^.]+$/, '');
     try {
-      const r = await prepareAvatar(f);
-      await g.setAvatar(r.avatar);
-      warnings = r.warnings;
-    } catch (err) {
-      store.error(err, 'Couldn’t use that photo');
+      for (const f of files) {
+        try {
+          const r = await prepareAvatar(f);
+          await g.addFaces([{ avatar: r.avatar, name: name(f) }]);
+          warnings.push(...r.warnings.map((w) => (many ? `${name(f)}: ${w}` : w)));
+        } catch (err) {
+          store.error(err, many ? `Couldn’t use ${f.name}` : 'Couldn’t use that photo');
+        }
+        preparing = { done: preparing!.done + 1, total: files.length };
+      }
     } finally {
-      preparing = false;
+      preparing = null;
     }
   }
 
-  async function removePhoto() {
-    g.stop();
-    await g.setAvatar(null).catch((e) => store.error(e));
-    showSettings = false;
+  function onDrop(e: DragEvent) {
+    e.preventDefault();
+    dragging = false;
+    addPhotos([...(e.dataTransfer?.files ?? [])]);
   }
+  function onDragOver(e: DragEvent) {
+    if (!e.dataTransfer?.types.includes('Files')) return;
+    e.preventDefault();
+    dragging = true;
+  }
+
+  function useFace(id: string) {
+    g.useFace(id).catch((e) => store.error(e, 'Couldn’t change Gilgamesh’s face'));
+  }
+  async function removeFace(id: string) {
+    confirmRemove = null;
+    await g.removeFace(id).catch((e) => store.error(e));
+    if (!g.avatar) showSettings = false;
+  }
+
 
   function toggle() {
     if (g.phase === 'off') g.start();
@@ -203,7 +233,7 @@
 
 <svelte:window onkeydown={onKey} onkeyup={onKeyUp} onblur={() => g.press(false)} />
 
-<div class="gil">
+<div class="gil" class:dragging role="region" aria-label="Gilgamesh" ondragover={onDragOver} ondragleave={(e) => e.currentTarget === e.target && (dragging = false)} ondrop={onDrop}>
   <header class="drag">
     <h1>Gilgamesh</h1>
     {#if g.avatar}<span class="phase" data-phase={g.phase}><i></i>{phaseLabel}</span>{/if}
@@ -215,7 +245,8 @@
     {/if}
   </header>
 
-  <input bind:this={fileInput} type="file" accept="image/png,image/jpeg,image/webp" hidden onchange={pickPhoto} />
+  <input bind:this={fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onchange={pickPhotos} />
+  {#if dragging}<div class="drop"><ImageUp size={22} /> Drop photos to give Gilgamesh more faces</div>{/if}
 
   {#if !g.loaded}
     <div class="center"><Loader size={20} class="spin" /></div>
@@ -224,9 +255,9 @@
       <div class="setup">
         <div class="glyph"><ScanFace size={30} /></div>
         <h2>Give Gilgamesh a face</h2>
-        <p>Choose a photo of a face: a clear, well-lit portrait looking at the camera, with the mouth closed, works best. Gilgamesh will talk with it — lips, eyes and expressions move as he speaks.</p>
-        <button class="btn primary lg" disabled={preparing} onclick={() => fileInput?.click()}>
-          {#if preparing}<Loader size={16} class="spin" /> Finding the face…{:else}<ImageUp size={16} /> Choose a photo{/if}
+        <p>Choose one or more photos of faces (or drop them here): clear, well-lit portraits looking at the camera, with the mouth closed, work best. Gilgamesh will talk with them — lips, eyes and expressions move as he speaks, and you can switch between faces at any time.</p>
+        <button class="btn primary lg" disabled={!!preparing} onclick={() => fileInput?.click()}>
+          {#if preparing}<Loader size={16} class="spin" /> Finding the face{preparing.total > 1 ? `s… ${preparing.done + 1} of ${preparing.total}` : '…'}{:else}<ImageUp size={16} /> Choose photos{/if}
         </button>
         <p class="fine">Use a photo of yourself, or of someone who has agreed to it. The photo is processed on this computer and kept only in your encrypted vault.</p>
       </div>
@@ -235,8 +266,18 @@
     <div class="main">
       <section class="stage">
         <div class="frame" style="aspect-ratio:{g.avatar.w} / {g.avatar.h}; --lvl:{Math.min(1, g.level * 12)}" data-phase={g.phase}>
-          <canvas bind:this={canvas}></canvas>
+          {#key g.avatar}<canvas bind:this={canvas}></canvas>{/key}
           {#if headError}<div class="head-error"><CircleAlert size={16} /> {headError}</div>{/if}
+          <div class="strip">
+            {#if g.settings.faces.length > 1}
+              {#each g.settings.faces as f (f.id)}
+                <button class="thumb" class:on={f.id === g.settings.face} title={f.name} onclick={() => useFace(f.id)}><img src={f.thumb} alt={f.name} /></button>
+              {/each}
+            {/if}
+            <button class="thumb add" title="Add photos" disabled={!!preparing || g.settings.faces.length >= MAX_FACES} onclick={() => fileInput?.click()}>
+              {#if preparing}<Loader size={15} class="spin" />{:else}<Plus size={16} />{/if}
+            </button>
+          </div>
         </div>
 
         <div class="captions">
@@ -370,15 +411,38 @@
             {#each tts?.voices ?? [] as v}<option value={v.key}>{v.name}</option>{/each}
           </select>
           <small class="fine">Speed and volume are shared with read-aloud (Settings → Voice), where you can also make a voice from a recording.</small>
-          <span class="label">Expressions <small>(try them)</small></span>
+          <span class="label">Moods <small>(try them)</small></span>
           <div class="moods">
-            {#each [...MOODS, ...GESTURES] as m}<button class="mood" onclick={() => preview(m)}>{m}</button>{/each}
+            {#each MOODS as m}<button class="mood" onclick={() => preview(m)}>{m}</button>{/each}
           </div>
-          <span class="label">Face</span>
-          <div class="row">
-            <button class="btn sm" onclick={() => fileInput?.click()} disabled={preparing}>{#if preparing}<Loader size={14} class="spin" />{:else}<ImageUp size={14} />{/if} Change photo</button>
-            <button class="btn sm ghost danger" onclick={removePhoto}>Remove</button>
+          <span class="label">Gestures</span>
+          <div class="moods">
+            {#each GESTURES as m}<button class="mood" onclick={() => preview(m)}>{m}</button>{/each}
           </div>
+          <span class="label">Faces <small>({g.settings.faces.length} of {MAX_FACES})</small></span>
+          <div class="faces">
+            {#each g.settings.faces as f (f.id)}
+              <div class="face" class:on={f.id === g.settings.face}>
+                <button class="thumb" title="Use this face" onclick={() => useFace(f.id)}><img src={f.thumb} alt={f.name} /></button>
+                <input class="fname" value={f.name} title="Rename" onchange={(e) => g.renameFace(f.id, (e.target as HTMLInputElement).value)} />
+                {#if confirmRemove === f.id}
+                  <button class="btn sm danger" onclick={() => removeFace(f.id)}>Remove</button>
+                  <button class="icon-btn sm" title="Keep" onclick={() => (confirmRemove = null)}><X size={13} /></button>
+                {:else}
+                  <button class="icon-btn sm" title="Remove this face" onclick={() => (confirmRemove = f.id)}><Trash2 size={13} /></button>
+                {/if}
+              </div>
+            {/each}
+          </div>
+          <button class="btn sm" onclick={() => fileInput?.click()} disabled={!!preparing || g.settings.faces.length >= MAX_FACES}>
+            {#if preparing}<Loader size={14} class="spin" /> {preparing.done + 1} of {preparing.total}…{:else}<ImageUp size={14} /> Add photos{/if}
+          </button>
+          {#if g.settings.faces.length > 1}
+            <label class="check">
+              <input type="checkbox" checked={g.settings.rotate} onchange={(e) => g.saveSettings({ rotate: (e.target as HTMLInputElement).checked })} />
+              <span><Shuffle size={14} /> A new face for each conversation <small>Each new conversation brings the next face; an earlier one keeps the face it had.</small></span>
+            </label>
+          {/if}
         </div>
       {/if}
     </div>
@@ -392,6 +456,21 @@
     display: flex;
     flex-direction: column;
     position: relative;
+  }
+  .drop {
+    position: absolute;
+    inset: 10px;
+    z-index: 10;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+    border: 2px dashed var(--accent);
+    border-radius: var(--r-xl);
+    background: color-mix(in oklab, var(--surface) 85%, transparent);
+    color: var(--accent);
+    font-weight: 600;
+    pointer-events: none;
   }
   header {
     flex: none;
@@ -515,6 +594,89 @@
     width: 100%;
     height: 100%;
     display: block;
+    animation: fade-in 450ms var(--ease) both;
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  .strip {
+    position: absolute;
+    inset: auto 0 0;
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 24px 10px 10px;
+    background: linear-gradient(transparent, rgb(0 0 0 / 0.35));
+    opacity: 0;
+    transition: opacity var(--t);
+  }
+  .frame:hover .strip,
+  .strip:focus-within {
+    opacity: 1;
+  }
+  .thumb {
+    width: 34px;
+    height: 42px;
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: var(--r-xs);
+    overflow: hidden;
+    background: var(--surface-3);
+    cursor: pointer;
+    flex: none;
+    display: grid;
+    place-items: center;
+    color: var(--text-2);
+  }
+  .thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .thumb.on {
+    border-color: var(--accent);
+  }
+  .thumb.add {
+    background: var(--glass);
+  }
+  .thumb:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+  .faces {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .face {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px;
+    border-radius: var(--r-sm);
+  }
+  .face.on {
+    background: var(--accent-softer);
+  }
+  .fname {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid transparent;
+    background: none;
+    border-radius: var(--r-xs);
+    padding: 3px 6px;
+    font: inherit;
+    font-size: 12.5px;
+    color: var(--text);
+  }
+  .fname:hover,
+  .fname:focus {
+    border-color: var(--border);
+    background: var(--surface);
   }
   .head-error {
     position: absolute;
@@ -836,6 +998,8 @@
     flex-direction: column;
     gap: 8px;
     z-index: 5;
+    max-height: calc(100% - 20px);
+    overflow: auto;
   }
   .sh {
     display: flex;
@@ -891,10 +1055,6 @@
     color: var(--text-3);
     font-size: 12px;
     line-height: 1.4;
-  }
-  .row {
-    display: flex;
-    gap: 8px;
   }
   :global(.spin) {
     animation: spin 1s linear infinite;

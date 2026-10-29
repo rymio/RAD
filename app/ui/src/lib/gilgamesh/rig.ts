@@ -12,6 +12,7 @@ export const SHAPES = [
   'smile', 'smileL', 'smileR', 'frown', 'sad',
   'browUp', 'browL', 'browR', 'squint', 'eyesWide',
   'blink', 'blinkL', 'blinkR', 'gazeX', 'gazeY',
+  'browDown', 'sneer', 'mouthL', 'mouthR', 'stretch',
 ] as const;
 export type Shape = (typeof SHAPES)[number];
 
@@ -27,6 +28,8 @@ export interface Rig {
   uv: Float32Array;
   tris: Uint16Array;
   shapes: Record<Shape, Float32Array>;
+  /** How much each vertex is cheek (0–1), where a blush shows. */
+  cheek: Float32Array;
   pivot: [number, number, number];
   /** The inner lip contours, corner to corner (the inside of the mouth is drawn between them). */
   mouthUpper: number[];
@@ -55,6 +58,7 @@ const BROW_B = [300, 293, 334, 296, 336, 276, 283, 282, 295, 285];
 const BROW_INNER = [107, 55, 65, 336, 285, 295];
 const FOREHEAD_LOW = [151, 108, 69, 104, 337, 299, 333, 9, 67, 297, 109, 338];
 const FOREHEAD_TOP = [10, 54, 284, 21, 251, 103, 332];
+const NOSE_WING = [98, 327, 64, 294, 129, 358, 48, 278, 102, 331];
 interface Eye { upper: number[]; lower: number[]; corners: number[]; crease: number[]; iris: number[] }
 const EYES: Eye[] = [
   { upper: [246, 161, 160, 159, 158, 157, 173], lower: [7, 163, 144, 145, 153, 154, 155], corners: [33, 133], crease: [247, 30, 29, 27, 28, 56, 190], iris: [] },
@@ -348,6 +352,38 @@ export function buildRig(a: Avatar): Rig {
   }
   anchor(press, NOSE, JAW_A, JAW_B, CHEEK);
 
+  // Brows down and together (anger, determination, concentration); the lids follow a little.
+  const browDown = new Map<number, V2>();
+  for (const i of [...BROW_A, ...BROW_B]) browDown.set(i, vec(0, 0.016));
+  for (const i of BROW_INNER) browDown.set(i, vec(-0.012 * side(i), 0.022));
+  for (const i of FOREHEAD_LOW) browDown.set(i, vec(0, 0.006));
+  for (const e of EYES) {
+    for (const i of e.crease) browDown.set(i, vec(0, 0.006));
+    for (const i of e.upper) browDown.set(i, vec(0, 0.003));
+  }
+  anchor(browDown, FOREHEAD_TOP, NOSE, EYES.flatMap((e) => [...e.lower, ...e.corners, ...e.iris]));
+
+  // Sneer (disgust, contempt): the sides of the nose and the middle of the upper lip rise, the
+  // cheeks and lower lids push up; the lower lip stays, so the lips part a little.
+  const sneer = new Map<number, V2>();
+  for (const i of NOSE_WING) sneer.set(i, vec(0.003 * side(i), -0.012));
+  for (const i of [1, 2, 4, 5, 19, 94]) sneer.set(i, vec(0, -0.004));
+  for (const i of LIPS) sneer.set(i, vec(0, isCorner(i) ? -0.004 : byLip(i, -0.016 * (1 - 0.5 * xr(i) ** 2), 0)));
+  for (const i of [205, 425, 36, 266, 101, 330]) sneer.set(i, vec(0, -0.008));
+  for (const e of EYES) for (const i of e.lower) sneer.set(i, vec(0, -0.004));
+  anchor(sneer, [6, 168, 197], JAW_A, JAW_B, BROW_A, BROW_B, FOREHEAD_LOW);
+
+  // The whole mouth pulled to one side (a smirk, doubt, "hmm"); mouthR is its mirror.
+  const mouthL = new Map<number, V2>();
+  for (const i of LIPS) mouthL.set(i, vec(-0.022, 0));
+  anchor(mouthL, NOSE, JAW_A, JAW_B);
+
+  // Lips stretched wide and down (fear, worry, an awkward grimace).
+  const stretch = new Map<number, V2>();
+  for (const i of LIPS) stretch.set(i, vec(0.03 * xr(i), isCorner(i) ? 0.014 : byLip(i, 0.002, 0.008 * (0.4 + 0.6 * Math.abs(xr(i))))));
+  for (const i of [123, 352, 147, 376]) stretch.set(i, vec(0.004 * side(i), 0.005));
+  anchor(stretch, NOSE, JAW_A, JAW_B);
+
   const gazeX = new Map<number, V2>();
   const gazeY = new Map<number, V2>();
   if (hasIris) {
@@ -382,7 +418,13 @@ export function buildRig(a: Avatar): Rig {
     browR: new Float32Array(0),
     gazeX: field(gazeX, 0.008),
     gazeY: field(gazeY, 0.008),
+    browDown: field(browDown, 0.07),
+    sneer: field(sneer, 0.05),
+    mouthL: field(mouthL, 0.07),
+    mouthR: new Float32Array(0),
+    stretch: field(stretch, 0.06),
   };
+  shapes.mouthR = shapes.mouthL.map((v, k) => (k & 1 ? v : -v));
   shapes.blink = shapes.blinkL.map((v, k) => v + shapes.blinkR[k]);
   // One side of the face: the shape fades out across the middle of the face.
   const leftness = new Float32Array(n);
@@ -395,6 +437,14 @@ export function buildRig(a: Avatar): Rig {
   shapes.smileR = half(shapes.smile, false);
   shapes.browL = half(shapes.browUp, true);
   shapes.browR = half(shapes.browUp, false);
+
+  // The cheeks, below the outer corners of the eyes.
+  const cheek = new Float32Array(n);
+  const cheekR2 = (0.11 * faceH) ** 2;
+  const cheeks = [[50, 205], [280, 425]].map(([a, b]): V2 => [(P(a)[0] + P(b)[0]) / 2, (P(a)[1] + P(b)[1]) / 2]);
+  for (let v = 0; v < n; v++) {
+    for (const c of cheeks) cheek[v] = Math.max(cheek[v], Math.exp(-((pts[v * 2] - c[0]) ** 2 + (pts[v * 2 + 1] - c[1]) ** 2) / cheekR2));
+  }
 
   // ---- triangles: made with the lower lip moved down a little (only the lips move), so no
   // triangle bridges the lips; the slivers between them, made only of inner-lip points, are
@@ -449,6 +499,7 @@ export function buildRig(a: Avatar): Rig {
     uv,
     tris: Uint16Array.from(tris),
     shapes,
+    cheek,
     pivot: [neck[0], neck[1], zMean],
     mouthUpper: MOUTH_UPPER,
     mouthLower: MOUTH_LOWER,

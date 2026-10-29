@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { activity } from '../lib/gilgamesh/observe.svelte';
   import { onMount } from 'svelte';
   import { rad } from '../lib/api';
   import { store } from '../lib/state.svelte';
@@ -23,6 +24,13 @@
   let target = $state<Id | null>(null);
   let sandboxes = $state<SandboxInfo[]>([]);
   let sandboxTarget = $state('');
+
+  // Gilgamesh sees the folder that's open and what's picked in it.
+  $effect(() => {
+    const picked = [...selected].map((p) => p.split('/').pop()).slice(0, 5);
+    activity.seen('files', listing ? `in the folder ${listing.path} (${listing.entries.length} items)${picked.length ? `; selected: ${picked.join(', ')}${selected.size > 5 ? ` and ${selected.size - 5} more` : ''}` : ''}${preview ? `; previewing ${preview.entry.name}` : ''}` : null);
+    return () => activity.seen('files', null);
+  });
 
   async function sendToSandbox() {
     const sb = sandboxes.find((s) => s.id === sandboxTarget);

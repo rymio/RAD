@@ -124,3 +124,23 @@ function lipColour(g: CanvasRenderingContext2D, pts: number[]): [number, number,
 export function avatarImage(a: Avatar) {
   return loadImage(a.image);
 }
+
+/** A small portrait (4:5) around the face, for picking between faces. */
+export async function thumbnail(a: Avatar): Promise<string> {
+  const img = await loadImage(a.image);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let i = 0; i < a.points.length; i += 3) {
+    x0 = Math.min(x0, a.points[i]); x1 = Math.max(x1, a.points[i]);
+    y0 = Math.min(y0, a.points[i + 1]); y1 = Math.max(y1, a.points[i + 1]);
+  }
+  const h = Math.min(a.h, (y1 - y0) * 1.45), w = Math.min(a.w, h * 0.8);
+  const left = Math.min(Math.max((x0 + x1) / 2 - w / 2, 0), a.w - w);
+  const top = Math.min(Math.max((y0 + y1) / 2 - h * 0.5, 0), a.h - h);
+  const c = document.createElement('canvas');
+  c.width = 96;
+  c.height = 120;
+  const g = c.getContext('2d')!;
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(img, left, top, w, h, 0, 0, 96, 120);
+  return c.toDataURL('image/jpeg', 0.82);
+}

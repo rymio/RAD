@@ -9,6 +9,9 @@
 // a short recap, which later conversations start from. His answers carry tags for his face and
 // for actions ([remember: …], [note: …], [event: …], [open: …], [search: …], [music: …]).
 //
+// Gilgamesh goes everywhere in RAD: his face sits in the sidebar, the microphone stays on from
+// view to view, and he sees which part of RAD is open (observe.svelte.ts).
+//
 // The answer is spoken sentence by sentence while it is still being written. Talking over
 // Gilgamesh interrupts him (with headphones, or while holding the push-to-talk key); through
 // the speakers the microphone is ignored while he speaks, so he doesn't hear himself. Actions
@@ -20,10 +23,11 @@ import { store } from '../state.svelte';
 import { speakable } from '../speech.svelte';
 import type { AgentAction, Chat, ChatStreamEvent, ChatWithMessages, Citation, Message } from '../types';
 import { analyse, decodeWav, type Track } from './lipsync';
-import type { Head } from './head';
-import { citedNumbers, parseTags, stripCitations, stripTags, takeSentences, type Gesture, type Mood } from './text';
+import { Heads } from './head';
+import { activity } from './observe.svelte';
+import { citedNumbers, parseTags, stripCitations, stripTags, takeSentences, GESTURES, MOODS, type Gesture, type Mood } from './text';
 import { runAction, situation } from './tools';
-import type { Avatar } from './face';
+import { thumbnail, type Avatar } from './face';
 
 export type Mode = 'hands_free' | 'push_to_talk';
 
@@ -36,6 +40,17 @@ export interface Conversation {
   summary: string;
   /** How many messages the recap covers. */
   summarized: number;
+  /** The face Gilgamesh wore in it. */
+  face?: string;
+}
+
+/** One of Gilgamesh's faces: a prepared photo, kept under its own key in the vault. */
+export interface Face {
+  id: string;
+  name: string;
+  /** Small JPEG data URL, for picking between faces. */
+  thumb: string;
+  added: number;
 }
 
 export interface Settings {
@@ -47,6 +62,13 @@ export interface Settings {
   /** The conversation going on now. */
   chatId: number | null;
   conversations: Conversation[];
+  faces: Face[];
+  /** The face he wears now. */
+  face: string | null;
+  /** A new conversation brings the next face. */
+  rotate: boolean;
+  /** His face shows in the sidebar (else only the controls). */
+  dock: boolean;
 }
 export type Phase = 'off' | 'starting' | 'listening' | 'hearing' | 'thinking' | 'speaking';
 export interface Turn {
@@ -57,15 +79,20 @@ export interface Turn {
 }
 
 const SETTINGS_KEY = '/v1/app-data/gilgamesh';
+/** The single face kept before Gilgamesh had several (moved into the list on load). */
 const AVATAR_KEY = '/v1/app-data/gilgamesh_avatar';
+const faceKey = (id: string) => `/v1/app-data/gilgamesh_face_${id}`;
+export const MAX_FACES = 24;
 const KEEP_CONVERSATIONS = 60;
 const RECAPS_IN_CONTEXT = 6;
+
+const tags = (names: readonly string[]) => names.map((n) => `[${n}]`).join(' ');
 
 const PERSONA = `YOU ARE SPEAKING ALOUD. You are Gilgamesh, the voice and face of RAD, talking with its owner face to face. Your words are spoken by a talking head, so:
 - answer in one to three short, natural spoken sentences, unless asked for more detail;
 - no Markdown, lists, tables, code, links or emoji. You may cite sources like [1]; citations are shown, not read aloud;
-- begin your reply with one mood tag that fits what you say: [neutral] [happy] [amused] [excited] [concerned] [sad] [surprised] [curious] [skeptical] [thinking] [playful] [sympathetic] [serious] [proud]. Put another one before a later sentence only if your mood changes;
-- you may add a gesture where it fits naturally: [nod] [shake] [tilt] [wink] [laugh].
+- begin your reply with one mood tag that fits what you say: ${tags(MOODS)}. Put another one before a later sentence only if your mood changes;
+- you may add a gesture where it fits naturally, but not in every sentence: ${tags(GESTURES)}.
 
 You remember the owner: the facts they asked you to keep (in your instructions), your own recaps of earlier conversations (below), and excerpts of earlier conversations among the sources.
 
@@ -76,7 +103,9 @@ You can act for the owner by writing an action tag in your reply. It is carried 
 - [open: name] opens part of RAD (browser, terminal, files, calendar, email, music, video, settings, memories), or [open: https://…] opens a web page.
 - [search: words] searches the web in RAD's browser.
 - [music: play | pause | next | previous | song or artist] controls their music.
-Only act when the owner asks or clearly wants it, and always say a few words about what you're doing. Opening something or searching ends this conversation once you've finished speaking, so say so.
+Only act when the owner asks or clearly wants it, and always say a few words about what you're doing. You go with the owner everywhere in RAD (your face is in the sidebar), so opening something or searching doesn't end the conversation; it happens once you've finished speaking.
+
+You can see which part of RAD the owner has open and where they were before (WHAT THE OWNER IS DOING, below). Use it to help with what they're doing ("this page", "this email", "what I'm looking at"), but don't comment on it unless it helps.
 
 Examples:
 Owner: My sister is called Kate. → [happy] Kate, lovely name. I'll remember that. [remember: The owner's sister is called Kate.]
@@ -115,6 +144,8 @@ function nextFriday() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+const isAvatar = (a: any): a is Avatar => !!a && typeof a === 'object' && typeof a.image === 'string' && Array.isArray(a.points);
+
 const dayLabel = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 
 interface Line { text: string; mood: Mood | null; gestures: Gesture[]; wav: Promise<ArrayBuffer | null> }
@@ -130,12 +161,13 @@ class Gilgamesh {
   level = $state(0);
   turns = $state<Turn[]>([]);
   error = $state<string | null>(null);
-  settings = $state<Settings>({ mode: 'hands_free', headphones: false, voice: '', chatId: null, conversations: [] });
+  settings = $state<Settings>({ mode: 'hands_free', headphones: false, voice: '', chatId: null, conversations: [], faces: [], face: null, rotate: false, dock: true });
   avatar = $state<Avatar | null>(null);
   loaded = $state(false);
   holding = $state(false);
 
-  head: Head | null = null;
+  /** Every picture of him on screen. */
+  head = new Heads();
   private run = 0;
   private lines: Line[] = [];
   private wake: (() => void) | null = null;
@@ -151,11 +183,30 @@ class Gilgamesh {
   private recapTimer: ReturnType<typeof setTimeout> | undefined;
   private recapping: Promise<void> = Promise.resolve();
 
-  async load() {
-    if (this.loaded) return;
-    const [s, a] = await Promise.all([api.get<any>(SETTINGS_KEY).catch(() => null), api.get<any>(AVATAR_KEY).catch(() => null)]);
-    if (s && typeof s === 'object') this.settings = { ...this.settings, ...s, conversations: Array.isArray(s.conversations) ? s.conversations : [] };
-    if (a && typeof a === 'object' && a.image && Array.isArray(a.points)) this.avatar = a;
+  private loading: Promise<void> | null = null;
+
+  /** Loads his settings, faces and the conversation going on (once, however many views ask). */
+  load() {
+    if (this.loaded) return Promise.resolve();
+    this.loading ??= this.loadNow().finally(() => (this.loading = null));
+    return this.loading;
+  }
+
+  private async loadNow() {
+    const s = await api.get<any>(SETTINGS_KEY).catch(() => null);
+    if (s && typeof s === 'object') {
+      this.settings = { ...this.settings, ...s, conversations: Array.isArray(s.conversations) ? s.conversations : [], faces: Array.isArray(s.faces) ? s.faces : [] };
+    }
+    // The one face from before Gilgamesh had several.
+    if (!this.settings.faces.length) {
+      const a = await api.get<any>(AVATAR_KEY).catch(() => null);
+      if (isAvatar(a)) {
+        await this.addFaces([{ avatar: a, name: 'Face' }]);
+        await api.put(AVATAR_KEY, {}).catch(() => {});
+      }
+    }
+    const face = this.settings.faces.find((f) => f.id === this.settings.face) ?? this.settings.faces[0];
+    if (face) await this.useFace(face.id).catch(() => {});
     // A conversation from before Gilgamesh kept a list of them.
     const id = this.settings.chatId;
     if (id && !this.settings.conversations.some((c) => c.id === id)) {
@@ -165,14 +216,85 @@ class Gilgamesh {
     if (id) await this.loadTurns(id);
   }
 
+  /** Forgets everything loaded (the vault was locked); the microphone goes off. */
+  unload() {
+    this.stop();
+    this.loaded = false;
+    this.avatar = null;
+    this.turns = [];
+    this.faceCache.clear();
+    this.loading = null;
+    this.settings = { mode: 'hands_free', headphones: false, voice: '', chatId: null, conversations: [], faces: [], face: null, rotate: false, dock: true };
+  }
+
   saveSettings(patch: Partial<Settings>) {
     this.settings = { ...this.settings, ...patch };
     return api.put(SETTINGS_KEY, $state.snapshot(this.settings)).catch((e) => store.error(e, 'Couldn’t save Gilgamesh’s settings'));
   }
 
-  async setAvatar(a: Avatar | null) {
-    await api.put(AVATAR_KEY, a ?? {});
+  // ---------------------------------------------------------------- faces
+
+  private faceCache = new Map<string, Avatar>();
+
+  private async faceAvatar(id: string): Promise<Avatar> {
+    const cached = this.faceCache.get(id);
+    if (cached) return cached;
+    const a = await api.get<any>(faceKey(id));
+    if (!isAvatar(a)) throw new Error('That face is missing from the vault');
+    this.faceCache.set(id, a);
+    return a;
+  }
+
+  /** Adds prepared photos to Gilgamesh's faces and puts the last one on. */
+  async addFaces(list: { avatar: Avatar; name: string }[]) {
+    let last: string | null = null;
+    for (const { avatar, name } of list) {
+      if (this.settings.faces.length >= MAX_FACES) throw new Error(`Gilgamesh can keep up to ${MAX_FACES} faces; remove one first`);
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      await api.put(faceKey(id), avatar);
+      this.faceCache.set(id, avatar);
+      const face: Face = { id, name: name.slice(0, 60) || 'Face', thumb: await thumbnail(avatar).catch(() => ''), added: Date.now() };
+      await this.saveSettings({ faces: [...this.settings.faces, face] });
+      last = id;
+    }
+    if (last) await this.useFace(last);
+  }
+
+  /** Puts a face on (the conversation going on now remembers it). */
+  async useFace(id: string) {
+    const a = await this.faceAvatar(id);
     this.avatar = a;
+    const c = this.conversation(this.settings.chatId);
+    const changed = this.settings.face !== id || (c && c.face !== id);
+    if (c) c.face = id;
+    if (changed) await this.saveSettings({ face: id });
+  }
+
+  async removeFace(id: string) {
+    const faces = this.settings.faces.filter((f) => f.id !== id);
+    await api.put(faceKey(id), {});
+    this.faceCache.delete(id);
+    const wasOn = this.settings.face === id;
+    await this.saveSettings({ faces, face: wasOn ? null : this.settings.face });
+    if (!wasOn) return;
+    if (faces.length) await this.useFace(faces[0].id);
+    else {
+      this.stop();
+      this.avatar = null;
+    }
+  }
+
+  renameFace(id: string, name: string) {
+    name = name.trim().slice(0, 60);
+    if (!name) return;
+    return this.saveSettings({ faces: this.settings.faces.map((f) => (f.id === id ? { ...f, name } : f)) });
+  }
+
+  /** The face after the one on now, round the list. */
+  private nextFace() {
+    const f = this.settings.faces;
+    const i = f.findIndex((x) => x.id === this.settings.face);
+    return f[(i + 1) % f.length]?.id ?? null;
   }
 
   // ---------------------------------------------------------------- conversations
@@ -208,6 +330,8 @@ class Gilgamesh {
     this.turns = [];
     await this.saveSettings({ chatId: null });
     if (prev) void this.recap(prev);
+    const next = this.settings.rotate && this.settings.faces.length > 1 ? this.nextFace() : null;
+    if (next) await this.useFace(next).catch((e) => store.error(e, 'Couldn’t change Gilgamesh’s face'));
   }
 
   /** Continues an earlier conversation. */
@@ -217,6 +341,9 @@ class Gilgamesh {
     const prev = this.settings.chatId;
     this.turns = [];
     await this.saveSettings({ chatId: id });
+    // He wears the face he had in that conversation, if it's still there.
+    const face = this.conversation(id)?.face;
+    if (face && face !== this.settings.face && this.settings.faces.some((f) => f.id === face)) await this.useFace(face).catch(() => {});
     await this.loadTurns(id);
     if (prev) void this.recap(prev);
   }
@@ -239,7 +366,7 @@ class Gilgamesh {
     const c = await api.post<Chat>('/v1/chats', { title });
     store.reloadChats();
     const now = Date.now();
-    const list = [{ id: c.id, title, started: now, updated: now, summary: '', summarized: 0 }, ...this.settings.conversations].slice(0, KEEP_CONVERSATIONS);
+    const list = [{ id: c.id, title, started: now, updated: now, summary: '', summarized: 0, face: this.settings.face ?? undefined }, ...this.settings.conversations].slice(0, KEEP_CONVERSATIONS);
     await this.saveSettings({ chatId: c.id, conversations: list });
     return c.id;
   }
@@ -470,7 +597,7 @@ class Gilgamesh {
       this.fail(run, e);
       return;
     }
-    context = `${PERSONA.replace('{FRIDAY}', nextFriday())}\n\n${context}\n\n${this.recaps()}`;
+    context = `${PERSONA.replace('{FRIDAY}', nextFriday())}\n\n${context}\n${activity.describe()}\n\n${this.recaps()}`;
     this.streaming = true;
     try {
       await rad.chatSend(chatId, { content: text, context, attachments: [], model: null }, (ev: ChatStreamEvent) => {
