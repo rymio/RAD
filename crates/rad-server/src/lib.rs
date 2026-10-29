@@ -2,6 +2,7 @@
 //! standalone mode both run exactly this code.
 
 mod agent;
+mod aiserver;
 mod auth;
 mod backup;
 mod content;

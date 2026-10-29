@@ -5,6 +5,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { store } from '../lib/state.svelte';
   import { gilgamesh } from '../lib/gilgamesh/gilgamesh.svelte';
+  import { transcripts, clock } from '../lib/gilgamesh/transcripts.svelte';
   import { avatarImage } from '../lib/gilgamesh/face';
   import { Head } from '../lib/gilgamesh/head';
   import { Mic, MicOff, Eye, EyeOff, Square, Loader, ScanFace, SendHorizontal } from '@lucide/svelte';
@@ -80,6 +81,14 @@
     {:else if g.loaded}
       <button class="noface" onclick={() => store.navigate({ kind: 'gilgamesh' })}><ScanFace size={16} /> Give Gilgamesh a face</button>
     {/if}
+  {/if}
+  {#if transcripts.recording}
+    <!-- He's writing down what he hears: the microphone is his, not the conversation's. -->
+    <div class="bar rec">
+      <span class="dot" class:paused={transcripts.paused}></span>
+      <button class="lbl truncate link" title="Open the transcript" onclick={() => store.navigate({ kind: 'gilgamesh' })}>{transcripts.paused ? 'Transcript paused' : 'Transcribing'} · {clock(transcripts.elapsed)}</button>
+      <button class="icon-btn sm" title="Stop and save the transcript" onclick={() => transcripts.stop()}><Square size={12} /></button>
+    </div>
   {/if}
   {#if caption}
     <p class="cap" class:you={!!g.heard} class:err={!g.heard && !g.saying}>{caption}</p>
@@ -215,6 +224,30 @@
     font-size: 12.5px;
     font-weight: 600;
     color: var(--text-2);
+  }
+  .rec .dot {
+    background: var(--danger);
+    animation: rec 1s ease-in-out infinite;
+  }
+  .rec .dot.paused {
+    animation: none;
+    background: var(--text-4);
+  }
+  @keyframes rec {
+    50% {
+      opacity: 0.3;
+    }
+  }
+  .link {
+    border: none;
+    background: none;
+    padding: 0;
+    text-align: left;
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-2);
+    cursor: pointer;
   }
   .mic {
     width: 28px;

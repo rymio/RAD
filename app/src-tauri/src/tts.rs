@@ -9,17 +9,21 @@
 //! The decoder is MioCodec-25Hz-44.1kHz-v2: it reads the same speech tokens as the original
 //! 24 kHz decoder but renders them with clearer harmonics (the 24 kHz one sounds breathy).
 //! Installs that only have the 24 kHz decoder keep working until they upgrade.
+//!
+//! A voice can be made from a recording chosen on disk or recorded here (up to 30 seconds).
+//! The in-app recording is written to the private `tmp` folder only until the voice is made.
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use futures::StreamExt;
 use sha2::{Digest, Sha256};
 use serde::Serialize;
 use serde_json::{json, Value};
-use tauri::ipc::Response;
+use tauri::ipc::{Channel, Response};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::AsyncWriteExt;
 
@@ -53,6 +57,9 @@ const FILES: &[ModelFile] = &[
     ModelFile { name: WAVLM_FILE, base: WAVLM, sha256: "900d8ddff3e3feb6a63d08d93c56c3bc7280caa2838baf92ce14c4b1b3367e18", bytes: 93_992_128, cloning: true },
 ];
 
+/// The longest recording made in the app, and the most of any recording the engine uses.
+const MAX_RECORDING_SECS: u32 = 30;
+
 const PRESETS: &[(&str, &str)] = &[("en_female", "English — female"), ("en_male", "English — male"), ("jp_female", "Japanese — female"), ("jp_male", "Japanese — male")];
 
 struct Engine {
@@ -66,6 +73,8 @@ pub struct Tts {
     engine: tokio::sync::Mutex<Option<Engine>>,
     downloading: Mutex<Option<Value>>,
     http: reqwest::Client,
+    /// Set to stop the recording under way.
+    recording: Mutex<Option<Arc<AtomicBool>>>,
 }
 
 impl Tts {
@@ -84,6 +93,10 @@ fn dir(app: &AppHandle) -> PathBuf {
 
 fn voices_dir(app: &AppHandle) -> PathBuf {
     dir(app).join("voices")
+}
+
+fn recording_path(app: &AppHandle) -> PathBuf {
+    dir(app).join("tmp").join("recording.wav")
 }
 
 fn present(d: &Path, f: &ModelFile) -> bool {
@@ -199,6 +212,7 @@ async fn ensure_engine(app: &AppHandle, t: &Tts, need_cloning: bool) -> CmdResul
     let scratch = d.join("tmp");
     let _ = std::fs::create_dir_all(&scratch);
     cmd.arg("--output-dir").arg(&scratch);
+    cmd.args(["--tts-max-reference-seconds", &MAX_RECORDING_SECS.to_string()]);
     if cloning {
         cmd.arg("--tts-wavlm-model").arg(d.join(WAVLM_FILE));
     }
@@ -397,7 +411,7 @@ fn rand_seed() -> u32 {
     n.wrapping_mul(2_654_435_761) >> 1
 }
 
-/// Makes a voice from a short recording (WAV, MP3 or FLAC; up to 20 seconds are used).
+/// Makes a voice from a short recording (WAV, MP3 or FLAC; up to 30 seconds are used).
 #[tauri::command]
 pub async fn tts_add_voice(app: AppHandle, t: State<'_, Tts>, name: String, path: String) -> CmdResult<Value> {
     if !installed(&app, true) {
@@ -423,7 +437,98 @@ pub async fn tts_add_voice(app: AppHandle, t: State<'_, Tts>, name: String, path
         let v: Value = resp.json().await.unwrap_or_default();
         return Err(CmdError::new("tts", v["error"]["message"].as_str().or(v["error"].as_str()).unwrap_or("Couldn't make a voice from that recording").to_string()));
     }
+    if Path::new(&path) == recording_path(&app) {
+        let _ = std::fs::remove_file(&path);
+    }
     Ok(json!({"key": key}))
+}
+
+/// 16-bit mono WAV.
+fn wav(rate: u32, samples: &[f32]) -> Vec<u8> {
+    let data = (samples.len() * 2) as u32;
+    let mut b = Vec::with_capacity(44 + data as usize);
+    b.extend_from_slice(b"RIFF");
+    b.extend_from_slice(&(36 + data).to_le_bytes());
+    b.extend_from_slice(b"WAVEfmt ");
+    b.extend_from_slice(&16u32.to_le_bytes());
+    b.extend_from_slice(&1u16.to_le_bytes());
+    b.extend_from_slice(&1u16.to_le_bytes());
+    b.extend_from_slice(&rate.to_le_bytes());
+    b.extend_from_slice(&(rate * 2).to_le_bytes());
+    b.extend_from_slice(&2u16.to_le_bytes());
+    b.extend_from_slice(&16u16.to_le_bytes());
+    b.extend_from_slice(b"data");
+    b.extend_from_slice(&data.to_le_bytes());
+    for s in samples {
+        b.extend_from_slice(&((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes());
+    }
+    b
+}
+
+/// Records the microphone for a new voice, until `tts_record_stop` or 30 seconds. Events on
+/// `on_event`: `level {rms, seconds}` (~15 a second), then `done {path, seconds}` or
+/// `error {message}`.
+#[tauri::command]
+pub fn tts_record_start(app: AppHandle, t: State<'_, Tts>, on_event: Channel<Value>) -> CmdResult<()> {
+    let stop = Arc::new(AtomicBool::new(false));
+    if let Some(old) = t.recording.lock().unwrap().replace(stop.clone()) {
+        old.store(true, Ordering::SeqCst);
+    }
+    let path = recording_path(&app);
+    std::thread::Builder::new()
+        .name("rad-voice-recording".into())
+        .spawn(move || {
+            let send = |v: Value| {
+                let _ = on_event.send(v);
+            };
+            let (tx, rx) = mpsc::channel::<Vec<f32>>();
+            // The stream stops when it's dropped at the end of this closure.
+            let (_stream, rate) = match crate::stt::open_mic(tx) {
+                Ok(s) => s,
+                Err(e) => return send(json!({"type": "error", "message": e})),
+            };
+            let max = (rate * MAX_RECORDING_SECS) as usize;
+            let mut audio: Vec<f32> = Vec::with_capacity(max);
+            let mut level = 0f32;
+            let mut level_at = Instant::now();
+            while !stop.load(Ordering::SeqCst) && audio.len() < max {
+                match rx.recv_timeout(Duration::from_millis(100)) {
+                    Ok(c) => {
+                        level = level.max((c.iter().map(|x| x * x).sum::<f32>() / c.len().max(1) as f32).sqrt());
+                        audio.extend_from_slice(&c[..c.len().min(max - audio.len())]);
+                    }
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(mpsc::RecvTimeoutError::Disconnected) => return send(json!({"type": "error", "message": "The microphone stopped"})),
+                }
+                if level_at.elapsed() >= Duration::from_millis(66) {
+                    send(json!({"type": "level", "rms": level, "seconds": audio.len() as f64 / rate as f64}));
+                    level = 0.0;
+                    level_at = Instant::now();
+                }
+            }
+            let seconds = audio.len() as f64 / rate as f64;
+            let saved = path.parent().map(std::fs::create_dir_all).transpose().and_then(|_| std::fs::write(&path, wav(rate, &audio)));
+            match saved {
+                Ok(()) => send(json!({"type": "done", "path": path, "seconds": seconds})),
+                Err(e) => send(json!({"type": "error", "message": format!("Couldn't keep the recording: {e}")})),
+            }
+        })
+        .map_err(|e| CmdError::new("tts", e.to_string()))?;
+    Ok(())
+}
+
+/// Ends the recording under way (it is kept, and `done` follows on its channel).
+#[tauri::command]
+pub fn tts_record_stop(t: State<'_, Tts>) {
+    if let Some(stop) = t.recording.lock().unwrap().take() {
+        stop.store(true, Ordering::SeqCst);
+    }
+}
+
+/// The last recording made in the app, to listen to before making a voice from it.
+#[tauri::command]
+pub fn tts_recording(app: AppHandle) -> CmdResult<Response> {
+    std::fs::read(recording_path(&app)).map(Response::new).map_err(|_| CmdError::new("bad_request", "There's no recording yet"))
 }
 
 #[tauri::command]

@@ -9,6 +9,9 @@
 // a short recap, which later conversations start from. His answers carry tags for his face and
 // for actions ([remember: …], [note: …], [event: …], [open: …], [search: …], [music: …]).
 //
+// He can also just listen and keep a transcript (transcripts.svelte.ts); a conversation can be
+// about one of them, which then goes into his context.
+//
 // Gilgamesh goes everywhere in RAD: his face sits in the sidebar, the microphone stays on from
 // view to view, and he sees which part of RAD is open (observe.svelte.ts).
 //
@@ -28,6 +31,7 @@ import { activity } from './observe.svelte';
 import { citedNumbers, parseTags, stripCitations, stripTags, takeSentences, GESTURES, MOODS, type Gesture, type Mood } from './text';
 import { runAction, situation } from './tools';
 import { thumbnail, type Avatar } from './face';
+import { transcripts } from './transcripts.svelte';
 
 export type Mode = 'hands_free' | 'push_to_talk';
 
@@ -42,6 +46,8 @@ export interface Conversation {
   summarized: number;
   /** The face Gilgamesh wore in it. */
   face?: string;
+  /** The transcript it is about (its note's id). */
+  transcript?: number;
 }
 
 /** One of Gilgamesh's faces: a prepared photo, kept under its own key in the vault. */
@@ -105,6 +111,8 @@ You can act for the owner by writing an action tag in your reply. It is carried 
 - [music: play | pause | next | previous | song or artist] controls their music.
 Only act when the owner asks or clearly wants it, and always say a few words about what you're doing. You go with the owner everywhere in RAD (your face is in the sidebar), so opening something or searching doesn't end the conversation; it happens once you've finished speaking.
 
+You can also listen without answering and write down what is said (the owner starts it with the Transcripts button). Those transcripts are notes in the owner's vault: passages from them appear among the sources, and the recent ones are listed below.
+
 You can see which part of RAD the owner has open and where they were before (WHAT THE OWNER IS DOING, below). Use it to help with what they're doing ("this page", "this email", "what I'm looking at"), but don't comment on it unless it helps.
 
 Examples:
@@ -165,6 +173,8 @@ class Gilgamesh {
   avatar = $state<Avatar | null>(null);
   loaded = $state(false);
   holding = $state(false);
+  /** The transcript the conversation going on is about. */
+  about = $state<{ id: number; title: string } | null>(null);
 
   /** Every picture of him on screen. */
   head = new Heads();
@@ -212,13 +222,17 @@ class Gilgamesh {
     if (id && !this.settings.conversations.some((c) => c.id === id)) {
       this.settings.conversations = [{ id, title: 'Gilgamesh', started: Date.now(), updated: Date.now(), summary: '', summarized: 0 }, ...this.settings.conversations];
     }
+    await transcripts.load().catch(() => {});
     this.loaded = true;
+    this.about = this.aboutOf(id);
     if (id) await this.loadTurns(id);
   }
 
   /** Forgets everything loaded (the vault was locked); the microphone goes off. */
   unload() {
     this.stop();
+    transcripts.unload();
+    this.about = null;
     this.loaded = false;
     this.avatar = null;
     this.turns = [];
@@ -308,6 +322,19 @@ class Gilgamesh {
     return this.settings.conversations.find((c) => c.id === id) ?? null;
   }
 
+  private aboutOf(id: number | null) {
+    const t = transcripts.find(this.conversation(id)?.transcript);
+    return t ? { id: t.id, title: t.title } : null;
+  }
+
+  /** Starts a new conversation about a transcript. */
+  async discuss(id: number) {
+    const t = transcripts.find(id);
+    if (!t) return;
+    await this.newConversation();
+    this.about = { id: t.id, title: t.title };
+  }
+
   /** Shows a conversation's messages in the transcript. */
   private async loadTurns(id: number) {
     try {
@@ -328,6 +355,7 @@ class Gilgamesh {
     this.interrupt();
     const prev = this.settings.chatId;
     this.turns = [];
+    this.about = null;
     await this.saveSettings({ chatId: null });
     if (prev) void this.recap(prev);
     const next = this.settings.rotate && this.settings.faces.length > 1 ? this.nextFace() : null;
@@ -341,6 +369,7 @@ class Gilgamesh {
     const prev = this.settings.chatId;
     this.turns = [];
     await this.saveSettings({ chatId: id });
+    this.about = this.aboutOf(id);
     // He wears the face he had in that conversation, if it's still there.
     const face = this.conversation(id)?.face;
     if (face && face !== this.settings.face && this.settings.faces.some((f) => f.id === face)) await this.useFace(face).catch(() => {});
@@ -353,6 +382,7 @@ class Gilgamesh {
     if (id === this.settings.chatId) {
       this.interrupt();
       this.turns = [];
+      this.about = null;
     }
     await api.del(`/v1/chats/${id}`).catch(() => {});
     await this.saveSettings({ chatId: this.settings.chatId === id ? null : this.settings.chatId, conversations: this.settings.conversations.filter((c) => c.id !== id) });
@@ -362,11 +392,11 @@ class Gilgamesh {
   private async chatId(firstWords: string): Promise<number> {
     const id = this.settings.chatId;
     if (id && this.conversation(id)) return id;
-    const title = `Gilgamesh: ${firstWords.replace(/\s+/g, ' ').slice(0, 50)}`;
+    const title = this.about ? `Gilgamesh: about ${this.about.title.slice(0, 44)}` : `Gilgamesh: ${firstWords.replace(/\s+/g, ' ').slice(0, 50)}`;
     const c = await api.post<Chat>('/v1/chats', { title });
     store.reloadChats();
     const now = Date.now();
-    const list = [{ id: c.id, title, started: now, updated: now, summary: '', summarized: 0, face: this.settings.face ?? undefined }, ...this.settings.conversations].slice(0, KEEP_CONVERSATIONS);
+    const list = [{ id: c.id, title, started: now, updated: now, summary: '', summarized: 0, face: this.settings.face ?? undefined, transcript: this.about?.id }, ...this.settings.conversations].slice(0, KEEP_CONVERSATIONS);
     await this.saveSettings({ chatId: c.id, conversations: list });
     return c.id;
   }
@@ -423,6 +453,8 @@ class Gilgamesh {
 
   async start() {
     if (this.phase !== 'off') return;
+    // One microphone: a transcript being made stops (and is saved).
+    if (transcripts.recording) await transcripts.stop();
     this.error = null;
     this.phase = 'starting';
     const ch = new Channel<any>();
@@ -591,13 +623,16 @@ class Gilgamesh {
     void this.player(run);
     let chatId: number;
     let context: string;
+    let topic: string;
     try {
-      [chatId, context] = await Promise.all([this.chatId(text), situation().catch(() => '')]);
+      [chatId, context, topic] = await Promise.all([this.chatId(text), situation().catch(() => ''), this.about ? transcripts.context(this.about.id).catch(() => '') : '']);
     } catch (e: any) {
       this.fail(run, e);
       return;
     }
-    context = `${PERSONA.replace('{FRIDAY}', nextFriday())}\n\n${context}\n${activity.describe()}\n\n${this.recaps()}`;
+    const made = transcripts.describe();
+    // The transcript under discussion goes last, so a long one is what gets cut at the limit.
+    context = `${PERSONA.replace('{FRIDAY}', nextFriday())}\n\n${context}\n${activity.describe()}\n\n${this.recaps()}${made ? `\n\n${made}` : ''}${topic ? `\n\n${topic}` : ''}`;
     this.streaming = true;
     try {
       await rad.chatSend(chatId, { content: text, context, attachments: [], model: null }, (ev: ChatStreamEvent) => {

@@ -5,11 +5,12 @@
   import { store } from '../lib/state.svelte';
   import { formatBytes } from '../lib/util';
   import { gilgamesh, MAX_FACES } from '../lib/gilgamesh/gilgamesh.svelte';
+  import { transcripts, clock, duration } from '../lib/gilgamesh/transcripts.svelte';
   import { prepareAvatar, avatarImage } from '../lib/gilgamesh/face';
   import { Head } from '../lib/gilgamesh/head';
   import { MOODS, GESTURES, type Mood, type Gesture } from '../lib/gilgamesh/text';
   import type { Citation } from '../lib/types';
-  import { Mic, MicOff, ImageUp, SlidersHorizontal, RotateCcw, Loader, Download, Headphones, SendHorizontal, MessageSquareText, Hand, Square, X, CircleAlert, ScanFace, History, Trash2, FileText, MessageSquare, Check, Plus, Shuffle } from '@lucide/svelte';
+  import { Mic, MicOff, ImageUp, SlidersHorizontal, RotateCcw, Loader, Download, Headphones, SendHorizontal, MessageSquareText, Hand, Square, X, CircleAlert, ScanFace, History, Trash2, FileText, MessageSquare, Check, Plus, Shuffle, AudioLines, Pause, Play, Circle, Sparkles, FolderOpen } from '@lucide/svelte';
 
   interface TtsStatus { installed: boolean; engine: boolean; dev_build: boolean; bytes: number; downloading: { done: number; total: number } | null; voices: { key: string; name: string }[] }
   interface SttStatus { installed: boolean; bytes: number; downloading: { done: number; total: number } | null }
@@ -29,7 +30,13 @@
   let typed = $state('');
   let headError = $state<string | null>(null);
   let transcriptEl = $state<HTMLDivElement | null>(null);
-  let panel = $state<'now' | 'earlier'>('now');
+  let panel = $state<'now' | 'earlier' | 'transcripts'>(transcripts.recording ? 'transcripts' : 'now');
+  /** Transcripts: the one opened in the list, its text, and the live lines' scroller. */
+  let openId = $state<number | null>(null);
+  let openText = $state('');
+  let confirmDelete = $state<number | null>(null);
+  let newTitle = $state('');
+  let liveEl = $state<HTMLDivElement | null>(null);
   let confirmForget = $state<number | null>(null);
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -40,7 +47,7 @@
 
   const phaseLabel = $derived.by(() => {
     switch (g.phase) {
-      case 'off': return 'Not listening';
+      case 'off': return transcripts.recording ? (transcripts.paused ? 'Transcript paused' : 'Transcribing') : 'Not listening';
       case 'starting': return 'Starting…';
       case 'listening': return ptt ? (g.holding ? 'Listening…' : 'Hold Space to talk') : 'Listening';
       case 'hearing': return 'Hearing you…';
@@ -62,6 +69,57 @@
   function openSource(c: Citation) {
     if (c.chat_id) store.navigate({ kind: 'chat', id: c.chat_id });
     else store.navigate({ kind: 'project', id: c.project_id, doc: c.document_id });
+  }
+
+  function showTranscripts() {
+    if (showTranscript && panel === 'transcripts') showTranscript = false;
+    else {
+      showTranscript = true;
+      panel = 'transcripts';
+    }
+  }
+
+  function showConversation() {
+    if (showTranscript && panel !== 'transcripts') showTranscript = false;
+    else {
+      showTranscript = true;
+      if (panel === 'transcripts') panel = 'now';
+    }
+  }
+
+  async function startTranscript() {
+    await transcripts.start(newTitle);
+    newTitle = '';
+    if (transcripts.error) store.error(transcripts.error, 'Couldn’t start transcribing');
+  }
+
+  async function openTranscript(id: number) {
+    confirmDelete = null;
+    if (openId === id) return (openId = null);
+    openId = id;
+    openText = '';
+    try {
+      const text = await transcripts.text(id);
+      if (openId === id) openText = text;
+    } catch (e) {
+      store.error(e, 'Couldn’t open the transcript');
+    }
+  }
+
+  async function discuss(id: number) {
+    await g.discuss(id);
+    panel = 'now';
+  }
+
+  async function showInVault(id: number) {
+    const p = await transcripts.project();
+    store.navigate({ kind: 'project', id: p.id, doc: id });
+  }
+
+  async function deleteTranscript(id: number) {
+    confirmDelete = null;
+    if (openId === id) openId = null;
+    await transcripts.remove(id);
   }
 
   async function resume(id: number) {
@@ -116,6 +174,12 @@
       off();
       head?.destroy();
     };
+  });
+
+  $effect(() => {
+    void transcripts.segments.length;
+    void transcripts.heard;
+    liveEl?.scrollTo({ top: liveEl.scrollHeight });
   });
 
   $effect(() => {
@@ -240,7 +304,10 @@
     <span class="spacer"></span>
     {#if g.avatar}
       <button class="btn sm ghost no-drag" title="Start a new conversation" onclick={() => g.newConversation()}><RotateCcw size={14} /> New conversation</button>
-      <button class="icon-btn no-drag" class:active={showTranscript} title="Transcript" onclick={() => (showTranscript = !showTranscript)}><MessageSquareText size={17} /></button>
+      <button class="btn sm ghost no-drag" class:active={showTranscript && panel === 'transcripts'} title="Listen and write down what’s said; your saved transcripts" onclick={showTranscripts}>
+        {#if transcripts.recording}<span class="recdot" class:paused={transcripts.paused}></span>{:else}<AudioLines size={14} />{/if} Transcripts
+      </button>
+      <button class="icon-btn no-drag" class:active={showTranscript && panel !== 'transcripts'} title="Conversation" onclick={showConversation}><MessageSquareText size={17} /></button>
       <button class="icon-btn no-drag" class:active={showSettings} title="Settings" onclick={() => (showSettings = !showSettings)}><SlidersHorizontal size={17} /></button>
     {/if}
   </header>
@@ -287,6 +354,8 @@
             <p class="him">{g.saying}</p>
           {:else if g.error}
             <p class="err"><CircleAlert size={14} /> {g.error}</p>
+          {:else if transcripts.recording}
+            <p class="you">{transcripts.heard || (transcripts.paused ? 'Paused — nothing is being written down.' : 'Writing down what he hears…')}</p>
           {/if}
         </div>
 
@@ -345,9 +414,13 @@
           <div class="tabs">
             <button class:on={panel === 'now'} onclick={() => (panel = 'now')}><MessageSquareText size={13} /> This conversation</button>
             <button class:on={panel === 'earlier'} onclick={() => (panel = 'earlier')}><History size={13} /> Earlier{#if g.conversations.length > 1}<span class="count">{g.conversations.length - (g.settings.chatId ? 1 : 0)}</span>{/if}</button>
+            <button class:on={panel === 'transcripts'} onclick={() => (panel = 'transcripts')}><AudioLines size={13} /> Transcripts</button>
           </div>
           {#if panel === 'now'}
             <div class="turns selectable" bind:this={transcriptEl}>
+              {#if g.about}
+                <div class="about"><AudioLines size={13} /><span class="truncate">About the transcript <strong>{g.about.title}</strong></span></div>
+              {/if}
               {#each g.turns as t}
                 <div class="turn {t.who}">
                   <span class="who">{t.who === 'you' ? 'You' : 'Gilgamesh'}</span>
@@ -366,10 +439,10 @@
                   {/if}
                 </div>
               {:else}
-                <p class="empty">What you say and his answers appear here. Gilgamesh keeps every conversation: he remembers what you talked about, knows what’s in your vault, and can take notes, add to your calendar, open things and play music when you ask.</p>
+                <p class="empty">{#if g.about}Ask him anything about this transcript: what was decided, who said they’d do what, or for a summary. {/if}What you say and his answers appear here. Gilgamesh keeps every conversation: he remembers what you talked about, knows what’s in your vault, and can take notes, add to your calendar, open things and play music when you ask.</p>
               {/each}
             </div>
-          {:else}
+          {:else if panel === 'earlier'}
             <div class="turns">
               <button class="btn sm new" onclick={() => (g.newConversation(), (panel = 'now'))}><RotateCcw size={13} /> Start a new conversation</button>
               {#each g.conversations as c (c.id)}
@@ -388,6 +461,67 @@
                 </div>
               {:else}
                 <p class="empty">Your conversations with Gilgamesh will be listed here, so you can come back to them. After each one he writes himself a short recap, which he remembers next time.</p>
+              {/each}
+            </div>
+          {:else}
+            <div class="turns">
+              {#if transcripts.recording}
+                <div class="recbox">
+                  <div class="rh">
+                    <span class="recdot" class:paused={transcripts.paused}></span>
+                    <strong>{transcripts.paused ? 'Paused' : 'Transcribing'}</strong>
+                    <span class="cw">{clock(transcripts.elapsed)}</span>
+                    <span class="spacer"></span>
+                    <button class="icon-btn sm" title={transcripts.paused ? 'Resume' : 'Pause'} onclick={() => transcripts.pause(!transcripts.paused)}>{#if transcripts.paused}<Play size={13} />{:else}<Pause size={13} />{/if}</button>
+                    <button class="btn sm danger" onclick={() => transcripts.stop()}><Square size={12} /> Stop</button>
+                  </div>
+                  <input class="input" placeholder="Title (optional)" bind:value={transcripts.title} />
+                  <div class="live selectable" bind:this={liveEl}>
+                    {#each transcripts.segments as s}
+                      <p><span class="at">{clock(s.at)}</span>{s.text}</p>
+                    {/each}
+                    {#if transcripts.heard}<p class="heard"><span class="at">…</span>{transcripts.heard}</p>{/if}
+                    {#if !transcripts.segments.length && !transcripts.heard}<p class="empty">Listening. What’s said appears here, line by line; it’s saved as it goes.</p>{/if}
+                  </div>
+                </div>
+              {:else}
+                <div class="recbox">
+                  <input class="input" placeholder="Title, e.g. Team meeting (optional)" bind:value={newTitle} onkeydown={(e) => e.key === 'Enter' && stt?.installed && startTranscript()} />
+                  <button class="btn sm primary" disabled={!stt?.installed || transcripts.starting} onclick={startTranscript}>
+                    {#if transcripts.starting}<Loader size={13} class="spin" />{:else}<Circle size={13} />{/if} Start transcribing
+                  </button>
+                  <small class="fine">{stt?.installed ? 'Gilgamesh listens and writes down everything that’s said, without answering. Transcripts are kept in your vault (the Transcripts project), so you can ask about them in any chat, have them summarised, or talk them over with him.' : 'Download speech recognition first (on the left).'}</small>
+                </div>
+              {/if}
+              {#each transcripts.sorted as t (t.id)}
+                <div class="conv">
+                  <button class="cbody" onclick={() => openTranscript(t.id)} title={openId === t.id ? 'Close' : 'Read this transcript'}>
+                    <span class="ct truncate">{t.title}</span>
+                    <span class="cw">{when(t.started)} · {duration(t.seconds)} · {t.words.toLocaleString('en-GB')} words</span>
+                    {#if t.summary && openId !== t.id}<span class="cs">{t.summary}</span>{/if}
+                  </button>
+                  {#if confirmDelete === t.id}
+                    <button class="btn sm danger" onclick={() => deleteTranscript(t.id)}>Delete</button>
+                    <button class="icon-btn sm" title="Keep" onclick={() => (confirmDelete = null)}><X size={13} /></button>
+                  {:else}
+                    <button class="icon-btn sm" title="Delete this transcript" onclick={() => (confirmDelete = t.id)}><Trash2 size={13} /></button>
+                  {/if}
+                </div>
+                {#if openId === t.id}
+                  <div class="tdetail">
+                    <div class="tacts">
+                      <button class="btn sm" disabled={transcripts.summarising !== null} onclick={() => transcripts.summarise(t.id)}>
+                        {#if transcripts.summarising === t.id}<Loader size={13} class="spin" /> Summarising…{:else}<Sparkles size={13} /> {t.summary ? 'Summarise again' : 'Summarise'}{/if}
+                      </button>
+                      <button class="btn sm primary" onclick={() => discuss(t.id)}><MessageSquare size={13} /> Discuss</button>
+                      <button class="icon-btn sm" title="Show in the vault" onclick={() => showInVault(t.id)}><FolderOpen size={14} /></button>
+                    </div>
+                    {#if t.summary}<div class="tsum selectable"><span class="label">Summary</span>{t.summary}</div>{/if}
+                    <div class="ttext selectable">{#if openText}{openText}{:else}<Loader size={14} class="spin" />{/if}</div>
+                  </div>
+                {/if}
+              {:else}
+                {#if !transcripts.recording}<p class="empty">Your transcripts will be listed here.</p>{/if}
               {/each}
             </div>
           {/if}
@@ -934,6 +1068,102 @@
     line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+  .recdot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--danger);
+    flex: none;
+    animation: pulse 1s infinite;
+  }
+  .recdot.paused {
+    animation: none;
+    background: var(--text-4);
+  }
+  .recbox {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--surface);
+  }
+  .recbox > .btn {
+    align-self: flex-start;
+  }
+  .rh {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+  }
+  .live {
+    max-height: 260px;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .live p,
+  .ttext {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .live .heard {
+    color: var(--text-2);
+    font-style: italic;
+  }
+  .at {
+    font-size: 11px;
+    color: var(--text-3);
+    font-variant-numeric: tabular-nums;
+    margin-right: 6px;
+  }
+  .tdetail {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: -6px 0 4px 10px;
+    padding-left: 10px;
+    border-left: 2px solid var(--accent-soft);
+  }
+  .tacts {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .tsum {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    padding: 8px 10px;
+    border-radius: var(--r-sm);
+    background: var(--accent-softer);
+  }
+  .tsum .label {
+    margin: 0;
+  }
+  .ttext {
+    max-height: 340px;
+    overflow: auto;
+    white-space: pre-wrap;
+    color: var(--text-2);
+  }
+  .about {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: var(--r-sm);
+    background: var(--accent-softer);
+    font-size: 12px;
+    color: var(--text-2);
   }
   .moods {
     display: flex;

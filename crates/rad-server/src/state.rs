@@ -55,6 +55,8 @@ pub struct AppState {
     pub ffmpeg_ok: std::sync::atomic::AtomicBool,
     /// SQL databases next to the vault (see routes/db.rs); their keys are in the vault.
     pub dbs: rad_db::Databases,
+    /// The AI API server (see aiserver): RAD's models shared with other programs.
+    pub ai: crate::aiserver::AiServer,
     stopped: std::sync::atomic::AtomicBool,
     pub stop_notify: Notify,
     /// Change-log entries this process wrote, so the shared-vault watcher only relays others'.
@@ -92,6 +94,7 @@ impl AppState {
             media_tokens: Mutex::new(HashMap::new()),
             ffmpeg_ok: std::sync::atomic::AtomicBool::new(false),
             dbs,
+            ai: Default::default(),
             stopped: std::sync::atomic::AtomicBool::new(false),
             stop_notify: Notify::new(),
             own_seqs: Mutex::new(HashSet::new()),
@@ -134,6 +137,7 @@ impl AppState {
         *self.vault.write().unwrap() = Some(v.clone());
         if let Ok(rt) = tokio::runtime::Handle::try_current() {
             rt.spawn(crate::sharing::run(self.arc(), v));
+            rt.spawn(crate::aiserver::on_unlock(self.arc()));
         }
         self.touch();
         let _ = self.events.send(Event::Unlocked);
@@ -151,6 +155,7 @@ impl AppState {
         self.media_tokens.lock().unwrap().clear();
         // Their keys were in the vault.
         self.dbs.close_all();
+        self.ai.lock();
         if had {
             let _ = self.events.send(Event::Locked);
             tracing::info!("vault locked");

@@ -17,7 +17,7 @@ use futures::StreamExt;
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
 
-pub use engine::{shutdown, ChatEvent, ChatMessage, ChatOptions};
+pub use engine::{loaded, shutdown, ChatEvent, ChatMessage, ChatOptions};
 pub use fit::{memory_needed, total_memory, FitLevel};
 
 #[derive(Debug, thiserror::Error)]

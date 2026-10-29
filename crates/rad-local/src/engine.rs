@@ -6,10 +6,11 @@
 //! on the CPU (small model, same everywhere); chat uses the GPU where llama.cpp has one (Metal
 //! on macOS). Idle models are unloaded after a few minutes to give the memory back.
 
+use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, OnceLock};
+use std::sync::{mpsc, Mutex, OnceLock};
 use std::time::Duration;
 
 use llama_cpp_2::context::params::LlamaContextParams;
@@ -79,6 +80,9 @@ fn backend() -> std::result::Result<&'static LlamaBackend, String> {
 static EMBED_TX: OnceLock<mpsc::Sender<Job>> = OnceLock::new();
 static CHAT_TX: OnceLock<mpsc::Sender<Job>> = OnceLock::new();
 
+/// The model each worker has in memory (worker name → model id).
+static LOADED: Mutex<BTreeMap<&'static str, &'static str>> = Mutex::new(BTreeMap::new());
+
 fn embed_worker() -> &'static mpsc::Sender<Job> {
     EMBED_TX.get_or_init(|| spawn("rad-llama-embed"))
 }
@@ -87,10 +91,23 @@ fn chat_worker() -> &'static mpsc::Sender<Job> {
     CHAT_TX.get_or_init(|| spawn("rad-llama-chat"))
 }
 
-fn spawn(name: &str) -> mpsc::Sender<Job> {
+fn spawn(name: &'static str) -> mpsc::Sender<Job> {
     let (tx, rx) = mpsc::channel();
-    std::thread::Builder::new().name(name.into()).spawn(move || run(rx)).expect("spawn llama.cpp worker");
+    std::thread::Builder::new().name(name.into()).spawn(move || run(name, rx)).expect("spawn llama.cpp worker");
     tx
+}
+
+/// The ids of the models in memory right now.
+pub fn loaded() -> Vec<&'static str> {
+    LOADED.lock().unwrap().values().copied().collect()
+}
+
+fn mark(worker: &'static str, model: Option<&'static str>) {
+    let mut l = LOADED.lock().unwrap();
+    match model {
+        Some(m) => l.insert(worker, m),
+        None => l.remove(worker),
+    };
 }
 
 fn stopped() -> LocalError {
@@ -126,7 +143,7 @@ pub fn shutdown() {
     }
 }
 
-fn run(rx: mpsc::Receiver<Job>) {
+fn run(worker: &'static str, rx: mpsc::Receiver<Job>) {
     let mut slot: Slot = None;
     loop {
         let job = match rx.recv_timeout(IDLE_UNLOAD) {
@@ -135,6 +152,7 @@ fn run(rx: mpsc::Receiver<Job>) {
                 if let Some((p, _)) = slot.take() {
                     tracing::info!("unloaded idle built-in model {}", p.display());
                 }
+                mark(worker, None);
                 continue;
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => return,
@@ -153,16 +171,20 @@ fn run(rx: mpsc::Receiver<Job>) {
         match job {
             Job::Embed { path, spec, texts, reply } => {
                 let res = guarded(&mut slot, |slot| embed_now(backend, slot, &path, spec, &texts));
+                mark(worker, slot.is_some().then_some(spec.id));
                 let _ = reply.send(res);
             }
             Job::Chat { path, spec, messages, opts, tx } => {
+                mark(worker, Some(spec.id));
                 let res = guarded(&mut slot, |slot| chat_now(backend, slot, &path, spec, messages, opts, &tx));
+                mark(worker, slot.is_some().then_some(spec.id));
                 if let Err(e) = res {
                     let _ = tx.blocking_send(Err(e));
                 }
             }
             Job::Unload(ack) => {
                 slot = None;
+                mark(worker, None);
                 let _ = ack.send(());
             }
         }

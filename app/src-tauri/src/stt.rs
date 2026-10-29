@@ -140,7 +140,7 @@ fn ends_sentence(t: &str) -> bool {
 // ------------------------------------------------------------------ the microphone
 
 /// Opens the default microphone; its samples arrive as mono chunks on the returned channel.
-fn open_mic(tx: mpsc::Sender<Vec<f32>>) -> Result<(cpal::Stream, u32), String> {
+pub(crate) fn open_mic(tx: mpsc::Sender<Vec<f32>>) -> Result<(cpal::Stream, u32), String> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     let dev = cpal::default_host().default_input_device().ok_or("No microphone found")?;
     let cfg = dev.default_input_config().map_err(|e| format!("Couldn't open the microphone: {e}"))?;

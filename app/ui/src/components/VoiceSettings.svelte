@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { invoke } from '@tauri-apps/api/core';
+  import { invoke, Channel } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
   import { store } from '../lib/state.svelte';
   import { speech } from '../lib/speech.svelte';
   import { formatBytes } from '../lib/util';
   import type { ClientConfig } from '../lib/types';
-  import { Download, Trash2, Play, Square, Loader, Mic, FolderOpen, RotateCcw, CircleAlert } from '@lucide/svelte';
+  import { Download, Trash2, Play, Square, Loader, Mic, FolderOpen, RotateCcw, CircleAlert, Circle, Check } from '@lucide/svelte';
 
   interface Status {
     installed: boolean; hd: boolean; hd_bytes: number; cloning_installed: boolean; engine: boolean; dev_build: boolean; bytes: number; cloning_bytes: number; dir: string;
@@ -20,6 +20,15 @@
   let sample = $state('Hello! This is how RAD sounds when it reads your answers aloud.');
   let voiceName = $state('');
   let cloning = $state(false);
+  /** Recording a voice here: the microphone is on, and how much has been recorded. */
+  let recording = $state(false);
+  let recSeconds = $state(0);
+  let recLevel = $state(0);
+  /** The finished recording, waiting to be made into a voice. */
+  let recorded = $state<{ path: string; seconds: number } | null>(null);
+  let preview: HTMLAudioElement | null = null;
+  let previewing = $state(false);
+  const MAX_RECORDING = 30;
 
   const cfg = $derived(store.config);
   const pct = $derived(progress && progress.total ? Math.floor((progress.done / progress.total) * 100) : 0);
@@ -68,21 +77,89 @@
 
   async function addVoice() {
     const { open } = await import('@tauri-apps/plugin-dialog');
-    const f = await open({ multiple: false, title: 'Choose a recording of the voice (5–20 seconds)', filters: [{ name: 'Audio', extensions: ['wav', 'mp3', 'flac'] }] });
+    const f = await open({ multiple: false, title: 'Choose a recording of the voice (5–30 seconds)', filters: [{ name: 'Audio', extensions: ['wav', 'mp3', 'flac'] }] });
     if (typeof f !== 'string') return;
-    const name = voiceName.trim() || f.split(/[\\/]/).pop()!.replace(/\.[^.]+$/, '');
+    await makeVoice(voiceName.trim() || f.split(/[\\/]/).pop()!.replace(/\.[^.]+$/, ''), f);
+  }
+
+  async function makeVoice(name: string, path: string) {
     cloning = true;
     try {
-      const r = await invoke<{ key: string }>('tts_add_voice', { name, path: f });
+      const r = await invoke<{ key: string }>('tts_add_voice', { name, path });
       await refresh();
       await set({ tts_voice: r.key });
       voiceName = '';
       store.toast('success', 'Voice added', 'It’s now the selected voice — try it with “Play”.');
+      return true;
     } catch (e) {
       store.error(e, 'Couldn’t make a voice from that recording');
+      return false;
     } finally {
       cloning = false;
     }
+  }
+
+  async function record() {
+    if (recording) return invoke('tts_record_stop').catch(() => {});
+    stopPreview();
+    recorded = null;
+    recSeconds = 0;
+    recLevel = 0;
+    const ch = new Channel<any>();
+    ch.onmessage = (ev) => {
+      if (ev.type === 'level') {
+        recLevel = ev.rms;
+        recSeconds = ev.seconds;
+      } else {
+        recording = false;
+        recLevel = 0;
+        if (ev.type === 'done') {
+          if (ev.seconds < 3) store.toast('error', 'That recording is too short', 'Speak for at least 5 seconds.');
+          else recorded = { path: ev.path, seconds: ev.seconds };
+        } else store.error(ev.message, 'Couldn’t record');
+      }
+    };
+    try {
+      recording = true;
+      await invoke('tts_record_start', { onEvent: ch });
+    } catch (e) {
+      recording = false;
+      store.error(e, 'Couldn’t record');
+    }
+  }
+
+  function stopPreview() {
+    preview?.pause();
+    preview = null;
+    previewing = false;
+  }
+
+  async function playRecording() {
+    if (previewing) return stopPreview();
+    try {
+      const wav = await invoke<ArrayBuffer>('tts_recording');
+      const url = URL.createObjectURL(new Blob([wav], { type: 'audio/wav' }));
+      const a = new Audio(url);
+      const done = () => {
+        URL.revokeObjectURL(url);
+        if (preview === a) stopPreview();
+      };
+      a.onended = done;
+      a.onpause = done;
+      preview = a;
+      previewing = true;
+      await a.play();
+    } catch (e) {
+      stopPreview();
+      store.error(e, 'Couldn’t play the recording');
+    }
+  }
+
+  async function keepRecording() {
+    if (!recorded) return;
+    stopPreview();
+    const name = voiceName.trim() || `My voice ${new Date().toLocaleDateString('en-GB')}`;
+    if (await makeVoice(name, recorded.path)) recorded = null;
   }
 
   async function deleteVoice(key: string) {
@@ -101,7 +178,11 @@
       if (e.payload.done === true) progress = null;
       else progress = { done: e.payload.done, total: e.payload.total };
     });
-    return () => un.then((u) => u());
+    return () => {
+      un.then((u) => u());
+      if (recording) invoke('tts_record_stop').catch(() => {});
+      stopPreview();
+    };
   });
 </script>
 
@@ -193,7 +274,7 @@
     </div>
 
     <h3>Your own voice</h3>
-    <p class="lead">Make a voice from a short, clear recording (5–20 seconds; WAV, MP3 or FLAC). Only use recordings of people who agreed to it.</p>
+    <p class="lead">Record yourself here for up to 30 seconds, or choose a short, clear recording (5–30 seconds; WAV, MP3 or FLAC). Speak naturally in a quiet room. Only use recordings of people who agreed to it.</p>
     {#if !st.cloning_installed}
       <div class="card prov">
         <div class="ph">
@@ -205,8 +286,26 @@
       <div class="group">
         <div class="srow">
           <input class="input" style="flex:1" placeholder="Name for the voice, e.g. Narrator" bind:value={voiceName} />
-          <button class="btn sm" onclick={addVoice} disabled={cloning}>{#if cloning}<Loader size={13} class="spin" />{:else}<Mic size={13} />{/if} Choose recording…</button>
+          <button class="btn sm" class:primary={!recording} class:danger={recording} onclick={record} disabled={cloning}>
+            {#if recording}<Square size={13} /> Stop{:else}<Circle size={13} /> Record{/if}
+          </button>
+          <button class="btn sm" onclick={addVoice} disabled={cloning || recording}>{#if cloning && !recorded}<Loader size={13} class="spin" />{:else}<Mic size={13} />{/if} Choose recording…</button>
         </div>
+        {#if recording}
+          <div class="srow">
+            <span class="rec-dot"></span>
+            <div class="meter spacer"><div style="width:{Math.min(100, recLevel * 400)}%"></div></div>
+            <span class="val">{Math.floor(recSeconds)} / {MAX_RECORDING} s</span>
+          </div>
+          <div class="progress"><div style="width:{(recSeconds / MAX_RECORDING) * 100}%"></div></div>
+        {:else if recorded}
+          <div class="srow">
+            <div class="spacer"><div class="st">Your recording</div><div class="sd">{recorded.seconds.toFixed(1)} seconds{voiceName.trim() ? ` · will be saved as “${voiceName.trim()}”` : ' · give it a name above, or keep the default'}</div></div>
+            <button class="btn sm" onclick={playRecording}>{#if previewing}<Square size={13} /> Stop{:else}<Play size={13} /> Listen{/if}</button>
+            <button class="btn sm primary" onclick={keepRecording} disabled={cloning}>{#if cloning}<Loader size={13} class="spin" />{:else}<Check size={13} />{/if} Make voice</button>
+            <button class="icon-btn" onclick={() => { stopPreview(); recorded = null; }} aria-label="Discard recording"><Trash2 size={15} /></button>
+          </div>
+        {/if}
         {#each st.voices.filter((v) => v.custom) as v (v.key)}
           <div class="srow">
             <div><div class="st">{v.name}</div></div>
@@ -237,6 +336,30 @@
     font-size: 12.5px;
     color: var(--text-2);
     font-variant-numeric: tabular-nums;
+  }
+  .meter {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--surface-3);
+    overflow: hidden;
+  }
+  .meter div {
+    height: 100%;
+    background: var(--accent);
+    transition: width 60ms linear;
+  }
+  .rec-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--danger);
+    flex: none;
+    animation: rec-pulse 1s ease-in-out infinite;
+  }
+  @keyframes rec-pulse {
+    50% {
+      opacity: 0.3;
+    }
   }
   h3 :global(.btn) {
     margin-left: 8px;

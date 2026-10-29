@@ -7,6 +7,7 @@
   import Sidebar from './Sidebar.svelte';
   import { gilgamesh } from '../lib/gilgamesh/gilgamesh.svelte';
   import { activity } from '../lib/gilgamesh/observe.svelte';
+  import { transcripts } from '../lib/gilgamesh/transcripts.svelte';
   import { MicOff } from '@lucide/svelte';
   import ChatView from './ChatView.svelte';
   import ProjectView from './ProjectView.svelte';
@@ -125,6 +126,8 @@
       {#if gilgamesh.phase !== 'off'}
         <!-- The sidebar (with his microphone) is hidden: the microphone still shows. -->
         <button class="icon-btn mic-float" title="Gilgamesh is listening — turn the microphone off" onclick={() => gilgamesh.stop()}><MicOff size={15} /></button>
+      {:else if transcripts.recording}
+        <button class="icon-btn mic-float" title="Gilgamesh is transcribing — stop and save the transcript" onclick={() => transcripts.stop()}><MicOff size={15} /></button>
       {/if}
     </div>
   {:else}

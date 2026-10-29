@@ -13,15 +13,17 @@
   import VoiceSettings from './VoiceSettings.svelte';
   import EmailSettings from './EmailSettings.svelte';
   import VpnSettings from './VpnSettings.svelte';
+  import AiServerSettings from './AiServerSettings.svelte';
   import {
     SlidersHorizontal, Palette, Cpu, Search, Brain, MonitorSmartphone, ShieldCheck, Server, Plus, ShieldHalf, Trash2, Plug, Loader,
-    Check, Download, KeyRound, HardDriveDownload, Lock, Wrench, Sun, Moon, Monitor, Circle, CircleAlert, FolderOpen, AudioLines, Mail, FolderInput, Users,
+    Check, Download, KeyRound, HardDriveDownload, Lock, Wrench, Sun, Moon, Monitor, Circle, CircleAlert, FolderOpen, AudioLines, Mail, FolderInput, Users, Share2,
   } from '@lucide/svelte';
 
   const tabs = [
     { id: 'general', label: 'General', icon: SlidersHorizontal },
     { id: 'appearance', label: 'Appearance', icon: Palette },
     { id: 'models', label: 'Models', icon: Cpu },
+    { id: 'ai_server', label: 'AI API server', icon: Share2 },
     { id: 'voice', label: 'Voice', icon: AudioLines },
     { id: 'email', label: 'Email', icon: Mail },
     { id: 'vpn', label: 'VPN', icon: ShieldHalf },
@@ -555,6 +557,8 @@
         <EmailSettings />
       {:else if tab === 'vpn'}
         <VpnSettings />
+      {:else if tab === 'ai_server'}
+        <AiServerSettings />
       {:else if tab === 'retrieval' && s}
         <h2>Answers & search</h2>
         <div class="group">

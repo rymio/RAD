@@ -114,7 +114,7 @@ The **VPN** switch in the top bar sends RAD's own traffic through a WireGuard tu
 
 **Settings → Voice** downloads **MioTTS-0.1B** (about 510 MB, checksum-verified), which then reads answers aloud on this computer, in English and Japanese.
 
-- **Voices:** four preset voices, or your own voice made from a 5–20 s recording (this needs an extra 94 MB WavLM model).
+- **Voices:** four preset voices, or your own voice made from a recording of up to 30 s, recorded right there under **Your own voice** or chosen from a file (this needs an extra 94 MB WavLM model).
 - **Parameters:** speed, volume, expressiveness (temperature), top-p, top-k and repetition penalty.
 - **Reading:** a speaker button appears on every answer, or turn on **Read answers aloud automatically**. Long answers are read sentence by sentence while the next one is prepared.
 - **Privacy:** audio is made in memory and never written to disk.
@@ -135,6 +135,7 @@ Licences: MioTTS-0.1B is under the Falcon-LLM licence, MioCodec is MIT, and WavL
 - **Expressions.** He has 29 moods: neutral, happy, amused, excited, concerned, sad, surprised, curious, skeptical, thinking, playful, sympathetic, serious, proud, angry, annoyed, disgusted, worried, scared, confused, shy, smug, bored, sleepy, relieved, determined, tender, mischievous and disappointed. Each one shows on the face (brows, lids, lips, a blush on the cheeks) and in how the head is held, and some start with a gesture of their own. His 15 gestures are nod, shake, tilt, wink, laugh, eye-roll, sigh, gasp, smirk, eyebrow flash, yawn, blush, shrug, look away and bow. He gives small nods while you talk, lifts his brows or moves his head on stressed words, shifts his posture now and then, makes small expressions when idle, and his eyes follow the mouse pointer. Try them under **Settings → Moods / Gestures** in the view.
 - **Faces.** Give him several faces: choose more than one photo, or drop photos onto the view (up to 24). Switch between them from the strip at the bottom of the picture, or rename and remove them in settings. With **A new face for each conversation** turned on, each new conversation brings the next face. Each conversation remembers the face it was held with.
 - **Everywhere.** Gilgamesh's face sits in the sidebar, under the search box, with his microphone, a stop button and a box to type to him, so you can talk with him from any view. In push-to-talk mode, hold **Talk** there. The eye button hides his face and keeps the controls. The microphone stays on as you move between views; it goes off when you turn it off or lock the vault. While the sidebar is hidden, a red microphone button in the corner shows that he's listening.
+- **Transcripts.** Press **Transcripts** and **Start transcribing**: Gilgamesh listens without answering and writes down what's said, line by line with times (a meeting, a call, a lecture). Each transcript is saved as it goes, as a note in the **Transcripts** project, so the vault indexes it and every chat can find it. Open one to read it, **Summarise** it (overview, key points, decisions and actions; added to the note), or **Discuss** it: a conversation with Gilgamesh with the transcript in his context. He also knows your recent transcripts, so “what did we decide yesterday?” works.
 - **Watching.** Gilgamesh knows which part of RAD you have open and where you were before. The browser tells him the page, Files the folder and selection, and Email the folder and the email you're reading (its subject and sender, not its text). That goes into every answer, so "what's this page about?" or "help me with this" works.
 - **Turn-taking.** In **Hands-free** mode, talking over Gilgamesh stops him when **I'm using headphones** is on. Through speakers the microphone is ignored while he speaks, so he doesn't hear himself; <kbd>Esc</kbd> stops him. In **Push to talk** mode, hold <kbd>Space</kbd> while you talk.
 - **Privacy.** The photo is processed on this computer and kept only in the vault. Audio stays in memory, and the microphone is released when you leave the view.
@@ -146,6 +147,22 @@ How it works:
 - **Speech to text:** this runs in the app (`app/src-tauri/src/stt.rs`) on [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), which is linked statically. The microphone is read with cpal.
 
 Licences: Parakeet TDT 0.6B v3 is CC BY 4.0, Silero VAD is MIT, and sherpa-onnx and MediaPipe are Apache-2.0.
+
+## AI API server (share your models)
+
+**Settings → AI API server** shares the models RAD runs with other programs and computers. They connect as if RAD were **OpenAI**, **Anthropic** or **Ollama**, so most AI tools and SDKs work with it unchanged.
+
+- **What's shared:** the downloaded built-in (llama.cpp) chat and embedding models. Optionally, the models of your other providers too, named like `ollama/llama3.2`; their use counts against those accounts. Each model can be shared or hidden.
+- **Endpoints**, on their own port (11435 by default):
+  - **OpenAI:** `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/models`
+  - **Anthropic:** `/v1/messages`, `/v1/messages/count_tokens`
+  - **Ollama:** `/api/chat`, `/api/generate`, `/api/embed`, `/api/embeddings`, `/api/tags`, `/api/ps`, `/api/show`, `/api/version`
+  - Answers stream as each API does it.
+- **Statistics:** `/rad/stats` lists the shared models, which ones are loaded, and their requests, tokens and tokens per second. The same numbers, plus use per key and per API, show in the settings.
+- **Access:** only this computer by default, or your local network. Programs send an API key made in the settings (`Authorization: Bearer radai_…` or `x-api-key`). Keys can be made optional for tools that can't send one; web pages on other sites are then turned away.
+- **When:** it runs while the vault is unlocked, since its settings and keys, and your providers' credentials, are kept there. It stops when RAD locks, and starts again when RAD unlocks.
+
+Built-in models answer one request at a time. Images work with providers' vision models only. The server is `crates/rad-server/src/aiserver/`.
 
 ## Linux sandboxes
 
