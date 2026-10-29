@@ -18,5 +18,9 @@ sha2 = "0.10"
 hex = "0.4"
 sysinfo = { version = "0.39", default-features = false, features = ["system", "disk"] }
 
+[features]
+# NVIDIA GPUs (Linux/Windows; needs the CUDA toolkit to build, only the driver to run).
+cuda = ["llama-cpp-2/cuda"]
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }

@@ -2,15 +2,21 @@
 # Builds the RAD desktop app for Linux (Ubuntu 22.04 / 24.04, x86_64 or arm64) with its engines
 # inside the package:
 #   - the web browser engine (Servo)        → scripts/build-browser.sh   (skip: --no-browser)
+#   - the Tor browser engine (Servo + Arti) → scripts/build-tor-browser.sh (skip: RAD_NO_TOR=1)
 #   - the Chromium engine (CEF)             → scripts/build-chromium.sh  (skip: --no-chromium)
+#   - the media engine (libVLC, Music/Video) → scripts/build-media.sh   (skip: RAD_NO_MEDIA=1)
 #   - the text-to-speech engine (MioTTS)    → scripts/build-tts.sh
-#   - the Linux sandbox engine is macOS-only for now and is left out.
+#   - the Rymnet programs (RYMNET, RYMWIN)  → scripts/build-rymnet.sh  (skip: RAD_NO_RYMNET=1)
+#   - the Linux sandbox engine and SideX are macOS-only for now and are left out.
+# With the CUDA toolkit installed (nvcc on PATH or in /usr/local/cuda/bin), the built-in llama.cpp
+# engine is built for NVIDIA GPUs; the computer running RAD then only needs the NVIDIA driver.
 # Result: target/release/bundle/{deb,appimage}/…
 #
 #   ./scripts/build-linux.sh --install-deps     first time: installs the Ubuntu packages (sudo)
 #   ./scripts/build-linux.sh                    later builds (incremental)
-#   ./scripts/build-linux.sh --no-browser       quicker: RAD without the built-in (Servo) browser
+#   ./scripts/build-linux.sh --no-browser       quicker: RAD without the Servo and Tor browsers
 #   ./scripts/build-linux.sh --no-chromium      RAD without the Chromium browser (~300 MB smaller)
+#   ./scripts/build-linux.sh --no-cuda          CPU only, even when the CUDA toolkit is there
 #   ./scripts/build-linux.sh --bundles deb      only the .deb (default: deb,appimage)
 # Other arguments go to `cargo tauri build`.
 set -euo pipefail
@@ -20,6 +26,7 @@ cd "$(dirname "$0")/.."
 install_deps=0
 browser=1
 chromium=1
+cuda=1
 args=()
 have_bundles=0
 while [[ $# -gt 0 ]]; do
@@ -27,6 +34,7 @@ while [[ $# -gt 0 ]]; do
     --install-deps) install_deps=1 ;;
     --no-browser) browser=0 ;;
     --no-chromium) chromium=0 ;;
+    --no-cuda) cuda=0 ;;
     --bundles|-b) have_bundles=1; args+=("$1" "$2"); shift ;;
     *) args+=("$1") ;;
   esac
@@ -49,8 +57,11 @@ if [[ $install_deps == 1 ]]; then
     libxcb1-dev libxrandr-dev libdbus-1-dev libpipewire-0.3-dev libwayland-dev libegl-dev libgbm-dev
     # text-to-speech engine (llama.cpp / ggml)
     cmake g++ git
-    # sound for the ZX Spectrum, C64 and DOS views (ALSA, through cpal); unzip for 64tass
+    # sound for the ZX Spectrum, C64 and DOS views and the microphone for Gilgamesh (ALSA, through
+    # cpal); unzip for 64tass
     libasound2-dev unzip
+    # media engine (Music, Video)
+    libvlc-dev vlc-plugin-base
     # browser engine (Servo + SpiderMonkey)
     clang llvm-dev libclang-dev m4 python3 gperf libunwind-dev libfreetype6-dev libfontconfig1-dev
     libharfbuzz-dev libgl1-mesa-dri libgles2-mesa-dev libegl1-mesa-dev libudev-dev libxkbcommon-dev
@@ -77,13 +88,26 @@ if [[ ${#missing[@]} -gt 0 ]]; then
 fi
 cargo tauri --version >/dev/null 2>&1 || cargo install tauri-cli --version '^2' --locked
 
+# The CUDA toolkit's default place isn't on PATH unless the user put it there.
+[[ -x /usr/local/cuda/bin/nvcc ]] && export PATH="$PATH:/usr/local/cuda/bin"
+if [[ $cuda == 1 ]] && command -v nvcc >/dev/null; then
+  args+=(--features cuda)
+  echo "CUDA $(nvcc --version | sed -n 's/.*release \([0-9.]*\).*/\1/p'): the llama.cpp engine is built for NVIDIA GPUs"
+else
+  cuda=0
+fi
+
 triple="$(rustc -vV | sed -n 's/^host: //p')"
 
 # ------------------------------------------------------------------ models and engines
 ./scripts/fetch-models.sh
 [[ $browser == 1 ]] && ./scripts/build-browser.sh "$triple"
+[[ $browser == 0 || "${RAD_NO_TOR:-}" == 1 ]] || ./scripts/build-tor-browser.sh "$triple"
 [[ $chromium == 1 ]] && ./scripts/build-chromium.sh
+# Without libVLC the app is still built; Music and Video then say the engine is missing.
+[[ "${RAD_NO_MEDIA:-}" == 1 ]] || ./scripts/build-media.sh || echo "warning: building without the media engine (Music, Video)" >&2
 ./scripts/build-tts.sh "$triple"
+[[ "${RAD_NO_RYMNET:-}" == 1 ]] || ./scripts/build-rymnet.sh || echo "warning: building without Rymnet" >&2
 # The retro computers' tools: Z80 and 6502 assemblers, the DOS engine (each optional).
 ./scripts/build-zx-tools.sh || echo "warning: building without the ZX Spectrum assembler" >&2
 ./scripts/build-c64-tools.sh || echo "warning: building without the C64 assembler" >&2
@@ -92,8 +116,9 @@ triple="$(rustc -vV | sed -n 's/^host: //p')"
 # Bundle whichever engines are built for this platform. Engines from an earlier build with
 # --no-browser left out on purpose stay out.
 bins=()
-for b in rad-browser mio-tts-server; do
-  [[ $b == rad-browser && $browser == 0 ]] && continue
+for b in rad-browser rad-tor-browser mio-tts-server; do
+  [[ $b == rad-*browser && $browser == 0 ]] && continue
+  [[ $b == rad-tor-browser && "${RAD_NO_TOR:-}" == 1 ]] && continue
   [[ -f "app/src-tauri/binaries/$b-$triple" ]] && bins+=("\"binaries/$b\"")
 done
 # The Chromium engine is a folder (executable + CEF libraries); it ships as a resource.
@@ -109,18 +134,33 @@ if [[ -x c64tools/bin/64tass ]]; then res+=("\"$PWD/c64tools/bin/*\":\"c64/\"");
 if [[ "${RAD_NO_DOS:-}" != 1 && -x dos/rad-dos/target/bundle/rad-dos/rad-dos ]]; then
   res+=("\"$PWD/dos/rad-dos/target/bundle/rad-dos/*\":\"rad-dos/\""); built+=("rad-dos")
 fi
+# The media engine (the computer running RAD needs libVLC: the .deb depends on it).
+depends=("\"libayatana-appindicator3-1\"")
+if [[ "${RAD_NO_MEDIA:-}" != 1 && -x media/rad-media/target/bundle/rad-media/rad-media ]]; then
+  res+=("\"$PWD/media/rad-media/target/bundle/rad-media/*\":\"rad-media/\"")
+  depends+=("\"libvlc5\"" "\"vlc-plugin-base\"")
+  built+=("rad-media")
+fi
+# The Rymnet programs; rymwin's PDF Reader looks for libpdfium next to it.
+rymnet=rymnet/target/release
+if [[ "${RAD_NO_RYMNET:-}" != 1 && -x "$rymnet/rymwin" ]]; then
+  for f in rym rymnetd rymwin rymsh libpdfium.so; do
+    [[ -f "$rymnet/$f" ]] && res+=("\"$PWD/$rymnet/$f\":\"rymnet/$f\"")
+  done
+  built+=("rymnet")
+fi
 resources=""
 if [[ ${#res[@]} -gt 0 ]]; then resources=",\"resources\":{$(IFS=,; echo "${res[*]}")}"; fi
 cfg="$PWD/target/rad-bundle.conf.json"
 mkdir -p target
-(IFS=,; echo "{\"bundle\":{\"externalBin\":[${bins[*]:-}]$resources}}") > "$cfg"
+(IFS=,; echo "{\"bundle\":{\"externalBin\":[${bins[*]:-}]$resources,\"linux\":{\"deb\":{\"depends\":[${depends[*]}]}}}}") > "$cfg"
 
 # ------------------------------------------------------------------ app
 (cd app/ui && { [[ -d node_modules ]] || npm ci; })
 (cd app && cargo tauri build --config "$cfg" "${args[@]}")
 
 echo
-echo "Built with: ${built[*]:-no engines}"
+echo "Built with: ${built[*]:-no engines}$([[ $cuda == 1 ]] && echo ', llama.cpp on CUDA')"
 for f in target/release/bundle/deb/*.deb target/release/bundle/appimage/*.AppImage target/release/bundle/rpm/*.rpm; do
   [[ -f "$f" ]] && echo "  $PWD/$f"
 done

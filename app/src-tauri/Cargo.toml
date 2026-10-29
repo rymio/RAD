@@ -16,6 +16,8 @@ rad-tunnel.workspace = true
 rad-api.workspace = true
 rad-zx.workspace = true
 rad-c64.workspace = true
+# Direct only so `cuda` below can reach it (rad-server pulls it in anyway).
+rad-local.workspace = true
 rad-server = { path = "../../crates/rad-server" }
 serde.workspace = true
 serde_json.workspace = true
@@ -56,6 +58,10 @@ cpal = "0.18"
 sherpa-onnx = "=1.13.8"
 # DOS view: games added as ZIP files are unpacked onto drive C:.
 zip = { version = "9", default-features = false, features = ["deflate"] }
+
+[features]
+# The built-in llama.cpp engine on an NVIDIA GPU: scripts/build-linux.sh turns it on when it finds nvcc.
+cuda = ["rad-local/cuda"]
 
 [dev-dependencies]
 tempfile = "3"

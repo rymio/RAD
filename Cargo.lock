@@ -5704,6 +5704,7 @@ dependencies = [
  "portable-pty",
  "rad-api",
  "rad-c64",
+ "rad-local",
  "rad-server",
  "rad-tunnel",
  "rad-zx",
