@@ -169,7 +169,8 @@ export type Route =
   | { kind: 'c64lab' }
   | { kind: 'dos' }
   | { kind: 'gilgamesh' }
-  | { kind: 'monitor' };
+  | { kind: 'monitor' }
+  | { kind: 'bots'; bot?: string };
 
 /** Something the assistant asks the app to do (see crates/rad-server/src/agent.rs). */
 export interface AgentAction { kind: 'ssh' | 'open_url' | 'terminal' | string; host?: string; user?: string; port?: number; identity_file?: string; url?: string }
@@ -218,7 +219,7 @@ export interface SidexStatus {
   supported: boolean; available: boolean; dev_build: boolean; running: boolean;
   recent: { path: string; name: string; exists: boolean }[];
 }
-export type ContainerKindId = 'rust' | 'python';
+export type ContainerKindId = 'rust' | 'python' | 'desktop';
 export interface ContainerKind { id: ContainerKindId; name: string; description: string; files: string[]; run: string; ready: boolean }
 export interface ContainerStats { disk_total: number; disk_used: number; mem_total: number; mem_used: number; uptime: number }
 export interface ContainerInfo {

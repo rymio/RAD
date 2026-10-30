@@ -107,8 +107,8 @@ export const rad = {
   sandboxExec: (id: number, command: string, timeoutSecs?: number) =>
     call<{ exit_code: number | null; output: string; truncated: boolean; timed_out: boolean }>('sandbox_exec', { id, command, timeoutSecs: timeoutSecs ?? null }),
   /** One model reply for a conversation the app keeps itself (nothing is stored). */
-  assist: (system: string, messages: { role: 'user' | 'assistant'; content: string }[]) =>
-    req<{ content: string; model: string }>('POST', '/v1/assist', { system, messages }),
+  assist: (system: string, messages: { role: 'user' | 'assistant'; content: string; images?: string[] }[], maxTokens?: number) =>
+    req<{ content: string; model: string }>('POST', '/v1/assist', { system, messages, max_tokens: maxTokens ?? null }),
   /** The terminal agent on an SSH server or this computer: runs one command (shown in the terminal unless `quiet`). */
   agentExec: (id: number, command: string, timeoutSecs?: number, quiet = false) =>
     call<{ exit_code: number | null; output: string; truncated: boolean; timed_out: boolean; cancelled: boolean; cwd: string | null }>('agent_exec', { id, command, timeoutSecs: timeoutSecs ?? null, quiet }),
@@ -263,6 +263,8 @@ export const rad = {
   containerWrite: (id: string, path: string, data: string) => call<void>('container_write', { id, path, data }),
   containerList: (id: string, path: string) => call<T.ContainerEntry[]>('container_list', { id, path }),
   containerSharedDir: (id: string) => call<string>('container_shared_dir', { id }),
+  /** A file from a container's exchange folder (a bot's screenshot); it's deleted. */
+  containerTake: (id: string, name: string) => call<ArrayBuffer>('container_take', { id, name }),
 
   /** Moves this computer's vault file into `folder` and reopens it there (locked). */
   vaultRelocate: (folder: string) => call<T.ServerStatus>('vault_relocate', { folder }),

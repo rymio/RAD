@@ -14,6 +14,7 @@ const NAMES: Record<Route['kind'], string> = {
   zxlab: 'the Spectrum Lab (disassembler)', c64: 'the Commodore 64 emulator', c64lab: 'the C64 Lab (disassembler)',
   dos: 'the DOS PC emulator', gilgamesh: 'Gilgamesh’s own view (talking with you)',
   monitor: 'Web Monitoring (the websites you watch for them)',
+  bots: 'Bots (their assistants that work on computers of their own)',
 };
 
 const KEEP = 12;

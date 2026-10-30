@@ -10,6 +10,8 @@
   import { transcripts } from '../lib/gilgamesh/transcripts.svelte';
   import { monitor } from '../lib/monitor.svelte';
   import MonitorView from './MonitorView.svelte';
+  import { bots } from '../lib/bots.svelte';
+  import BotsView from './BotsView.svelte';
   import { MicOff } from '@lucide/svelte';
   import ChatView from './ChatView.svelte';
   import ProjectView from './ProjectView.svelte';
@@ -82,15 +84,17 @@
     gilgamesh.load().catch((e) => store.error(e, 'Couldn’t load Gilgamesh'));
     // The monitored websites are checked now (RAD has just been opened) and every three hours.
     monitor.start().catch((e) => store.error(e, 'Couldn’t load Web Monitoring'));
-    const un: Array<() => void> = [() => gilgamesh.unload(), () => monitor.unload()];
+    // Bots' routines run on their schedule while RAD is open.
+    bots.start().catch((e) => store.error(e, 'Couldn’t load the bots'));
+    const un: Array<() => void> = [() => gilgamesh.unload(), () => monitor.unload(), () => bots.unload()];
     getCurrentWebview()
       .onDragDropEvent((ev) => {
         const p = ev.payload;
-        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor'].includes(store.route.kind);
+        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots'].includes(store.route.kind);
         else if (p.type === 'leave') dragging = false;
         else if (p.type === 'drop') {
           dragging = false;
-          if (['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor'].includes(store.route.kind)) return;
+          if (['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots'].includes(store.route.kind)) return;
           uploadTo(p.paths);
         }
       })
@@ -148,6 +152,8 @@
       <BrowserView />
     {:else if store.route.kind === 'monitor'}
       <MonitorView />
+    {:else if store.route.kind === 'bots'}
+      <BotsView />
     {:else if store.route.kind === 'chromium'}
       <BrowserView kind="chromium" />
     {:else if store.route.kind === 'tor'}

@@ -16,6 +16,9 @@
 //!   the launcher connects to a unix socket on this Mac: run programs (streamed output and exit
 //!   codes), interactive shells, file reads and writes, stats and shutdown. The exchange folder
 //!   (`/root/shared` inside) is the way to hand over whole files.
+//! - The **desktop** kind is a bot's computer (lib/bots.svelte.ts): Chromium on a virtual screen
+//!   (Xvfb + Openbox), driven over the DevTools protocol by rad-browse.py and with xdotool. Both
+//!   helpers come with RAD's tools at every start, like rad-agent, so they never go stale.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -49,6 +52,8 @@ pub struct Kind {
     pub files: &'static [&'static str],
     /// How "Run" runs the project.
     pub run: &'static str,
+    /// Debian packages on top of the common ones.
+    pkgs: &'static str,
     provision: &'static str,
 }
 
@@ -129,6 +134,40 @@ echo "==> Building it once (warms up cargo)"
 cd /work/app && cargo build -q
 "#;
 
+const DESKTOP_SH: &str = r#"
+echo "==> Setting up the desktop"
+mkdir -p /work/app /work/profile /root/Downloads
+ln -sf /opt/rad/rad-desktop /usr/local/bin/rad-desktop
+"#;
+
+/// Starts the bot's desktop unless it's running: a virtual screen, a window manager and
+/// Chromium with the DevTools protocol on 127.0.0.1:9222 (inside the VM only). Chromium runs
+/// as root without its own sandbox: the VM is the sandbox. The profile on the drive keeps logins.
+const DESKTOP_START: &str = r#"#!/bin/sh
+export DISPLAY=:0
+up() { curl -s -m 1 http://127.0.0.1:9222/json/version >/dev/null 2>&1; }
+if ! pgrep -x Xvfb >/dev/null; then
+  rm -f /tmp/.X0-lock
+  setsid Xvfb :0 -screen 0 1280x800x24 -nolisten tcp </dev/null >/tmp/xvfb.log 2>&1 &
+  for i in $(seq 1 40); do [ -e /tmp/.X11-unix/X0 ] && break; sleep 0.1; done
+fi
+pgrep -x openbox >/dev/null || setsid openbox </dev/null >/tmp/openbox.log 2>&1 &
+if ! up; then
+  pkill -x chromium 2>/dev/null
+  mkdir -p /work/profile && rm -f /work/profile/Singleton*
+  setsid chromium --no-sandbox --user-data-dir=/work/profile --remote-debugging-port=9222 \
+    --remote-debugging-address=127.0.0.1 --remote-allow-origins=* --no-first-run \
+    --no-default-browser-check --disable-dev-shm-usage --disable-gpu --password-store=basic \
+    --disable-features=Translate --window-position=0,0 --window-size=1280,800 --start-maximized \
+    about:blank </dev/null >/tmp/chromium.log 2>&1 &
+  for i in $(seq 1 120); do up && break; sleep 0.25; done
+fi
+up && echo desktop-ok || { tail -5 /tmp/chromium.log; exit 1; }
+"#;
+
+/// The bot's hands in the browser (see the script for its operations).
+const RAD_BROWSE: &str = include_str!("../../../sandbox/desktop/rad-browse.py");
+
 pub const KINDS: &[Kind] = &[
     Kind {
         id: "rust",
@@ -136,6 +175,7 @@ pub const KINDS: &[Kind] = &[
         description: "Debian 13 with stable Rust (rustup, cargo, clippy, rustfmt). Crates from crates.io.",
         files: &["src/main.rs", "Cargo.toml"],
         run: "cargo run",
+        pkgs: "",
         provision: RUST_SH,
     },
     Kind {
@@ -144,7 +184,17 @@ pub const KINDS: &[Kind] = &[
         description: "Debian 13 with Python 3 in a virtualenv (pip, build tools). Packages from PyPI.",
         files: &["main.py", "requirements.txt"],
         run: "if grep -qv '^\\s*\\(#\\|$\\)' requirements.txt 2>/dev/null; then pip install -q -r requirements.txt || exit $?; fi; python main.py",
+        pkgs: "python3 python3-venv python3-pip python3-dev libffi-dev",
         provision: PYTHON_SH,
+    },
+    Kind {
+        id: "desktop",
+        name: "Desktop",
+        description: "Debian 13 with Chromium on a virtual screen, for bots. Logins and files stay on its drive.",
+        files: &[],
+        run: "rad-desktop",
+        pkgs: "python3 python3-websocket chromium xvfb openbox xdotool scrot x11-utils fonts-dejavu-core fonts-liberation2 fonts-noto-color-emoji",
+        provision: DESKTOP_SH,
     },
 ];
 
@@ -665,7 +715,7 @@ async fn ensure_template(env: &CEnv, k: &Kind) -> CmdResult<PathBuf> {
     sandbox::install_disk(&env.sb, "debian", &tmp_disk, TEMPLATE_GB, k.id).await?;
 
     env.progress(Some(json!({"phase": format!("Setting up {}", k.name)})));
-    let script = format!("{PROVISION_HEAD}{}{PROVISION_TAIL}", k.provision).replace("$PKGS", if k.id == "python" { "python3 python3-venv python3-pip python3-dev libffi-dev" } else { "" });
+    let script = format!("{PROVISION_HEAD}{}{PROVISION_TAIL}", k.provision).replace("$PKGS", k.pkgs);
     sandbox::write_exec(&tmp.join("shared/provision.sh"), &script)?;
     std::fs::write(tmp.join("shared/rad.sh"), PROFILE).map_err(io)?;
     let net = sandbox::start_net_with(&env.root.join("run"), &gvproxy, &[])?;
@@ -787,6 +837,8 @@ async fn start_inner(env: &CEnv, c: &Containers, id: &str) -> CmdResult<()> {
     std::fs::create_dir_all(&bin).map_err(io)?;
     std::fs::copy(&agent, bin.join("rad-agent")).map_err(io)?;
     sandbox::write_exec(&bin.join("init.sh"), INIT_SH)?;
+    sandbox::write_exec(&bin.join("rad-desktop"), DESKTOP_START)?;
+    sandbox::write_exec(&bin.join("rad-browse.py"), RAD_BROWSE)?;
     std::fs::create_dir_all(d.join("shared")).map_err(io)?;
 
     let sock = sock_path(id)?;
@@ -1134,6 +1186,19 @@ pub fn container_shared_dir(app: AppHandle, id: String) -> CmdResult<String> {
     Ok(d.display().to_string())
 }
 
+/// Takes a file out of the exchange folder (a bot's screenshot): its bytes, and it's deleted.
+#[tauri::command]
+pub fn container_take(app: AppHandle, id: String, name: String) -> CmdResult<tauri::ipc::Response> {
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')) || name.starts_with('.') {
+        return Err(CmdError::new("bad_request", "invalid file name"));
+    }
+    let env = CEnv::from_app(&app);
+    let p = dir(&env, &id)?.join("shared").join(&name);
+    let b = std::fs::read(&p).map_err(|_| CmdError::new("not_found", "The file isn't there"))?;
+    let _ = std::fs::remove_file(p);
+    Ok(tauri::ipc::Response::new(b))
+}
+
 // ------------------------------------------------------------------ terminals (used by terminal.rs)
 
 /// An interactive shell in a running container, for a Terminal tab: (title, reader, writer,
@@ -1280,6 +1345,81 @@ mod tests {
         let (rc, out) = sh(&c, &cfg.id, "cargo add -q rand@0.8 && cargo run -q").await;
         assert_eq!(rc, 0, "{out}");
         assert!(out.contains("dice "), "{out}");
+        stop(&env, &c, &cfg.id).await.unwrap();
+        let _ = std::fs::remove_dir_all(dir(&env, &cfg.id).unwrap());
+    }
+
+    /// A bot's computer: Chromium on the virtual screen, driven by rad-browse.py.
+    #[tokio::test]
+    #[ignore]
+    async fn desktop_container_end_to_end() {
+        use base64::Engine as _;
+        let root = std::env::temp_dir().join("rad-ct-desk");
+        let env = test_env(&root);
+        let c = Containers::default();
+        let cfg = create(&env, &c, CreateArgs { kind: "desktop".into(), name: Some("Bot test".into()) }).await.unwrap();
+        start(&env, &c, &cfg.id).await.unwrap();
+        let (rc, out) = sh(&c, &cfg.id, "rad-desktop").await;
+        assert!(rc == 0 && out.contains("desktop-ok"), "{out}");
+
+        let browse = |req: Value| {
+            let c = &c;
+            let id = cfg.id.clone();
+            async move {
+                let b64 = base64::engine::general_purpose::STANDARD.encode(req.to_string());
+                let (_, out) = sh(c, &id, &format!("python3 /opt/rad/rad-browse.py {b64}")).await;
+                let v: Value = serde_json::from_str(out.trim().lines().last().unwrap_or("")).unwrap_or_else(|_| panic!("{out}"));
+                v
+            }
+        };
+        let page = "data:text/html,<title>Test</title><h1>Hello bot</h1><input id=q placeholder=Search><button onclick=\"document.title='clicked '+q.value\">Go</button><input type=password placeholder=Password>";
+        let v = browse(json!({"op": "goto", "url": page})).await;
+        assert_eq!(v["ok"], true, "{v}");
+        let v = browse(json!({"op": "snapshot"})).await;
+        let p = &v["page"];
+        assert!(p["text"].as_str().unwrap().contains("Hello bot"), "{v}");
+        let els = p["elements"].as_array().unwrap();
+        let find = |label: &str| els.iter().find(|e| e["label"] == label).map(|e| e["id"].as_i64().unwrap()).unwrap_or_else(|| panic!("no {label}: {v}"));
+        let (q, go) = (find("Search"), find("Go"));
+        assert!(els.iter().any(|e| e["password"] == true), "{v}");
+        assert_eq!(browse(json!({"op": "type", "id": q, "text": "ünïcode 'quotes'"})).await["ok"], true);
+        assert_eq!(browse(json!({"op": "click", "id": go})).await["ok"], true);
+        let v = browse(json!({"op": "snapshot"})).await;
+        assert_eq!(v["page"]["title"], "clicked ünïcode 'quotes'", "{v}");
+
+        // A screenshot through the exchange folder.
+        let v = browse(json!({"op": "screenshot", "path": "/root/shared/t.jpg"})).await;
+        assert_eq!(v["ok"], true, "{v}");
+        let jpg = std::fs::read(dir(&env, &cfg.id).unwrap().join("shared/t.jpg")).unwrap();
+        assert_eq!(&jpg[..2], &[0xff, 0xd8]);
+
+        // A login is only typed on its own domain, and its file is gone either way.
+        wire::call(&c.get(&cfg.id).unwrap().sock, json!({"op": "write", "path": "/dev/shm/rad-secret-t1", "data": "hunter2"}), Duration::from_secs(5)).await.unwrap();
+        let v = browse(json!({"op": "fill_secret", "id": q, "file": "/dev/shm/rad-secret-t1", "domain": "github.com"})).await;
+        assert_eq!(v["ok"], false, "{v}");
+        assert!(v["error"].as_str().unwrap().contains("refused"), "{v}");
+        let (_, out) = sh(&c, &cfg.id, "ls /dev/shm").await;
+        assert!(!out.contains("rad-secret"), "{out}");
+
+        // Pop-ups are answered at once: a confirm is cancelled unless the click says otherwise.
+        browse(json!({"op": "goto", "url": "data:text/html,<button onclick=\"document.title=confirm('Are you sure?')?'yes':'no'\">Ask</button>"})).await;
+        let v = browse(json!({"op": "snapshot"})).await;
+        let ask = v["page"]["elements"][0]["id"].as_i64().unwrap();
+        let v = browse(json!({"op": "click", "id": ask})).await;
+        assert!(v["ok"] == true && v["dialog"]["message"] == "Are you sure?" && v["dialog"]["accepted"] == false, "{v}");
+        assert_eq!(browse(json!({"op": "snapshot"})).await["page"]["title"], "no");
+        let v = browse(json!({"op": "click", "id": ask, "dialog": "accept"})).await;
+        assert_eq!(v["dialog"]["accepted"], true, "{v}");
+        assert_eq!(browse(json!({"op": "snapshot"})).await["page"]["title"], "yes");
+
+        // A real site, and the whole screen.
+        let v = browse(json!({"op": "goto", "url": "https://example.com"})).await;
+        assert_eq!(v["ok"], true, "{v}");
+        let v = browse(json!({"op": "snapshot"})).await;
+        assert!(v["page"]["title"].as_str().unwrap().contains("Example"), "{v}");
+        let v = browse(json!({"op": "desk_shot", "path": "/root/shared/d.jpg"})).await;
+        assert_eq!(v["ok"], true, "{v}");
+
         stop(&env, &c, &cfg.id).await.unwrap();
         let _ = std::fs::remove_dir_all(dir(&env, &cfg.id).unwrap());
     }

@@ -493,6 +493,9 @@ pub struct AssistRequest {
     /// Defaults to the chat model.
     #[serde(default)]
     pub model: Option<ModelRef>,
+    /// The longest reply wanted (at most the vault's setting, and 4096 if not given).
+    #[serde(default)]
+    pub max_tokens: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -500,6 +503,9 @@ pub struct AssistMessage {
     /// user | assistant
     pub role: String,
     pub content: String,
+    /// Pictures for the model to look at (a bot's screenshot), as `data:image/…;base64,` URLs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

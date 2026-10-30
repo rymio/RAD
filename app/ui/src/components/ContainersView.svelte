@@ -107,7 +107,7 @@
       await rad.containerStart(id);
       await refresh();
       await loadTree();
-      if (!path && k) await openFile(`${st!.project}/${k.files[0]}`);
+      if (!path && k?.files.length) await openFile(`${st!.project}/${k.files[0]}`);
     } catch (err) {
       store.error(err, 'Couldn’t start the container');
     } finally {
@@ -356,7 +356,7 @@
     loadedFor = key;
     if (key && k && st) {
       loadTree().then(() => {
-        if (!path) openFile(`${st!.project}/${k!.files[0]}`);
+        if (!path && k?.files.length) openFile(`${st!.project}/${k.files[0]}`);
       });
     }
   });

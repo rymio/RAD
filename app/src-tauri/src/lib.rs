@@ -492,6 +492,7 @@ pub fn run() {
             containers::container_write,
             containers::container_list,
             containers::container_shared_dir,
+            containers::container_take,
             sidex::sidex_status,
             commands::db_api_info,
             games::game_build,

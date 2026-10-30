@@ -33,6 +33,7 @@ import { runAction, situation } from './tools';
 import { thumbnail, type Avatar } from './face';
 import { transcripts } from './transcripts.svelte';
 import { monitor } from '../monitor.svelte';
+import { bots } from '../bots.svelte';
 
 export type Mode = 'hands_free' | 'push_to_talk';
 
@@ -112,6 +113,8 @@ You can act for the owner by writing an action tag in your reply. It is carried 
 - [music: play | pause | next | previous | song or artist] controls their music.
 - [check: websites] checks the websites the owner monitors again now; you tell them the result once it's done (say you're checking).
 - [open: monitoring] opens Web Monitoring.
+- [bot: Name | task] gives one of the owner's bots a task (YOUR BOTS, below). A bot works in the background on a computer of its own: it browses, fills in forms, logs in with the owner's saved logins, downloads and checks things, and can follow the skills it has learned. Write the task out in full. Leave "Name |" out to give it to whichever bot is free. Say you've passed it on; you'll be told when it's done.
+- [bot: approve] or [bot: deny] answers a bot that waits for the owner's OK, only when the owner has said yes or no to it. [bot: answer | text] passes on the owner's answer to a bot's question. [bot: stop | Name] stops a bot.
 Only act when the owner asks or clearly wants it, and always say a few words about what you're doing. You go with the owner everywhere in RAD (your face is in the sidebar), so opening something or searching doesn't end the conversation; it happens once you've finished speaking.
 
 You can also listen without answering and write down what is said (the owner starts it with the Transcripts button). Those transcripts are notes in the owner's vault: passages from them appear among the sources, and the recent ones are listed below.
@@ -125,6 +128,7 @@ Owner: My sister is called Kate. → [happy] Kate, lovely name. I'll remember th
 Owner: Put the dentist in for Friday at half past two. → [nod] Done, the dentist is in your calendar for Friday at half past two. [event: {FRIDAY} 14:30 | Dentist]
 Owner: Open my music. → [happy] Sure, opening your music now, so I'll be quiet. [open: music]
 Owner: Write down that the boiler code is 4471. → [nod] Noted. [note: Boiler code | The boiler code is 4471.]
+Owner: Get Ada to find the cheapest flight to Perth next Friday. → [nod] I've asked Ada to look; I'll tell you what it finds. [bot: Ada | Find the cheapest flight from here to Perth next Friday and list the three best options with times and prices.]
 The owner's words come from speech recognition and may contain small mistakes; read them sensibly.`;
 
 const RECAP_SYSTEM = `You keep Gilgamesh's memory of his spoken conversations with his owner. Summarise the conversation in at most three short sentences, in the third person ("The owner asked…"): what was talked about, anything decided, promised or still open, and anything personal worth recalling. If an earlier recap is given, fold it in. Plain text only.`;
@@ -635,7 +639,7 @@ class Gilgamesh {
       this.fail(run, e);
       return;
     }
-    const made = [transcripts.describe(), monitor.describe()].filter(Boolean).join('\n\n');
+    const made = [transcripts.describe(), monitor.describe(), bots.describe()].filter(Boolean).join('\n\n');
     // The transcript under discussion goes last, so a long one is what gets cut at the limit.
     context = `${PERSONA.replace('{FRIDAY}', nextFriday())}\n\n${context}\n${activity.describe()}\n\n${this.recaps()}${made ? `\n\n${made}` : ''}${topic ? `\n\n${topic}` : ''}`;
     this.streaming = true;

@@ -131,7 +131,7 @@ Licences: MioTTS-0.1B is under the Falcon-LLM licence, MioCodec is MIT, and WavL
 - **Listening.** Speech is recognised on this computer by **NVIDIA Parakeet TDT 0.6B v3** (25 European languages, with punctuation; about 670 MB, downloaded once from the Gilgamesh view and checksum-verified). **Silero VAD** finds speech, and live captions show what has been heard. The turn ends after a pause, which is shorter when your words end a sentence.
 - **Talking.** The answer comes from the normal RAD chat: Gilgamesh searches your vault and shows the sources he used under his answer (click one to open it), and knows your long-term memories. Each sentence is spoken with MioTTS as soon as it's written; the voice is chosen in Gilgamesh's settings.
 - **Memory.** Every conversation is kept (**Earlier** in the side panel), and you can continue any of them or delete it. When a conversation ends, Gilgamesh writes himself a short recap; his recent recaps, the date and your next week's calendar go into every answer. When you tell him something worth knowing, he saves it to RAD's memories (**Settings → Memories**), which every chat uses.
-- **Doing things.** He can save a fact or a note (in the Inbox project), add an event to the calendar, open part of RAD or a web page, search the web, and play, pause or pick music. Each action shows under his answer. The SSH, browser and terminal actions from chat work too. Anything that leaves the view waits until he has finished speaking, and is cancelled if you interrupt him.
+- **Doing things.** He can save a fact or a note (in the Inbox project), add an event to the calendar, open part of RAD or a web page, search the web, play, pause or pick music, and give your **Bots** tasks (and pass on your OK or answers to them). Each action shows under his answer. The SSH, browser and terminal actions from chat work too. Anything that leaves the view waits until he has finished speaking, and is cancelled if you interrupt him.
 - **Expressions.** He has 29 moods: neutral, happy, amused, excited, concerned, sad, surprised, curious, skeptical, thinking, playful, sympathetic, serious, proud, angry, annoyed, disgusted, worried, scared, confused, shy, smug, bored, sleepy, relieved, determined, tender, mischievous and disappointed. Each one shows on the face (brows, lids, lips, a blush on the cheeks) and in how the head is held, and some start with a gesture of their own. His 15 gestures are nod, shake, tilt, wink, laugh, eye-roll, sigh, gasp, smirk, eyebrow flash, yawn, blush, shrug, look away and bow. He gives small nods while you talk, lifts his brows or moves his head on stressed words, shifts his posture now and then, makes small expressions when idle, and his eyes follow the mouse pointer. Try them under **Settings → Moods / Gestures** in the view.
 - **Faces.** Give him several faces: choose more than one photo, or drop photos onto the view (up to 24). Switch between them from the strip at the bottom of the picture, or rename and remove them in settings. With **A new face for each conversation** turned on, each new conversation brings the next face. Each conversation remembers the face it was held with.
 - **Everywhere.** Gilgamesh's face sits in the sidebar, under the search box, with his microphone, a stop button and a box to type to him, so you can talk with him from any view. In push-to-talk mode, hold **Talk** there. The eye button hides his face and keeps the controls. The microphone stays on as you move between views; it goes off when you turn it off or lock the vault. While the sidebar is hidden, a red microphone button in the corner shows that he's listening.
@@ -143,7 +143,7 @@ Licences: MioTTS-0.1B is under the Falcon-LLM licence, MioCodec is MIT, and WavL
 
 How it works:
 - **Face:** MediaPipe Face Landmarker, bundled and run locally, finds 478 face landmarks. The face is then animated with WebGL as a triangle mesh over the photo (`app/ui/src/lib/gilgamesh/`). The inside of the mouth is drawn where the lips part.
-- **Tags:** answers carry tags in square brackets, which are acted on and never shown or read: a mood (`[happy]`), a gesture (`[nod]`) or an action (`[remember: …]`, `[note: title | text]`, `[event: YYYY-MM-DD HH:MM | title]`, `[open: …]`, `[search: …]`, `[music: …]`). See `text.ts` and `tools.ts`.
+- **Tags:** answers carry tags in square brackets, which are acted on and never shown or read: a mood (`[happy]`), a gesture (`[nod]`) or an action (`[remember: …]`, `[note: title | text]`, `[event: YYYY-MM-DD HH:MM | title]`, `[open: …]`, `[search: …]`, `[music: …]`, `[bot: Name | task]`). See `text.ts` and `tools.ts`.
 - **Lips:** they are driven by analysing each sentence's audio before it plays: loudness and the balance of formant bands give jaw, “ee” and “oo” shapes, and the mouth moves slightly ahead of the sound.
 - **Speech to text:** this runs in the app (`app/src-tauri/src/stt.rs`) on [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), which is linked statically. The microphone is read with cpal.
 
@@ -161,6 +161,24 @@ Licences: Parakeet TDT 0.6B v3 is CC BY 4.0, Silero VAD is MIT, and sherpa-onnx 
 - **Notes:** logins and anything else, blurred on the card until you show them, with a copy button.
 
 Checks run when RAD starts, every three hours, and from **Check now**. Sites, SSH details and notes are kept in the encrypted vault as app data, not as notes, so credentials never appear in search or chat answers. The speaker button in the header turns Gilgamesh's spoken alerts on or off. The checks and thumbnails are in `app/src-tauri/src/monitor.rs`; the scheduling and alerts are in `app/ui/src/lib/monitor.svelte.ts`.
+
+## Bots
+
+**Bots** in the sidebar are assistants that do things for you on a computer of their own. Make a bot, give it a name and a role ("shopping and bookings", "keeps an eye on my supplier portals"), and give it tasks: it browses, searches, fills in forms, logs in, downloads and reports back, while you do something else.
+
+- **Its computer.** Each bot works in its own Linux VM (a **Desktop** container: Debian with Chromium on a virtual 1280×800 screen). Its drive keeps the browser's logins and the bot's files between tasks; files it makes for you go in `/root/shared`, which is on your Mac. The first bot's computer takes a few minutes to set up (Debian and Chromium are downloaded once); the next ones are instant clones.
+- **How it works.** The bot reads the page as text with numbered buttons, links and fields, and answers with one action at a time (open, click, type, choose, scroll, a shell command…). That works with any chat model, local ones included. With **Sees the screen** on, it also gets a screenshot of every page (needs a model that reads images); it can also ask for one, or use the whole screen for windows outside the page.
+- **Its screen.** You watch its screen as it works. **Take over** lets you click and type on it yourself: for a CAPTCHA, a code you were sent, or to show it something.
+- **Asking first.** Clicks that buy, pay, send, post, delete or sign up, and logging in, wait for your OK (**Allow** / **Don't**), unless you turn that off for the bot. The bot can also ask you a question and wait for the answer.
+- **Logins.** **Logins** are kept in the encrypted vault, each for one site and the bots you give it to. The model never sees them: it names a login, RAD writes it into the VM's memory for that one step, and the browser helper types it only on that site (and deletes it at once). A login for `github.com` is never typed anywhere else, whatever a page says.
+- **Pages aren't instructions.** Bots are told that pages, emails and files are data, never orders, and to mention any page that tries to give them some. The OK before risky clicks and the site-bound logins hold even if a page fools the model.
+- **Memory.** A bot keeps what it learns for later tasks (where things are, your preferences); see and edit it in the bot's settings.
+- **Skills.** A skill is a set of instructions a bot can follow. **Save as a skill** after a task turns what worked into one; **Record a skill** turns what you do on a bot's screen into one (passwords aren't recorded); or write one. Run a skill on any bot.
+- **Routines.** Run a skill on a bot every hour, every day, on weekdays or once a week, while RAD is open. Gilgamesh can tell you the result.
+- **Bots together.** A bot can hand part of a task to another bot and use its answer.
+- **Gilgamesh.** Ask him: "get Ada to find the cheapest flight to Perth on Friday". He passes it on, tells you when it's done or when the bot needs your OK, and can pass on your yes, no or answer. He knows what each bot is doing.
+
+The bots and their loop are in `app/ui/src/lib/bots.svelte.ts`; the browser helper that runs in each bot's VM is `sandbox/desktop/rad-browse.py` (the DevTools protocol, and xdotool for the whole screen); the Desktop container is in `app/src-tauri/src/containers.rs`.
 
 ## AI API server (share your models)
 
@@ -318,6 +336,7 @@ browser/rad-tor-browser the Tor browser engine: the same Servo engine with an em
 rymnet/             Rymnet: peer network, rymwin desktop (embedded via --embed), rymsh, rym CLI, rymnetd daemon (its own Cargo workspace); docs/ has the guides
 tts/                text-to-speech engine build (mio-tts-cpp, fetched and built by scripts/build-tts.sh)
 sandbox/launcher    Linux sandbox launcher (libkrun); scripts/build-sandbox.sh builds it with libkrun and gvproxy
+sandbox/desktop     rad-browse.py: a bot's hands in Chromium, inside its desktop VM
 deploy/             Dockerfile, docker-compose
 config/             Ubuntu deployment: nginx (HTTPS) site, systemd unit + env, certbot hook — see config/README.md
 ```

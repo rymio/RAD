@@ -256,17 +256,32 @@ pub async fn assist(State(state): State<Shared>, a: Authed, Json(req): Json<Assi
     let (model, conn, max_tokens) = db_vault(a.vault, &state, move |st, c| {
         let settings = repo::settings(c)?;
         let (m, conn) = models::pick_chat_model(st, c, &[req.model.as_ref(), settings.chat_model.as_ref()])?;
-        Ok((m, conn, settings.max_output_tokens.min(4096)))
+        Ok((m, conn, settings.max_output_tokens.min(req.max_tokens.unwrap_or(4096).max(256))))
     })
     .await?;
-    let messages = req
-        .messages
-        .iter()
-        .map(|m| ChatMsg::new(if m.role == "assistant" { "assistant" } else { "user" }, m.content.chars().take(40_000).collect::<String>()))
-        .collect();
+    let mut messages = Vec::with_capacity(req.messages.len());
+    for m in &req.messages {
+        let mut msg = ChatMsg::new(if m.role == "assistant" { "assistant" } else { "user" }, m.content.chars().take(40_000).collect::<String>());
+        for url in m.images.iter().take(4) {
+            msg.images.push(data_url_image(url).ok_or_else(|| ApiErr::bad_request("images must be data:image/…;base64, URLs"))?);
+        }
+        messages.push(msg);
+    }
     let r = ChatRequest { system: Some(req.system), messages, temperature: Some(0.2), max_tokens };
     let text = state.llm.complete(&conn, &model.model, &r).await?;
     Ok(Json(AssistResponse { content: strip_thinking(&text).trim().to_string(), model: model.model }))
+}
+
+/// A `data:image/png;base64,…` URL as an image for the model (at most 8 MB).
+fn data_url_image(url: &str) -> Option<ImagePart> {
+    use base64::Engine;
+    let rest = url.strip_prefix("data:")?;
+    let (mime, b64) = rest.split_once(";base64,")?;
+    if !mime.starts_with("image/") || b64.len() > 11_000_000 {
+        return None;
+    }
+    let data = base64::engine::general_purpose::STANDARD.decode(b64.trim()).ok()?;
+    Some(ImagePart { mime: mime.to_string(), data })
 }
 
 /// Context budget (characters of retrieved passages) for built-in chat models.
