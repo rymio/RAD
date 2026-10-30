@@ -7,6 +7,7 @@ mod commands;
 mod config;
 mod files;
 mod mail;
+mod faceid;
 mod media;
 mod monitor;
 mod events;
@@ -345,6 +346,7 @@ pub fn run() {
             app.manage(zxlab::ZxLab::default());
             app.manage(mail::Mail::default());
             app.manage(media::Media::default());
+            app.manage(faceid::FaceId::default());
             app.manage(rymnet::Rymnet::default());
             app.manage(vpn::Vpn::default());
             vpn::restore(app.handle());
@@ -433,6 +435,10 @@ pub fn run() {
             mail::mail_list,
             mail::mail_read,
             mail::mail_set_flags,
+            faceid::faceid_status,
+            faceid::faceid_download,
+            faceid::faceid_remove,
+            faceid::faceid_embed,
             media::media_start,
             media::media_stop,
             media::media_send,

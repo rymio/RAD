@@ -16,7 +16,7 @@ export const GESTURES = [
 ] as const;
 export type Gesture = (typeof GESTURES)[number];
 
-export const ACTIONS = ['remember', 'note', 'event', 'open', 'search', 'music', 'check', 'bot'] as const;
+export const ACTIONS = ['remember', 'note', 'event', 'open', 'search', 'music', 'check', 'bot', 'look'] as const;
 export type ActionName = (typeof ACTIONS)[number];
 
 export type Tag =

@@ -4,5 +4,7 @@
 <dict>
   <key>NSMicrophoneUsageDescription</key>
   <string>RAD listens to you when you talk with Gilgamesh. Speech is recognised on this computer and never recorded.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>Gilgamesh sees you when you turn his sight on: to look at you, know when you're there and recognise you. Pictures are processed on this computer and never kept.</string>
 </dict>
 </plist>

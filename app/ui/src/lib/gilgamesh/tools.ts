@@ -1,6 +1,7 @@
 // What Gilgamesh can do for the owner, through RAD's own features: remember facts (RAD's
 // memories, shared with every chat), save notes (Inbox project), add calendar events, open views
-// and web pages, search the web, control the music and give the owner's bots tasks. Also what
+// and web pages, search the web, control the music, give the owner's bots tasks and look through
+// the camera. Also what
 // he knows about "now".
 
 import { api } from '../api';
@@ -12,6 +13,7 @@ import type { ActionName } from './text';
 import { monitor, siteName } from '../monitor.svelte';
 import { gilgamesh } from './gilgamesh.svelte';
 import { bots } from '../bots.svelte';
+import { sight } from './sight.svelte';
 
 export interface Outcome {
   /** Shown in the transcript, e.g. "Remembered: …". */
@@ -46,7 +48,7 @@ export function timeIn(s: string): readonly [number, number] | null {
   return [h, Number(m[2] ?? 0)];
 }
 
-async function calendar(): Promise<T.CalendarEvent[]> {
+export async function calendarEvents(): Promise<T.CalendarEvent[]> {
   const v = await api.get<any>('/v1/app-data/calendar_events').catch(() => null);
   return Array.isArray(v) ? v : [];
 }
@@ -82,7 +84,7 @@ export async function runAction(name: ActionName, arg: string): Promise<Outcome>
         if (time && (time[0] > 23 || time[1] > 59 || (time[0] === 0 && time[1] === 0))) time = null;
         const start = time ? `${pad(time[0])}:${pad(time[1])}` : null;
         const end = time ? `${pad(Math.min(23, time[0] + 1))}:${pad(time[1])}` : null;
-        const list = await calendar();
+        const list = await calendarEvents();
         list.push({ id: crypto.randomUUID(), title: title.slice(0, 200), date: m[1], start, end, notes: 'Added by Gilgamesh', color: PROJECT_COLORS[0] });
         await api.put('/v1/app-data/calendar_events', list);
         return { label: `Added to the calendar: ${dayLabel(m[1])}${start ? ' ' + start : ''} — ${title}`, ok: true };
@@ -114,6 +116,11 @@ export async function runAction(name: ActionName, arg: string): Promise<Outcome>
       }
       case 'bot':
         return await bots.fromGilgamesh(arg);
+      case 'look': {
+        // A picture from the camera, answered once he's finished what he's saying.
+        const answer = await sight.look(arg);
+        return { label: `Looked: ${arg}`, ok: true, later: () => void gilgamesh.announce(answer) };
+      }
       case 'music': {
         await music.load();
         // "play | Billie Holiday" is a request for Billie Holiday.
@@ -147,7 +154,7 @@ export async function situation(): Promise<string> {
   });
   lines.push(`DATES: ${days.join(', ')}.`);
   const week = isoDay(new Date(now.getTime() + 7 * 864e5));
-  const events = (await calendar())
+  const events = (await calendarEvents())
     .filter((e) => e.date >= today && e.date <= week)
     .sort((a, b) => `${a.date} ${a.start ?? ''}`.localeCompare(`${b.date} ${b.start ?? ''}`))
     .slice(0, 12);

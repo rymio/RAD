@@ -8,7 +8,8 @@
   import { transcripts, clock } from '../lib/gilgamesh/transcripts.svelte';
   import { avatarImage } from '../lib/gilgamesh/face';
   import { Head } from '../lib/gilgamesh/head';
-  import { Mic, MicOff, Eye, EyeOff, Square, Loader, ScanFace, SendHorizontal } from '@lucide/svelte';
+  import { sight } from '../lib/gilgamesh/sight.svelte';
+  import { Mic, MicOff, Eye, EyeOff, Square, Loader, ScanFace, SendHorizontal, Camera, CameraOff } from '@lucide/svelte';
 
   const g = gilgamesh;
   let canvas = $state<HTMLCanvasElement | null>(null);
@@ -102,6 +103,12 @@
     {#if on && ptt}
       <button class="hold" class:held={g.holding} title="Hold while you talk" onpointerdown={() => g.press(true)} onpointerup={() => g.press(false)} onpointerleave={() => g.press(false)}>Talk</button>
     {/if}
+    {#if sight.on}
+      <!-- His camera is on: he can see. Click: sight off. -->
+      <button class="icon-btn sm seeing" title="Gilgamesh can see{sight.present ? (sight.who === 'owner' ? ' you' : sight.who === 'stranger' ? ' someone he doesn’t know' : ' someone') : ' (nobody there)'} — turn his sight off" onclick={() => sight.saveSettings({ mode: 'off' })}><Camera size={14} /></button>
+    {:else if sight.error && sight.settings.mode !== 'off'}
+      <button class="icon-btn sm" title={sight.error} onclick={() => store.navigate({ kind: 'gilgamesh' })}><CameraOff size={14} /></button>
+    {/if}
     <button class="icon-btn sm" title={g.settings.dock ? 'Hide his face' : 'Show his face'} onclick={() => g.saveSettings({ dock: !g.settings.dock })}>
       {#if g.settings.dock}<EyeOff size={14} />{:else}<Eye size={14} />{/if}
     </button>
@@ -116,6 +123,9 @@
 </div>
 
 <style>
+  .seeing {
+    color: var(--accent);
+  }
   .dock {
     margin: 0 10px 8px;
     padding: 8px;

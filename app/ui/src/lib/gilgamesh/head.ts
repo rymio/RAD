@@ -201,6 +201,8 @@ export class Head {
   private micro = { x: 0, y: 0, next: 0 };
   /** The pointer, as seen from the face (-1..1 across the picture), and when it last moved. */
   private pointer = { x: 0, y: 0, at: -1e9 };
+  /** Where the owner's face is, from the camera (sight.svelte.ts), and when it was last seen. */
+  private viewer = { x: 0, y: 0, at: -1e9 };
   private follow = { yaw: 0, pitch: 0 };
   private nextRepeat = 0;
   /** The blush drawn this frame. */
@@ -334,6 +336,12 @@ export class Head {
   /** The eyes follow the pointer for a while after it moves (x, y: -1..1 across the picture). */
   lookAt(x: number, y: number) {
     this.pointer = { x: Math.max(-1.5, Math.min(1.5, x)), y: Math.max(-1.5, Math.min(1.5, y)), at: performance.now() };
+  }
+
+  /** The owner's face, seen by the camera (x, y: -1..1, as the owner sees the screen): while
+   *  it's seen, he looks at them rather than straight ahead. */
+  see(x: number, y: number) {
+    this.viewer = { x: Math.max(-1.2, Math.min(1.2, x)), y: Math.max(-1, Math.min(1, y)), at: performance.now() };
   }
 
   /** Where the pointer is, seen from the middle of the face (a little above the picture's middle). */
@@ -583,6 +591,10 @@ export class Head {
     // with small glances
     const g = this.gaze;
     const pointing = now - this.pointer.at < 2500 && this.attention !== 'thinking' && !speaking && !this.gestures.length;
+    // The owner, where the camera sees them: "straight ahead" is wherever they are.
+    const seen = now - this.viewer.at < 1500;
+    const vx = seen ? this.viewer.x : 0;
+    const vy = seen ? this.viewer.y : 0;
     if (pointing) {
       g.tx = this.pointer.x;
       g.ty = this.pointer.y * 0.8;
@@ -594,8 +606,8 @@ export class Head {
         g.next = now + rand(900, 2000);
       } else {
         const wander = this.attention === 'listening' || speaking ? 0.25 : 0.6;
-        g.tx = (m.lookX ?? 0) + (Math.random() < 0.6 ? 0 : rand(-wander, wander));
-        g.ty = Math.random() < 0.7 ? 0 : rand(-wander, wander) * 0.6;
+        g.tx = (m.lookX ?? 0) + vx + (Math.random() < 0.6 ? 0 : rand(-wander, wander));
+        g.ty = vy + (Math.random() < 0.7 ? 0 : rand(-wander, wander) * 0.6);
         g.next = now + rand(700, 3000);
       }
     }
@@ -610,10 +622,10 @@ export class Head {
     }
     this.cur.gazeX = g.x + mc.x;
     this.cur.gazeY = g.y + mc.y + hb.look;
-    // The head turns a little toward the pointer too.
+    // The head turns a little toward the pointer, or the owner, too.
     const fw = this.follow;
-    fw.yaw += ((pointing ? -this.pointer.x * 4 : 0) - fw.yaw) * 0.05;
-    fw.pitch += ((pointing ? this.pointer.y * 2.5 : 0) - fw.pitch) * 0.05;
+    fw.yaw += ((pointing ? -this.pointer.x * 4 : -vx * 3) - fw.yaw) * 0.05;
+    fw.pitch += ((pointing ? this.pointer.y * 2.5 : vy * 2) - fw.pitch) * 0.05;
 
     // ---- how the head is held: it settles somewhere new now and then
     const ps = this.posture;
@@ -723,5 +735,6 @@ export class Heads {
 
   blink() { for (const h of this.all) h.blink(); }
   gesture(g: Gesture) { for (const h of this.all) h.gesture(g); }
+  see(x: number, y: number) { for (const h of this.all) h.see(x, y); }
   acknowledge() { for (const h of this.all) h.acknowledge(); }
 }

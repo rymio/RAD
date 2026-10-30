@@ -11,6 +11,7 @@
   import { monitor } from '../lib/monitor.svelte';
   import MonitorView from './MonitorView.svelte';
   import { bots } from '../lib/bots.svelte';
+  import { sight } from '../lib/gilgamesh/sight.svelte';
   import BotsView from './BotsView.svelte';
   import { MicOff } from '@lucide/svelte';
   import ChatView from './ChatView.svelte';
@@ -86,7 +87,9 @@
     monitor.start().catch((e) => store.error(e, 'Couldn’t load Web Monitoring'));
     // Bots' routines run on their schedule while RAD is open.
     bots.start().catch((e) => store.error(e, 'Couldn’t load the bots'));
-    const un: Array<() => void> = [() => gilgamesh.unload(), () => monitor.unload(), () => bots.unload()];
+    // His camera, when the owner has turned his sight on (off when the vault locks).
+    sight.start().catch((e) => store.error(e, 'Couldn’t load Gilgamesh’s sight'));
+    const un: Array<() => void> = [() => gilgamesh.unload(), () => monitor.unload(), () => bots.unload(), () => sight.unload()];
     getCurrentWebview()
       .onDragDropEvent((ev) => {
         const p = ev.payload;

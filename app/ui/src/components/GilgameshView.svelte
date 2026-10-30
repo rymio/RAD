@@ -9,8 +9,9 @@
   import { prepareAvatar, avatarImage } from '../lib/gilgamesh/face';
   import { Head } from '../lib/gilgamesh/head';
   import { MOODS, GESTURES, type Mood, type Gesture } from '../lib/gilgamesh/text';
+  import { sight, type SightMode, type StrangerAction } from '../lib/gilgamesh/sight.svelte';
   import type { Citation } from '../lib/types';
-  import { Mic, MicOff, ImageUp, SlidersHorizontal, RotateCcw, Loader, Download, Headphones, SendHorizontal, MessageSquareText, Hand, Square, X, CircleAlert, ScanFace, History, Trash2, FileText, MessageSquare, Check, Plus, Shuffle, AudioLines, Pause, Play, Circle, Sparkles, FolderOpen } from '@lucide/svelte';
+  import { Mic, MicOff, ImageUp, SlidersHorizontal, RotateCcw, Loader, Download, Headphones, SendHorizontal, MessageSquareText, Hand, Square, X, CircleAlert, ScanFace, History, Trash2, FileText, MessageSquare, Check, Plus, Shuffle, AudioLines, Pause, Play, Circle, Sparkles, FolderOpen, Camera, CameraOff, Eye, UserCheck } from '@lucide/svelte';
 
   interface TtsStatus { installed: boolean; engine: boolean; dev_build: boolean; bytes: number; downloading: { done: number; total: number } | null; voices: { key: string; name: string }[] }
   interface SttStatus { installed: boolean; bytes: number; downloading: { done: number; total: number } | null }
@@ -37,6 +38,40 @@
   let confirmDelete = $state<number | null>(null);
   let newTitle = $state('');
   let liveEl = $state<HTMLDivElement | null>(null);
+  let sightBusy = $state(false);
+  let sightError = $state<string | null>(null);
+  let faceidProgress = $state<{ done: number; total: number } | null>(null);
+
+  /** Shows the camera's picture in a <video>. */
+  function stream(node: HTMLVideoElement, s: MediaStream | null) {
+    node.srcObject = s;
+    return { update: (n: MediaStream | null) => (node.srcObject = n) };
+  }
+
+  async function teachFace() {
+    sightBusy = true;
+    sightError = null;
+    const un = await listen<any>('faceid-progress', (e) => (faceidProgress = e.payload?.done === true ? null : e.payload));
+    try {
+      await sight.enrol();
+    } catch (e: any) {
+      sightError = e?.message ?? String(e);
+    } finally {
+      un();
+      faceidProgress = null;
+      sightBusy = false;
+    }
+  }
+
+  const SIGHT_MODES: { mode: SightMode; text: string; title: string; icon: typeof Camera }[] = [
+    { mode: 'off', text: 'Off', title: 'No camera', icon: CameraOff },
+    { mode: 'with_gilgamesh', text: 'While he’s on', title: 'The camera is on while his microphone is', icon: Camera },
+    { mode: 'watch', text: 'Watch for me', title: 'The camera stays on (slowly) so he knows when you come and go', icon: Eye },
+  ];
+
+  const sightLabel = $derived(
+    !sight.on ? '' : !sight.present ? 'Nobody there' : [sight.who === 'owner' ? 'You' : sight.who === 'stranger' ? 'Someone he doesn’t know' : 'Someone', sight.looking ? 'looking at him' : 'looking away', sight.smiling ? 'smiling' : '', sight.faces > 1 ? `+${sight.faces - 1} more` : ''].filter(Boolean).join(' · '),
+  );
   let confirmForget = $state<number | null>(null);
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -545,6 +580,54 @@
             {#each tts?.voices ?? [] as v}<option value={v.key}>{v.name}</option>{/each}
           </select>
           <small class="fine">Speed and volume are shared with read-aloud (Settings → Voice), where you can also make a voice from a recording.</small>
+          <span class="label">Sight <small>(the camera; all on this computer)</small></span>
+          <div class="seg">
+            {#each SIGHT_MODES as m (m.mode)}
+              <button class:on={sight.settings.mode === m.mode} title={m.title} onclick={() => sight.saveSettings({ mode: m.mode })}><m.icon size={14} /> {m.text}</button>
+            {/each}
+          </div>
+          {#if sight.error && sight.settings.mode !== 'off'}<small class="fine err">{sight.error}</small>{/if}
+          {#if sight.on || sight.enrolling}
+            <div class="sightview">
+              <video class="preview" autoplay muted playsinline use:stream={sight.stream}></video>
+              <small>{#if sight.enrolling}Look at the camera, and turn your head a little… {sight.enrolling.done} of {sight.enrolling.total}{:else}{sightLabel}{/if}</small>
+            </div>
+          {/if}
+          <div class="row" style="gap:6px; flex-wrap:wrap">
+            {#if sight.enrolling}
+              <button class="btn sm" onclick={() => sight.cancelEnrol()}><X size={13} /> Cancel</button>
+            {:else if sight.enrolled}
+              <span class="fine ok"><UserCheck size={13} /> He knows your face</span>
+              <button class="btn sm" disabled={sightBusy} onclick={teachFace}>Teach him again</button>
+              <button class="btn sm ghost" onclick={() => sight.forget()}>Forget it</button>
+            {:else}
+              <button class="btn sm" disabled={sightBusy} onclick={teachFace}>
+                {#if faceidProgress}<Loader size={13} class="spin" /> {formatBytes(faceidProgress.done)} of {formatBytes(faceidProgress.total)}{:else if sightBusy}<Loader size={13} class="spin" /> Starting…{:else}<UserCheck size={13} /> Teach him your face{/if}
+              </button>
+            {/if}
+          </div>
+          {#if !sight.enrolled && !sight.model?.installed && !sightBusy}<small class="fine">The first time, face recognition ({formatBytes(sight.model?.bytes ?? 38_696_353)}) is downloaded. Only numbers describing your face are kept, in your vault — never a picture.</small>{/if}
+          {#if sightError}<small class="fine err">{sightError}</small>{/if}
+          <input class="input" placeholder="What he calls you (optional)" value={sight.settings.name} onchange={(e) => sight.saveSettings({ name: (e.target as HTMLInputElement).value.trim() })} />
+          <label class="check">
+            <input type="checkbox" checked={sight.settings.greet} onchange={(e) => sight.saveSettings({ greet: (e.target as HTMLInputElement).checked })} />
+            <span>Say hello when I come back <small>After ten minutes or more away: what your bots did, and what’s next in your calendar.</small></span>
+          </label>
+          <label class="check">
+            <input type="checkbox" checked={sight.settings.lookToTalk} onchange={(e) => sight.saveSettings({ lookToTalk: (e.target as HTMLInputElement).checked })} />
+            <span>Only answer when I look at him <small>Hands-free: talking to someone else in the room doesn’t set him off.</small></span>
+          </label>
+          <label class="check">
+            <input type="checkbox" checked={sight.settings.mirror} onchange={(e) => sight.saveSettings({ mirror: (e.target as HTMLInputElement).checked })} />
+            <span>Smile back</span>
+          </label>
+          <span class="fine">When someone he doesn’t know is at the computer{sight.enrolled ? '' : ' (teach him your face first)'}:</span>
+          <select class="select" value={sight.settings.stranger} disabled={!sight.enrolled} onchange={(e) => sight.saveSettings({ stranger: (e.target as HTMLSelectElement).value as StrangerAction })}>
+            <option value="off">Nothing</option>
+            <option value="quiet">He goes quiet (microphone off)</option>
+            <option value="lock">Lock RAD</option>
+          </select>
+          <small class="fine">Recognising a face is for being friendly, not security: a photo can fool it.</small>
           <span class="label">Moods <small>(try them)</small></span>
           <div class="moods">
             {#each MOODS as m}<button class="mood" onclick={() => preview(m)}>{m}</button>{/each}
@@ -584,6 +667,31 @@
 </div>
 
 <style>
+  .sightview {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .preview {
+    width: 100%;
+    max-width: 260px;
+    border-radius: 10px;
+    transform: scaleX(-1);
+    background: var(--surface-2);
+  }
+  .sightview small {
+    font-size: 12px;
+    color: var(--text-2);
+  }
+  .fine.err {
+    color: var(--danger, #e5534b);
+  }
+  .fine.ok {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--text-2);
+  }
   .gil {
     flex: 1;
     min-height: 0;

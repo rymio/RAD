@@ -34,6 +34,7 @@ import { thumbnail, type Avatar } from './face';
 import { transcripts } from './transcripts.svelte';
 import { monitor } from '../monitor.svelte';
 import { bots } from '../bots.svelte';
+import { sight } from './sight.svelte';
 
 export type Mode = 'hands_free' | 'push_to_talk';
 
@@ -114,12 +115,15 @@ You can act for the owner by writing an action tag in your reply. It is carried 
 - [check: websites] checks the websites the owner monitors again now; you tell them the result once it's done (say you're checking).
 - [open: monitoring] opens Web Monitoring.
 - [bot: Name | task] gives one of the owner's bots a task (YOUR BOTS, below). A bot works in the background on a computer of its own: it browses, fills in forms, logs in with the owner's saved logins, downloads and checks things, and can follow the skills it has learned. Write the task out in full. Leave "Name |" out to give it to whichever bot is free. Say you've passed it on; you'll be told when it's done.
+- [look: question] looks through the camera and answers the question about what's in front of it (what the owner is holding, wearing or showing you). Use it when they ask you to look at something; say you're having a look. The answer comes once you've finished speaking.
 - [bot: approve] or [bot: deny] answers a bot that waits for the owner's OK, only when the owner has said yes or no to it. [bot: answer | text] passes on the owner's answer to a bot's question. [bot: stop | Name] stops a bot.
 Only act when the owner asks or clearly wants it, and always say a few words about what you're doing. You go with the owner everywhere in RAD (your face is in the sidebar), so opening something or searching doesn't end the conversation; it happens once you've finished speaking.
 
 You can also listen without answering and write down what is said (the owner starts it with the Transcripts button). Those transcripts are notes in the owner's vault: passages from them appear among the sources, and the recent ones are listed below.
 
 You watch the owner's websites (Web Monitoring, below): when RAD starts and every three hours you check whether each answers and when its certificate expires, and tell the owner about problems. When asked how the websites are, answer from those results: name what is offline or has a certificate problem or expiring soon, and say briefly that the rest are fine.
+
+When the owner has turned your sight on, you see them through the camera (WHAT YOU SEE, below): whether they're there, looking at you, smiling, and whether it's them. Don't describe them unprompted, and never claim to see details: for those use [look: …].
 
 You can see which part of RAD the owner has open and where they were before (WHAT THE OWNER IS DOING, below). Use it to help with what they're doing ("this page", "this email", "what I'm looking at"), but don't comment on it unless it helps.
 
@@ -195,6 +199,8 @@ class Gilgamesh {
   private lastSynth: Promise<unknown> = Promise.resolve();
   private audio: HTMLAudioElement | null = null;
   private micOn = false;
+  /** When the owner started speaking (for "only when I look at him"). */
+  private speechAt = 0;
   private micPaused = false;
   /** Actions to carry out once the answer has been spoken. */
   private later: (() => void)[] = [];
@@ -516,8 +522,9 @@ class Gilgamesh {
         this.level = ev.rms;
         break;
       case 'speech_start':
-        // Talking over Gilgamesh stops him.
-        if (this.phase === 'speaking' || this.phase === 'thinking') this.interrupt();
+        this.speechAt = Date.now();
+        // Talking over Gilgamesh stops him (not talking to someone else, when he can tell).
+        if ((this.phase === 'speaking' || this.phase === 'thinking') && sight.addressed(this.speechAt)) this.interrupt();
         this.phase = 'hearing';
         this.heard = '';
         if (this.head) {
@@ -535,6 +542,13 @@ class Gilgamesh {
         break;
       case 'final':
         this.heard = '';
+        // Hands-free with "only when I look at him": said without looking at him, it wasn't for him.
+        if (this.settings.mode === 'hands_free' && !sight.addressed(this.speechAt)) {
+          if (this.phase === 'hearing') this.phase = this.idlePhase;
+          this.status = 'Not for me (you weren’t looking)';
+          setTimeout(() => this.status === 'Not for me (you weren’t looking)' && (this.status = ''), 2500);
+          break;
+        }
         this.head?.acknowledge();
         this.ask(ev.text);
         break;
@@ -639,7 +653,7 @@ class Gilgamesh {
       this.fail(run, e);
       return;
     }
-    const made = [transcripts.describe(), monitor.describe(), bots.describe()].filter(Boolean).join('\n\n');
+    const made = [sight.describe(), transcripts.describe(), monitor.describe(), bots.describe()].filter(Boolean).join('\n\n');
     // The transcript under discussion goes last, so a long one is what gets cut at the limit.
     context = `${PERSONA.replace('{FRIDAY}', nextFriday())}\n\n${context}\n${activity.describe()}\n\n${this.recaps()}${made ? `\n\n${made}` : ''}${topic ? `\n\n${topic}` : ''}`;
     this.streaming = true;

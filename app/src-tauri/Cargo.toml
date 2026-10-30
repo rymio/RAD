@@ -57,6 +57,8 @@ cpal = "0.18"
 # Speech to text for Gilgamesh: Silero VAD + Parakeet (onnxruntime, linked statically).
 sherpa-onnx = "=1.13.8"
 # DOS view: games added as ZIP files are unpacked onto drive C:.
+# Gilgamesh knowing the owner's face (faceid.rs): SFace, run in pure Rust.
+tract-onnx = "0.23"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [features]
