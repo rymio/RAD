@@ -236,6 +236,12 @@ fn engine_path(app: &AppHandle, kind: Kind) -> Option<PathBuf> {
     }
 }
 
+/// An engine to run on its own, for Web Monitoring's thumbnails: Chromium if it's built (it
+/// draws more sites faithfully), else Servo. True when it's Chromium.
+pub(crate) fn snapshot_engine(app: &AppHandle) -> Option<(PathBuf, bool)> {
+    chromium_path(app).map(|p| (p, true)).or_else(|| servo_path(app).map(|p| (p, false)))
+}
+
 /// The Chromium engine is a folder (macOS: an app) with CEF next to it: in the app bundle
 /// (macOS `Contents/Helpers`, elsewhere the resources), or — in development — where
 /// `scripts/build-chromium.sh` lays it out. `RAD_CHROMIUM_BIN` overrides these.

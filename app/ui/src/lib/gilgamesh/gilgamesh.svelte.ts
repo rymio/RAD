@@ -32,6 +32,7 @@ import { citedNumbers, parseTags, stripCitations, stripTags, takeSentences, GEST
 import { runAction, situation } from './tools';
 import { thumbnail, type Avatar } from './face';
 import { transcripts } from './transcripts.svelte';
+import { monitor } from '../monitor.svelte';
 
 export type Mode = 'hands_free' | 'push_to_talk';
 
@@ -109,9 +110,13 @@ You can act for the owner by writing an action tag in your reply. It is carried 
 - [open: name] opens part of RAD (browser, terminal, files, calendar, email, music, video, settings, memories), or [open: https://…] opens a web page.
 - [search: words] searches the web in RAD's browser.
 - [music: play | pause | next | previous | song or artist] controls their music.
+- [check: websites] checks the websites the owner monitors again now; you tell them the result once it's done (say you're checking).
+- [open: monitoring] opens Web Monitoring.
 Only act when the owner asks or clearly wants it, and always say a few words about what you're doing. You go with the owner everywhere in RAD (your face is in the sidebar), so opening something or searching doesn't end the conversation; it happens once you've finished speaking.
 
 You can also listen without answering and write down what is said (the owner starts it with the Transcripts button). Those transcripts are notes in the owner's vault: passages from them appear among the sources, and the recent ones are listed below.
+
+You watch the owner's websites (Web Monitoring, below): when RAD starts and every three hours you check whether each answers and when its certificate expires, and tell the owner about problems. When asked how the websites are, answer from those results: name what is offline or has a certificate problem or expiring soon, and say briefly that the rest are fine.
 
 You can see which part of RAD the owner has open and where they were before (WHAT THE OWNER IS DOING, below). Use it to help with what they're doing ("this page", "this email", "what I'm looking at"), but don't comment on it unless it helps.
 
@@ -630,7 +635,7 @@ class Gilgamesh {
       this.fail(run, e);
       return;
     }
-    const made = transcripts.describe();
+    const made = [transcripts.describe(), monitor.describe()].filter(Boolean).join('\n\n');
     // The transcript under discussion goes last, so a long one is what gets cut at the limit.
     context = `${PERSONA.replace('{FRIDAY}', nextFriday())}\n\n${context}\n${activity.describe()}\n\n${this.recaps()}${made ? `\n\n${made}` : ''}${topic ? `\n\n${topic}` : ''}`;
     this.streaming = true;
@@ -801,6 +806,29 @@ class Gilgamesh {
     const later = this.later;
     this.later = [];
     for (const f of later) f();
+  }
+
+  /** Says something of his own accord (a website check…), once he's free: spoken if his
+   *  voice is set up, and shown in the transcript. */
+  async announce(text: string, mood: Mood | null = null) {
+    // Not over the owner, nor over himself: wait (up to two minutes) until he's free.
+    for (let i = 0; i < 60 && ['starting', 'hearing', 'thinking', 'speaking'].includes(this.phase); i++) await new Promise((r) => setTimeout(r, 2000));
+    this.turns.push({ who: 'gilgamesh', text });
+    const tts = await invoke<{ installed: boolean; engine: boolean }>('tts_status').catch(() => null);
+    if (!tts?.installed || !tts.engine) return;
+    const run = ++this.run;
+    this.lines = [];
+    this.later = [];
+    this.actionsDone = Promise.resolve();
+    this.streamDone = false;
+    void this.player(run);
+    for (const s of takeSentences(text, true).sentences) {
+      const spoken = speakable(s);
+      if (spoken) this.say(spoken, mood, []);
+      mood = null;
+    }
+    this.streamDone = true;
+    this.wake?.();
   }
 
   /** Stops the answer now: the speech, the sentences still waiting and the writing. */

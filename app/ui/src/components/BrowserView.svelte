@@ -59,12 +59,13 @@
     }
   }
 
-  // Pages the assistant opened ("open servo.org").
+  // Pages the assistant opened ("open servo.org") in the Web Browser (Servo), and websites
+  // opened from Web Monitoring in Chromium.
   $effect(() => {
-    // The assistant opens pages in the Web Browser (Servo).
-    const url = store.pendingBrowserUrl;
-    if (kind !== 'servo' || !url || engine === 'starting') return;
-    store.pendingBrowserUrl = null;
+    const url = kind === 'servo' ? store.pendingBrowserUrl : kind === 'chromium' ? store.pendingChromiumUrl : null;
+    if (!url || engine === 'starting') return;
+    if (kind === 'servo') store.pendingBrowserUrl = null;
+    else store.pendingChromiumUrl = null;
     if (engine === 'running' && tabs.length) send({ cmd: 'new_tab', url });
     else go(url);
   });

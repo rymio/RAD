@@ -8,6 +8,8 @@ import { music, musicEngine } from '../media.svelte';
 import { PROJECT_COLORS } from '../util';
 import type * as T from '../types';
 import type { ActionName } from './text';
+import { monitor, siteName } from '../monitor.svelte';
+import { gilgamesh } from './gilgamesh.svelte';
 
 export interface Outcome {
   /** Shown in the transcript, e.g. "Remembered: …". */
@@ -22,7 +24,7 @@ const VIEWS: Record<string, T.Route> = {
   terminal: { kind: 'terminal' }, files: { kind: 'files' }, calendar: { kind: 'calendar' }, email: { kind: 'email' },
   mail: { kind: 'email' }, music: { kind: 'music' }, video: { kind: 'video' }, settings: { kind: 'settings' },
   memories: { kind: 'settings', tab: 'memories' }, chat: { kind: 'chat', id: null }, database: { kind: 'database' },
-  games: { kind: 'games' }, rymnet: { kind: 'rymnet' }, rymwin: { kind: 'rymwin' }, zx: { kind: 'zx' }, spectrum: { kind: 'zx' },
+  games: { kind: 'games' }, monitoring: { kind: 'monitor' }, monitor: { kind: 'monitor' }, websites: { kind: 'monitor' }, rymnet: { kind: 'rymnet' }, rymwin: { kind: 'rymwin' }, zx: { kind: 'zx' }, spectrum: { kind: 'zx' },
   c64: { kind: 'c64' }, commodore: { kind: 'c64' }, dos: { kind: 'dos' }, sidex: { kind: 'sidex' }, editor: { kind: 'sidex' },
 };
 
@@ -96,6 +98,17 @@ export async function runAction(name: ActionName, arg: string): Promise<Outcome>
       case 'search': {
         const url = `https://duckduckgo.com/?q=${encodeURIComponent(arg)}`;
         return { label: `Searching the web for “${arg}”`, ok: true, later: () => store.runAction({ kind: 'open_url', url }) };
+      }
+      case 'check': {
+        await monitor.load();
+        if (!monitor.sites.length) return { label: 'No websites are monitored yet', ok: false };
+        const wrong = await monitor.run('asked');
+        const n = monitor.sites.length;
+        const fine = n - new Set(monitor.sites.filter((s) => wrong.some((w) => w.startsWith(siteName(s)))).map((s) => s.id)).size;
+        const text = wrong.length
+          ? `I've checked your ${n} website${n === 1 ? '' : 's'}. ${wrong.join('. ')}.${fine ? ` The other ${fine === 1 ? 'one is' : `${fine} are`} fine.` : ''}`
+          : `I've checked your ${n} website${n === 1 ? '' : 's'}: all online, and no certificate is close to expiring.`;
+        return { label: `Checked ${n} website${n === 1 ? '' : 's'}${wrong.length ? `: ${wrong.length} problem${wrong.length === 1 ? '' : 's'}` : ': all fine'}`, ok: true, later: () => void gilgamesh.announce(text, wrong.length ? 'concerned' : 'happy') };
       }
       case 'music': {
         await music.load();

@@ -13,6 +13,7 @@ const NAMES: Record<Route['kind'], string> = {
   sidex: 'SideX (the code editor)', database: 'the database tool', games: 'the games', zx: 'the ZX Spectrum emulator',
   zxlab: 'the Spectrum Lab (disassembler)', c64: 'the Commodore 64 emulator', c64lab: 'the C64 Lab (disassembler)',
   dos: 'the DOS PC emulator', gilgamesh: 'Gilgamesh’s own view (talking with you)',
+  monitor: 'Web Monitoring (the websites you watch for them)',
 };
 
 const KEEP = 12;

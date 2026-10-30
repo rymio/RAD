@@ -168,7 +168,8 @@ export type Route =
   | { kind: 'c64' }
   | { kind: 'c64lab' }
   | { kind: 'dos' }
-  | { kind: 'gilgamesh' };
+  | { kind: 'gilgamesh' }
+  | { kind: 'monitor' };
 
 /** Something the assistant asks the app to do (see crates/rad-server/src/agent.rs). */
 export interface AgentAction { kind: 'ssh' | 'open_url' | 'terminal' | string; host?: string; user?: string; port?: number; identity_file?: string; url?: string }

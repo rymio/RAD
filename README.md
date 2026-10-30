@@ -136,6 +136,7 @@ Licences: MioTTS-0.1B is under the Falcon-LLM licence, MioCodec is MIT, and WavL
 - **Faces.** Give him several faces: choose more than one photo, or drop photos onto the view (up to 24). Switch between them from the strip at the bottom of the picture, or rename and remove them in settings. With **A new face for each conversation** turned on, each new conversation brings the next face. Each conversation remembers the face it was held with.
 - **Everywhere.** Gilgamesh's face sits in the sidebar, under the search box, with his microphone, a stop button and a box to type to him, so you can talk with him from any view. In push-to-talk mode, hold **Talk** there. The eye button hides his face and keeps the controls. The microphone stays on as you move between views; it goes off when you turn it off or lock the vault. While the sidebar is hidden, a red microphone button in the corner shows that he's listening.
 - **Transcripts.** Press **Transcripts** and **Start transcribing**: Gilgamesh listens without answering and writes down what's said, line by line with times (a meeting, a call, a lecture). Each transcript is saved as it goes, as a note in the **Transcripts** project, so the vault indexes it and every chat can find it. Open one to read it, **Summarise** it (overview, key points, decisions and actions; added to the note), or **Discuss** it: a conversation with Gilgamesh with the transcript in his context. He also knows your recent transcripts, so “what did we decide yesterday?” works.
+- **Websites.** Gilgamesh checks the sites in **Web Monitoring** when RAD starts and every three hours, and says out loud what's offline, back online, or whose certificate has a problem or expires within 14 days (each problem once, not at every check; at start-up, a reminder of everything still wrong). Ask him “how are my websites?” and he answers from the latest check, or “check my websites” for a fresh one.
 - **Watching.** Gilgamesh knows which part of RAD you have open and where you were before. The browser tells him the page, Files the folder and selection, and Email the folder and the email you're reading (its subject and sender, not its text). That goes into every answer, so "what's this page about?" or "help me with this" works.
 - **Turn-taking.** In **Hands-free** mode, talking over Gilgamesh stops him when **I'm using headphones** is on. Through speakers the microphone is ignored while he speaks, so he doesn't hear himself; <kbd>Esc</kbd> stops him. In **Push to talk** mode, hold <kbd>Space</kbd> while you talk.
 - **Privacy.** The photo is processed on this computer and kept only in the vault. Audio stays in memory, and the microphone is released when you leave the view.
@@ -147,6 +148,19 @@ How it works:
 - **Speech to text:** this runs in the app (`app/src-tauri/src/stt.rs`) on [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), which is linked statically. The microphone is read with cpal.
 
 Licences: Parakeet TDT 0.6B v3 is CC BY 4.0, Silero VAD is MIT, and sherpa-onnx and MediaPipe are Apache-2.0.
+
+## Web Monitoring
+
+**Web Monitoring** in the sidebar watches your websites. Add an address (e.g. `https://booksia.com.au`) and each site gets a card:
+
+- **Status:** online or offline, the HTTP status and response time, where it redirects to, and a strip of the last 48 checks with an uptime percentage.
+- **IP addresses:** from DNS, IPv4 first; click one to copy it.
+- **Certificate:** expiry date and days left (amber within 14 days, red when expired), the issuer, the TLS version, and any problem: expired, wrong name, untrusted issuer, revoked. An invalid certificate is still read, so its dates are shown.
+- **Thumbnail:** a picture of the first screen, taken by a Chromium engine of its own with a separate, throwaway profile (Servo if Chromium isn't built), so your tabs and sign-ins aren't touched. It's taken again after a day. Click it to open the site in RAD's Chromium.
+- **SSH:** add the server's SSH details and a button on the card opens the connection in the Terminal.
+- **Notes:** logins and anything else, blurred on the card until you show them, with a copy button.
+
+Checks run when RAD starts, every three hours, and from **Check now**. Sites, SSH details and notes are kept in the encrypted vault as app data, not as notes, so credentials never appear in search or chat answers. The speaker button in the header turns Gilgamesh's spoken alerts on or off. The checks and thumbnails are in `app/src-tauri/src/monitor.rs`; the scheduling and alerts are in `app/ui/src/lib/monitor.svelte.ts`.
 
 ## AI API server (share your models)
 

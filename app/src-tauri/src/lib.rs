@@ -8,6 +8,7 @@ mod config;
 mod files;
 mod mail;
 mod media;
+mod monitor;
 mod events;
 mod protocol;
 mod rymnet;
@@ -458,6 +459,8 @@ pub fn run() {
             tts::tts_speak,
             tts::tts_add_voice,
             tts::tts_delete_voice,
+            monitor::monitor_check,
+            monitor::monitor_thumb,
             tts::tts_record_start,
             tts::tts_record_stop,
             tts::tts_recording,

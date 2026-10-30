@@ -65,6 +65,8 @@ class Store {
   /** Linux sandboxes can run here (engine present). */
   sandboxReady = $state(false);
   pendingBrowserUrl = $state<string | null>(null);
+  /** A page to open in Chromium (Web Monitoring's thumbnails). */
+  pendingChromiumUrl = $state<string | null>(null);
   /** Files on their way into RYMWIN (from Files or the vault), dropped once it's open. */
   pendingRymwinDrop = $state<string[] | null>(null);
   pendingAttachments = $state<T.Document[]>([]);
