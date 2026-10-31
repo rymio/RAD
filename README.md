@@ -207,6 +207,17 @@ How it works (`app/src-tauri/src/photocraft.rs`, `app/ui/src/lib/photocraft.svel
 
 How it works: `crates/rad-ingest/src/book.rs` opens the formats (EPUB's package and table of contents; Mobipocket/KF8 with PalmDOC and HUFF/CDIC decompression; FictionBook). `app/src-tauri/src/books.rs` keeps the library, and `app/ui/src/lib/books.svelte.ts` reads aloud and gives Gilgamesh the page. Test with real books: `RAD_BOOKS=/folder/of/books cargo test -p rad-ingest real_books -- --ignored --nocapture`.
 
+## Chess (play Gilgamesh)
+
+**Chess** (sidebar → Development, under Games) is a game of chess with Gilgamesh, with him to talk to while you play.
+
+- **Playing.** Choose White, Black or Either, and how well he plays: **Beginner** (a good move, not always the best), **Easy**, **Medium** or **Hard** (one, two or three moves ahead). Move by clicking or dragging. Legal moves are dotted, and his last move and a king in check are marked. You can also **Take back** your last move, offer a **Draw?** (he takes it when he isn't better), **Resign**, or turn the board round.
+- **Saved games.** Every game is saved after each move in the encrypted Games database, and is listed when you open Chess. Pick one up where you left it, rename it, or copy it as PGN for any chess program.
+- **Why did you play that?** Click any move to go back to that position (<kbd>←</kbd> <kbd>→</kbd>, <kbd>Home</kbd>, <kbd>End</kbd>), and ask him about it. For each of his moves RAD keeps what his engine saw: whether it came from the opening book (and the opening's name), its score, the line he expected, and the other moves he weighed. He explains his move from that, in plain words, and doesn't make up lines it didn't show. Your moves that cost you (or found something better than he expected) are marked **?**, **??** or **!**.
+- **Talking.** The chat beside the board is one of Gilgamesh's conversations, about this game (kept and recapped like the rest, and in his own view too). Speak or type. **Why that move?**, **How am I doing?** and **Hint** (the hint is shown as a green arrow) are one click. He says a word at the key moments: an opening, a capture, a mistake, the end. Choose **Chatty** or **Only when asked** instead. He can also act on the board: "new game, I'll be black", "take that back", "show me the knight move", "play harder next time" (`[chess: …]`).
+
+How it works: the rules, SAN and PGN are [chess.js](https://github.com/jhlywa/chess.js). His moves come from [RustChess](https://github.com/codyjk/RustChess)'s alpha-beta search and opening book, in a small engine process (`chess/rad-chess`). It scores every legal move with the same search and returns the move with the scores, the opening and the expected line as JSON. RustChess's scores favour whichever side moves last in the search, so RAD only uses even depths. That way every score in a game leans the same way, and comparing them is fair. `app/src-tauri/src/chess.rs` runs the engine, and `app/ui/src/lib/chess.svelte.ts` keeps the games and tells Gilgamesh about them. Build the engine with `./scripts/build-chess.sh` (`./scripts/build-app.sh` bundles it). RustChess is fetched from GitHub at a pinned commit, not copied into RAD.
+
 ## AI API server (share your models)
 
 **Settings → AI API server** shares the models RAD runs with other programs and computers. They connect as if RAD were **OpenAI**, **Anthropic** or **Ollama**, so most AI tools and SDKs work with it unchanged.
@@ -360,6 +371,7 @@ app/src-tauri       desktop shell: tray, hotkeys, screenshots, rad:// file proto
 app/ui              Svelte 5 interface
 browser/rad-browser web browser engine: Servo rendering offscreen, driven by the app (its own Cargo workspace)
 browser/rad-tor-browser the Tor browser engine: the same Servo engine with an embedded Arti (Tor) HTTP CONNECT proxy (its own Cargo workspace)
+chess/rad-chess     the chess engine Gilgamesh plays with: RustChess behind a JSON request (its own Cargo workspace; scripts/build-chess.sh)
 rymnet/             Rymnet: peer network, rymwin desktop (embedded via --embed), rymsh, rym CLI, rymnetd daemon (its own Cargo workspace); docs/ has the guides
 tts/                text-to-speech engine build (mio-tts-cpp, fetched and built by scripts/build-tts.sh)
 sandbox/launcher    Linux sandbox launcher (libkrun); scripts/build-sandbox.sh builds it with libkrun and gvproxy

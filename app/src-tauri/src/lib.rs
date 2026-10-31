@@ -2,6 +2,7 @@
 
 mod books;
 mod browser;
+mod chess;
 mod capture;
 mod client;
 mod commands;
@@ -351,6 +352,7 @@ pub fn run() {
             app.manage(faceid::FaceId::default());
             app.manage(photocraft::Photocraft::default());
             app.manage(books::Books::default());
+            app.manage(chess::Chess::default());
             app.manage(rymnet::Rymnet::default());
             app.manage(vpn::Vpn::default());
             vpn::restore(app.handle());
@@ -447,6 +449,9 @@ pub fn run() {
             books::books_update,
             books::books_delete,
             books::books_path,
+            chess::chess_status,
+            chess::chess_think,
+            chess::chess_stop,
             photocraft::photocraft_status,
             photocraft::photocraft_install,
             photocraft::photocraft_open,

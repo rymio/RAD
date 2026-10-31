@@ -9,7 +9,7 @@
   import Modal from './Modal.svelte';
   import VpnToggle from './VpnToggle.svelte';
   import GilgameshDock from './GilgameshDock.svelte';
-  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, Cog, FileCode, Code, Database, Gamepad2, Joystick, Microscope, Keyboard, FlaskConical, Computer, ScanFace, ChevronRight, AppWindow, MonitorPlay, Wrench, Cpu, Activity, Bot, Palette, BookOpen } from '@lucide/svelte';
+  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, Cog, FileCode, Code, Database, Gamepad2, Joystick, Microscope, Keyboard, FlaskConical, Computer, ScanFace, ChevronRight, AppWindow, MonitorPlay, Wrench, Cpu, Activity, Bot, Palette, BookOpen, Crown } from '@lucide/svelte';
   import type { Component } from 'svelte';
 
   let newProjectOpen = $state(false);
@@ -64,6 +64,7 @@
       id: 'dev', label: 'Development', icon: Wrench, views: [
         { label: 'SideX', icon: Code, route: { kind: 'sidex' } },
         { label: 'Games', icon: Gamepad2, route: { kind: 'games' } },
+        { label: 'Chess', icon: Crown, route: { kind: 'chess' } },
         { label: 'Database', icon: Database, route: { kind: 'database' } },
         { label: 'Rust Container', icon: Cog, route: { kind: 'container', type: 'rust' } },
         { label: 'Python Container', icon: FileCode, route: { kind: 'container', type: 'python' } },

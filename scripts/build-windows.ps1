@@ -104,10 +104,11 @@ if (-not $NoDos) { $retro += "build-dos.sh" }
 foreach ($s in $retro) {
     try { Run-Bash "./scripts/$s" } catch { Write-Warning "building without $s ($_)" }
 }
+try { Run-Bash "./scripts/build-chess.sh $host_triple" } catch { Write-Warning "building without the chess engine ($_)" }
 
 # Bundle whichever engines are built (Tauri adds the target triple and .exe itself).
 $bins = @()
-foreach ($b in @("rad-browser", "mio-tts-server")) {
+foreach ($b in @("rad-browser", "mio-tts-server", "rad-chess")) {
     if ($b -eq "rad-browser" -and $NoBrowser) { continue }
     if (Test-Path "app\src-tauri\binaries\$b-$host_triple.exe") { $bins += "binaries/$b" }
 }

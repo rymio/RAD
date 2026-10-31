@@ -1,7 +1,7 @@
 // What Gilgamesh can do for the owner, through RAD's own features: remember facts (RAD's
 // memories, shared with every chat), save notes (Inbox project), add calendar events, open views
 // and web pages, search the web, control the music, give the owner's bots tasks and look through
-// the camera, edit pictures in PhotoCraft and read the owner's books aloud. Also what
+// the camera, edit pictures in PhotoCraft, read the owner's books aloud and play chess. Also what
 // he knows about "now".
 
 import { api } from '../api';
@@ -16,6 +16,7 @@ import { bots } from '../bots.svelte';
 import { sight } from './sight.svelte';
 import { photocraft } from '../photocraft.svelte';
 import { books } from '../books.svelte';
+import { chess, LEVELS, type Level } from '../chess.svelte';
 
 export interface Outcome {
   /** Shown in the transcript, e.g. "Remembered: …". */
@@ -30,7 +31,7 @@ const VIEWS: Record<string, T.Route> = {
   terminal: { kind: 'terminal' }, files: { kind: 'files' }, calendar: { kind: 'calendar' }, email: { kind: 'email' },
   mail: { kind: 'email' }, music: { kind: 'music' }, video: { kind: 'video' }, settings: { kind: 'settings' },
   memories: { kind: 'settings', tab: 'memories' }, chat: { kind: 'chat', id: null }, database: { kind: 'database' },
-  games: { kind: 'games' }, bots: { kind: 'bots' }, bot: { kind: 'bots' }, books: { kind: 'books' }, book: { kind: 'books' }, library: { kind: 'books' }, photocraft: { kind: 'photocraft' }, pictures: { kind: 'photocraft' }, monitoring: { kind: 'monitor' }, monitor: { kind: 'monitor' }, websites: { kind: 'monitor' }, rymnet: { kind: 'rymnet' }, rymwin: { kind: 'rymwin' }, zx: { kind: 'zx' }, spectrum: { kind: 'zx' },
+  games: { kind: 'games' }, chess: { kind: 'chess' }, bots: { kind: 'bots' }, bot: { kind: 'bots' }, books: { kind: 'books' }, book: { kind: 'books' }, library: { kind: 'books' }, photocraft: { kind: 'photocraft' }, pictures: { kind: 'photocraft' }, monitoring: { kind: 'monitor' }, monitor: { kind: 'monitor' }, websites: { kind: 'monitor' }, rymnet: { kind: 'rymnet' }, rymwin: { kind: 'rymwin' }, zx: { kind: 'zx' }, spectrum: { kind: 'zx' },
   c64: { kind: 'c64' }, commodore: { kind: 'c64' }, dos: { kind: 'dos' }, sidex: { kind: 'sidex' }, editor: { kind: 'sidex' },
 };
 
@@ -120,6 +121,28 @@ export async function runAction(name: ActionName, arg: string): Promise<Outcome>
         if (/^(prev|back)/.test(c)) return { label: 'Previous page', ok: true, later: () => books.turn(-1) };
         if (/^(page|this page|the page)/.test(c)) return { label: 'Reading this page', ok: true, later: () => books.readPage() };
         return { label: `Reading ${books.reader.book.title}`, ok: true, later: () => books.play() };
+      }
+      case 'chess': {
+        // "new | white", "undo", "show | Nf3", "hint", "level | hard" or "open".
+        const [cmd, ...rest] = arg.split('|').map((x) => x.trim());
+        const c = cmd.toLowerCase();
+        const what = rest.join(' ');
+        if (/^(new|start|play)/.test(c)) {
+          const side = /black/i.test(what) ? 'b' : /random|either|any/i.test(what) ? 'random' : 'w';
+          return { label: 'New game of chess', ok: true, later: () => void chess.newGame(side) };
+        }
+        if (/^level/.test(c)) {
+          const l = Object.keys(LEVELS).find((k) => what.toLowerCase().includes(k)) as Level | undefined;
+          if (!l) return { label: `No chess level “${what}”`, ok: false };
+          chess.saveSettings({ level: l });
+          return { label: `Chess level: ${LEVELS[l].label}`, ok: true };
+        }
+        if (/^open/.test(c)) return { label: 'Opening chess', ok: true, later: () => store.navigate({ kind: 'chess' }) };
+        if (!chess.game) return { label: 'No chess game is open', ok: false };
+        if (/^(undo|take)/.test(c)) return chess.canTakeBack ? { label: 'Took back your move', ok: true, later: () => chess.takeBack() } : { label: 'Nothing to take back', ok: false };
+        if (/^hint/.test(c)) return { label: 'Showing a hint', ok: true, later: () => void chess.requestHint() };
+        if (/^(show|point|arrow)/.test(c)) return chess.show(what) ? { label: `Showing ${what}`, ok: true } : { label: `Can’t show “${what}”`, ok: false };
+        return { label: `Don’t know the chess action “${cmd}”`, ok: false };
       }
       case 'search': {
         const url = `https://duckduckgo.com/?q=${encodeURIComponent(arg)}`;

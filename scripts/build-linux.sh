@@ -112,11 +112,12 @@ triple="$(rustc -vV | sed -n 's/^host: //p')"
 ./scripts/build-zx-tools.sh || echo "warning: building without the ZX Spectrum assembler" >&2
 ./scripts/build-c64-tools.sh || echo "warning: building without the C64 assembler" >&2
 [[ "${RAD_NO_DOS:-}" == 1 ]] || ./scripts/build-dos.sh || echo "warning: building without the DOS engine" >&2
+./scripts/build-chess.sh "$triple" || echo "warning: building without the chess engine" >&2
 
 # Bundle whichever engines are built for this platform. Engines from an earlier build with
 # --no-browser left out on purpose stay out.
 bins=()
-for b in rad-browser rad-tor-browser mio-tts-server; do
+for b in rad-browser rad-tor-browser mio-tts-server rad-chess; do
   [[ $b == rad-*browser && $browser == 0 ]] && continue
   [[ $b == rad-tor-browser && "${RAD_NO_TOR:-}" == 1 ]] && continue
   [[ -f "app/src-tauri/binaries/$b-$triple" ]] && bins+=("\"binaries/$b\"")

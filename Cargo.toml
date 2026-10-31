@@ -13,10 +13,10 @@ members = [
     "crates/rad-c64",
     "app/src-tauri",
 ]
-# The web browser engines, the media engine (libVLC), Rymnet and SideX (a checkout made by
+# The web browser engines, the chess engine, the media engine (libVLC), Rymnet and SideX (a checkout made by
 # scripts/build-sidex.sh) are their own workspaces: see browser/rad-browser,
-# browser/rad-chromium, media/rad-media, rymnet and sidex.
-exclude = ["browser", "media", "rymnet", "sidex"]
+# browser/rad-chromium, chess/rad-chess, media/rad-media, rymnet and sidex.
+exclude = ["browser", "chess", "media", "rymnet", "sidex"]
 
 [workspace.package]
 version = "0.1.0"

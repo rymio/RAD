@@ -459,7 +459,7 @@
               {#if g.about}
                 <div class="about"><AudioLines size={13} /><span class="truncate">About the transcript <strong>{g.about.title}</strong></span></div>
               {/if}
-              {#each g.turns as t}
+              {#each g.turns.filter((t) => !t.quiet) as t}
                 <div class="turn {t.who}">
                   <span class="who">{t.who === 'you' ? 'You' : 'Gilgamesh'}</span>
                   {#if t.text}<p>{t.text}</p>{/if}

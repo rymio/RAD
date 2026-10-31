@@ -22,7 +22,7 @@ export interface GameAsset { path: string; size: number; info: string }
 const DB = 'Games';
 let ready: Promise<void> | null = null;
 
-async function sql(q: string, params: unknown[] = []) {
+export async function sql(q: string, params: unknown[] = []) {
   return api.post<DbResult[]>(`/v1/db/${DB}/sql`, { sql: q, params });
 }
 

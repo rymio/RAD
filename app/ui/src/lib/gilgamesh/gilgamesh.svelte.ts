@@ -37,6 +37,7 @@ import { bots } from '../bots.svelte';
 import { sight } from './sight.svelte';
 import { photocraft } from '../photocraft.svelte';
 import { books } from '../books.svelte';
+import { chess } from '../chess.svelte';
 
 export type Mode = 'hands_free' | 'push_to_talk';
 
@@ -55,6 +56,8 @@ export interface Conversation {
   transcript?: number;
   /** The book it is about (Books). */
   book?: string;
+  /** The chess game it is about (Games → Chess). */
+  chess?: string;
 }
 
 /** One of Gilgamesh's faces: a prepared photo, kept under its own key in the vault. */
@@ -89,7 +92,12 @@ export interface Turn {
   text: string;
   sources?: Citation[];
   actions?: { label: string; ok: boolean }[];
+  /** Said to him by RAD, not by the owner (a chess move to comment on): not shown. */
+  quiet?: boolean;
 }
+
+/** Starts a message RAD sends him on the owner's behalf (kept in the chat, never shown). */
+export const QUIET = '\u2063';
 
 const SETTINGS_KEY = '/v1/app-data/gilgamesh';
 /** The single face kept before Gilgamesh had several (moved into the list on load). */
@@ -121,6 +129,7 @@ You can act for the owner by writing an action tag in your reply. It is carried 
 - [bot: Name | task] gives one of the owner's bots a task (YOUR BOTS, below). A bot works in the background on a computer of its own: it browses, fills in forms, logs in with the owner's saved logins, downloads and checks things, and can follow the skills it has learned. Write the task out in full. Leave "Name |" out to give it to whichever bot is free. Say you've passed it on; you'll be told when it's done.
 - [edit: request] edits or draws in PhotoCraft, the image editor, in front of the owner (its window opens): layers, adjustments, filters, text, shapes, colours, a new picture. Write the request out in full. [edit: file name | request] opens one of PhotoCraft's files first (PHOTOCRAFT, below). Say you're on it; you'll say what you did once it's done.
 - [look: question] looks through the camera and answers the question about what's in front of it (what the owner is holding, wearing or showing you). Use it when they ask you to look at something; say you're having a look. The answer comes once you've finished speaking.
+- [chess: new | white] starts a new game of chess with the owner, who plays white (or black, or random). [chess: undo] takes back the owner's last move and your answer to it. [chess: show | move] points at a move on the board with an arrow (Nf3, or e2 e4). [chess: hint] shows the owner the move your engine would play for them. [chess: level | beginner, easy, medium or hard] sets how well you play, from the next game.
 - [read: start] reads the book the owner has open aloud in your voice, from where they are; it carries on page after page and turns the pages itself. [read: stop] stops reading, [read: page] reads the page in front of them from its top, [read: next] or [read: previous] turns the page, [read: open | title] opens one of their books (THE OWNER'S BOOKS, below). The reading starts once you've finished speaking.
 - [bot: approve] or [bot: deny] answers a bot that waits for the owner's OK, only when the owner has said yes or no to it. [bot: answer | text] passes on the owner's answer to a bot's question. [bot: stop | Name] stops a bot.
 Only act when the owner asks or clearly wants it, and always say a few words about what you're doing. You go with the owner everywhere in RAD (your face is in the sidebar), so opening something or searching doesn't end the conversation; it happens once you've finished speaking.
@@ -132,6 +141,8 @@ You watch the owner's websites (Web Monitoring, below): when RAD starts and ever
 When the owner has turned your sight on, you see them through the camera (WHAT YOU SEE, below): whether they're there, looking at you, smiling, and whether it's them. Don't describe them unprompted, and never claim to see details: for those use [look: …].
 
 When the owner is reading a book in RAD (THE OWNER IS READING, below), you see the page in front of them. Help them understand it: explain a word, a sentence, an idea or a reference in plain words, sum the page up when asked (a short spoken summary), and say what came before when they've lost the thread. Don't read the whole page out in your answer: use [read: page] for that.
+
+When you play chess with the owner (YOU ARE PLAYING CHESS, below), your moves come from your chess engine, and you see what its search saw for each of them: whether it came from the opening book, its score, the line you expected, and the other moves you weighed. When they ask why you played a move, explain it from that in plain words: what it does (a threat, a capture, a defence, development, king safety, a plan), why it beat the other moves, and what you expected next. Name pieces and squares the way people say them ("knight to f3", "your bishop on c4"), never in notation, and don't read out lists of moves. Never invent threats or lines the search didn't show; when the scores were close, say it was a matter of taste. Be a friendly, sporting opponent: enjoy good moves, point out mistakes gently, never gloat, and don't give your plans away unless asked. For a hint, point at the idea before naming the move.
 
 You can see which part of RAD the owner has open and where they were before (WHAT THE OWNER IS DOING, below). Use it to help with what they're doing ("this page", "this email", "what I'm looking at"), but don't comment on it unless it helps.
 
@@ -198,6 +209,8 @@ class Gilgamesh {
   about = $state<{ id: number; title: string } | null>(null);
   /** The book the conversation going on is about. */
   book = $state<{ id: string; title: string } | null>(null);
+  /** The chess game the conversation going on is about. */
+  game = $state<{ id: string; title: string } | null>(null);
 
   /** Every picture of him on screen. */
   head = new Heads();
@@ -251,6 +264,7 @@ class Gilgamesh {
     this.loaded = true;
     this.about = this.aboutOf(id);
     this.book = this.bookOf(id);
+    this.game = this.gameOf(id);
     if (id) await this.loadTurns(id);
   }
 
@@ -260,6 +274,7 @@ class Gilgamesh {
     transcripts.unload();
     this.about = null;
     this.book = null;
+    this.game = null;
     this.loaded = false;
     this.avatar = null;
     this.turns = [];
@@ -359,6 +374,21 @@ class Gilgamesh {
     return b ? { id: b.id, title: b.title } : null;
   }
 
+  private gameOf(id: number | null) {
+    const c = this.conversation(id);
+    return c?.chess ? { id: c.chess, title: chess.find(c.chess)?.title ?? c.title } : null;
+  }
+
+  /** Goes back to the conversation about a chess game, or starts one (unless it's going on already). */
+  async discussChess(id: string) {
+    const g = chess.find(id);
+    if (!g || (this.game?.id === id && this.settings.chatId)) return;
+    const earlier = this.conversations.find((c) => c.chess === id);
+    if (earlier) return this.resume(earlier.id);
+    await this.newConversation();
+    this.game = { id: g.id, title: g.title };
+  }
+
   /** Starts a new conversation about a book (unless the one going on is about it already). */
   async discussBook(id: string) {
     const b = books.find(id);
@@ -382,7 +412,7 @@ class Gilgamesh {
       if (this.settings.chatId !== id) return;
       this.turns = r.messages
         .filter((m) => m.role === 'user' || m.role === 'assistant')
-        .map((m: Message): Turn => (m.role === 'user' ? { who: 'you', text: m.content } : { who: 'gilgamesh', text: shown(m.content), sources: citedSources(m.content, m.citations) }));
+        .map((m: Message): Turn => (m.role === 'user' ? { who: 'you', text: m.content, quiet: m.content.startsWith(QUIET) || undefined } : { who: 'gilgamesh', text: shown(m.content), sources: citedSources(m.content, m.citations) }));
     } catch {
       // The chat was deleted elsewhere: forget it.
       await this.saveSettings({ chatId: null, conversations: this.settings.conversations.filter((c) => c.id !== id) });
@@ -397,6 +427,7 @@ class Gilgamesh {
     this.turns = [];
     this.about = null;
     this.book = null;
+    this.game = null;
     await this.saveSettings({ chatId: null });
     if (prev) void this.recap(prev);
     const next = this.settings.rotate && this.settings.faces.length > 1 ? this.nextFace() : null;
@@ -412,6 +443,7 @@ class Gilgamesh {
     await this.saveSettings({ chatId: id });
     this.about = this.aboutOf(id);
     this.book = this.bookOf(id);
+    this.game = this.gameOf(id);
     // He wears the face he had in that conversation, if it's still there.
     const face = this.conversation(id)?.face;
     if (face && face !== this.settings.face && this.settings.faces.some((f) => f.id === face)) await this.useFace(face).catch(() => {});
@@ -426,6 +458,7 @@ class Gilgamesh {
       this.turns = [];
       this.about = null;
       this.book = null;
+      this.game = null;
     }
     await api.del(`/v1/chats/${id}`).catch(() => {});
     await this.saveSettings({ chatId: this.settings.chatId === id ? null : this.settings.chatId, conversations: this.settings.conversations.filter((c) => c.id !== id) });
@@ -435,12 +468,12 @@ class Gilgamesh {
   private async chatId(firstWords: string): Promise<number> {
     const id = this.settings.chatId;
     if (id && this.conversation(id)) return id;
-    const topic = this.about?.title ?? this.book?.title;
+    const topic = this.about?.title ?? this.book?.title ?? this.game?.title;
     const title = topic ? `Gilgamesh: about ${topic.slice(0, 44)}` : `Gilgamesh: ${firstWords.replace(/\s+/g, ' ').slice(0, 50)}`;
     const c = await api.post<Chat>('/v1/chats', { title });
     store.reloadChats();
     const now = Date.now();
-    const list = [{ id: c.id, title, started: now, updated: now, summary: '', summarized: 0, face: this.settings.face ?? undefined, transcript: this.about?.id, book: this.book?.id }, ...this.settings.conversations].slice(0, KEEP_CONVERSATIONS);
+    const list = [{ id: c.id, title, started: now, updated: now, summary: '', summarized: 0, face: this.settings.face ?? undefined, transcript: this.about?.id, book: this.book?.id, chess: this.game?.id }, ...this.settings.conversations].slice(0, KEEP_CONVERSATIONS);
     await this.saveSettings({ chatId: c.id, conversations: list });
     return c.id;
   }
@@ -461,7 +494,7 @@ class Gilgamesh {
       if (!c) return;
       try {
         const r = await api.get<ChatWithMessages>(`/v1/chats/${id}`);
-        const msgs = r.messages.filter((m) => m.role === 'user' || m.role === 'assistant');
+        const msgs = r.messages.filter((m) => m.role === 'assistant' || (m.role === 'user' && !m.content.startsWith(QUIET)));
         if (msgs.length <= c.summarized || msgs.length < 2) return;
         let text = msgs
           .slice(-40)
@@ -611,8 +644,9 @@ class Gilgamesh {
 
   // ---------------------------------------------------------------- answering
 
-  /** Sends what the user said (or typed) and speaks the answer. */
-  async ask(text: string) {
+  /** Sends what the user said (or typed) and speaks the answer. `quiet`: RAD speaks for the owner
+   *  (a chess move to comment on); the message isn't shown. */
+  async ask(text: string, { quiet = false } = {}) {
     text = text.trim();
     if (!text) return;
     this.interrupt();
@@ -623,7 +657,8 @@ class Gilgamesh {
     this.error = null;
     this.status = '';
     this.later = [];
-    this.turns.push({ who: 'you', text });
+    if (quiet) text = QUIET + text;
+    this.turns.push({ who: 'you', text, quiet: quiet || undefined });
     this.phase = 'thinking';
     if (this.head) {
       this.head.attention = 'thinking';
@@ -689,7 +724,8 @@ class Gilgamesh {
     const made = [sight.describe(), transcripts.describe(), monitor.describe(), bots.describe(), photocraft.describe()].filter(Boolean).join('\n\n');
     // The transcript under discussion goes last, so a long one is what gets cut at the limit.
     // The page being read goes at the very end, after any transcript.
-    const reading = books.describe();
+    // So does the chess game being played, with what his engine saw.
+    const reading = [books.describe(), chess.describe()].filter(Boolean).join('\n\n');
     context = `${PERSONA.replace('{FRIDAY}', nextFriday())}\n\n${context}\n${activity.describe()}\n\n${this.recaps()}${made ? `\n\n${made}` : ''}${topic ? `\n\n${topic}` : ''}${reading ? `\n\n${reading}` : ''}`;
     this.streaming = true;
     try {
