@@ -14,6 +14,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 rad-tunnel.workspace = true
 rad-api.workspace = true
+# Books: opening EPUB, MOBI/AZW3 and FB2 (book.rs).
+rad-ingest.workspace = true
 rad-zx.workspace = true
 rad-c64.workspace = true
 # Direct only so `cuda` below can reach it (rad-server pulls it in anyway).

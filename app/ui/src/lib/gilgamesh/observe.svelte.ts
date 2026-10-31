@@ -16,6 +16,7 @@ const NAMES: Record<Route['kind'], string> = {
   monitor: 'Web Monitoring (the websites you watch for them)',
   bots: 'Bots (their assistants that work on computers of their own)',
   photocraft: 'PhotoCraft (the image editor: their pictures)',
+  books: 'Books (their e-books: a library and a reader)',
   // Private: nothing of it reaches his other conversations.
   mood: 'Gilgamesh’s own view',
 };

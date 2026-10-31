@@ -1,5 +1,6 @@
 //! Turns uploaded bytes into searchable text sections, entirely in memory.
 
+pub mod book;
 mod chunk;
 mod formats;
 mod xml;
@@ -135,7 +136,8 @@ pub fn classify(mime: &str, filename: &str) -> Kind {
         "odp" => return Kind::Odp,
         "csv" | "tsv" => return Kind::Csv,
         "html" | "htm" | "xhtml" | "mhtml" => return Kind::Html,
-        "epub" => return Kind::Epub,
+        // Kindle and FictionBook files are read by book.rs, like EPUB.
+        "epub" | "mobi" | "azw" | "azw3" | "prc" | "kf8" | "fb2" => return Kind::Epub,
         "eml" => return Kind::Email,
         "md" | "markdown" | "mdx" => return Kind::Markdown,
         "zip" => return Kind::Zip,

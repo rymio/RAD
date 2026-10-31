@@ -9,7 +9,7 @@
   import Modal from './Modal.svelte';
   import VpnToggle from './VpnToggle.svelte';
   import GilgameshDock from './GilgameshDock.svelte';
-  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, Cog, FileCode, Code, Database, Gamepad2, Joystick, Microscope, Keyboard, FlaskConical, Computer, ScanFace, ChevronRight, AppWindow, MonitorPlay, Wrench, Cpu, Activity, Bot, Palette } from '@lucide/svelte';
+  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, Cog, FileCode, Code, Database, Gamepad2, Joystick, Microscope, Keyboard, FlaskConical, Computer, ScanFace, ChevronRight, AppWindow, MonitorPlay, Wrench, Cpu, Activity, Bot, Palette, BookOpen } from '@lucide/svelte';
   import type { Component } from 'svelte';
 
   let newProjectOpen = $state(false);
@@ -47,6 +47,7 @@
       id: 'media', label: 'Media', icon: MonitorPlay, views: [
         { label: 'Music', icon: Music, route: { kind: 'music' } },
         { label: 'Video', icon: Clapperboard, route: { kind: 'video' } },
+        { label: 'Books', icon: BookOpen, route: { kind: 'books' } },
         { label: 'PhotoCraft', icon: Palette, route: { kind: 'photocraft' } },
       ],
     },

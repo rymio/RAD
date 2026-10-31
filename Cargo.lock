@@ -5898,6 +5898,7 @@ dependencies = [
  "portable-pty",
  "rad-api",
  "rad-c64",
+ "rad-ingest",
  "rad-local",
  "rad-server",
  "rad-tunnel",
@@ -5959,6 +5960,7 @@ dependencies = [
 name = "rad-ingest"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "calamine",
  "chardetng",
  "csv",

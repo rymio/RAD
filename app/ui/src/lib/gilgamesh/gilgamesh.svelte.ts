@@ -36,6 +36,7 @@ import { monitor } from '../monitor.svelte';
 import { bots } from '../bots.svelte';
 import { sight } from './sight.svelte';
 import { photocraft } from '../photocraft.svelte';
+import { books } from '../books.svelte';
 
 export type Mode = 'hands_free' | 'push_to_talk';
 
@@ -52,6 +53,8 @@ export interface Conversation {
   face?: string;
   /** The transcript it is about (its note's id). */
   transcript?: number;
+  /** The book it is about (Books). */
+  book?: string;
 }
 
 /** One of Gilgamesh's faces: a prepared photo, kept under its own key in the vault. */
@@ -118,6 +121,7 @@ You can act for the owner by writing an action tag in your reply. It is carried 
 - [bot: Name | task] gives one of the owner's bots a task (YOUR BOTS, below). A bot works in the background on a computer of its own: it browses, fills in forms, logs in with the owner's saved logins, downloads and checks things, and can follow the skills it has learned. Write the task out in full. Leave "Name |" out to give it to whichever bot is free. Say you've passed it on; you'll be told when it's done.
 - [edit: request] edits or draws in PhotoCraft, the image editor, in front of the owner (its window opens): layers, adjustments, filters, text, shapes, colours, a new picture. Write the request out in full. [edit: file name | request] opens one of PhotoCraft's files first (PHOTOCRAFT, below). Say you're on it; you'll say what you did once it's done.
 - [look: question] looks through the camera and answers the question about what's in front of it (what the owner is holding, wearing or showing you). Use it when they ask you to look at something; say you're having a look. The answer comes once you've finished speaking.
+- [read: start] reads the book the owner has open aloud in your voice, from where they are; it carries on page after page and turns the pages itself. [read: stop] stops reading, [read: page] reads the page in front of them from its top, [read: next] or [read: previous] turns the page, [read: open | title] opens one of their books (THE OWNER'S BOOKS, below). The reading starts once you've finished speaking.
 - [bot: approve] or [bot: deny] answers a bot that waits for the owner's OK, only when the owner has said yes or no to it. [bot: answer | text] passes on the owner's answer to a bot's question. [bot: stop | Name] stops a bot.
 Only act when the owner asks or clearly wants it, and always say a few words about what you're doing. You go with the owner everywhere in RAD (your face is in the sidebar), so opening something or searching doesn't end the conversation; it happens once you've finished speaking.
 
@@ -126,6 +130,8 @@ You can also listen without answering and write down what is said (the owner sta
 You watch the owner's websites (Web Monitoring, below): when RAD starts and every three hours you check whether each answers and when its certificate expires, and tell the owner about problems. When asked how the websites are, answer from those results: name what is offline or has a certificate problem or expiring soon, and say briefly that the rest are fine.
 
 When the owner has turned your sight on, you see them through the camera (WHAT YOU SEE, below): whether they're there, looking at you, smiling, and whether it's them. Don't describe them unprompted, and never claim to see details: for those use [look: …].
+
+When the owner is reading a book in RAD (THE OWNER IS READING, below), you see the page in front of them. Help them understand it: explain a word, a sentence, an idea or a reference in plain words, sum the page up when asked (a short spoken summary), and say what came before when they've lost the thread. Don't read the whole page out in your answer: use [read: page] for that.
 
 You can see which part of RAD the owner has open and where they were before (WHAT THE OWNER IS DOING, below). Use it to help with what they're doing ("this page", "this email", "what I'm looking at"), but don't comment on it unless it helps.
 
@@ -190,6 +196,8 @@ class Gilgamesh {
   holding = $state(false);
   /** The transcript the conversation going on is about. */
   about = $state<{ id: number; title: string } | null>(null);
+  /** The book the conversation going on is about. */
+  book = $state<{ id: string; title: string } | null>(null);
 
   /** Every picture of him on screen. */
   head = new Heads();
@@ -239,9 +247,10 @@ class Gilgamesh {
     if (id && !this.settings.conversations.some((c) => c.id === id)) {
       this.settings.conversations = [{ id, title: 'Gilgamesh', started: Date.now(), updated: Date.now(), summary: '', summarized: 0 }, ...this.settings.conversations];
     }
-    await transcripts.load().catch(() => {});
+    await Promise.all([transcripts.load().catch(() => {}), books.load().catch(() => {})]);
     this.loaded = true;
     this.about = this.aboutOf(id);
+    this.book = this.bookOf(id);
     if (id) await this.loadTurns(id);
   }
 
@@ -250,6 +259,7 @@ class Gilgamesh {
     this.stop();
     transcripts.unload();
     this.about = null;
+    this.book = null;
     this.loaded = false;
     this.avatar = null;
     this.turns = [];
@@ -344,6 +354,19 @@ class Gilgamesh {
     return t ? { id: t.id, title: t.title } : null;
   }
 
+  private bookOf(id: number | null) {
+    const b = books.find(this.conversation(id)?.book);
+    return b ? { id: b.id, title: b.title } : null;
+  }
+
+  /** Starts a new conversation about a book (unless the one going on is about it already). */
+  async discussBook(id: string) {
+    const b = books.find(id);
+    if (!b || (this.book?.id === id && this.settings.chatId)) return;
+    await this.newConversation();
+    this.book = { id: b.id, title: b.title };
+  }
+
   /** Starts a new conversation about a transcript. */
   async discuss(id: number) {
     const t = transcripts.find(id);
@@ -373,6 +396,7 @@ class Gilgamesh {
     const prev = this.settings.chatId;
     this.turns = [];
     this.about = null;
+    this.book = null;
     await this.saveSettings({ chatId: null });
     if (prev) void this.recap(prev);
     const next = this.settings.rotate && this.settings.faces.length > 1 ? this.nextFace() : null;
@@ -387,6 +411,7 @@ class Gilgamesh {
     this.turns = [];
     await this.saveSettings({ chatId: id });
     this.about = this.aboutOf(id);
+    this.book = this.bookOf(id);
     // He wears the face he had in that conversation, if it's still there.
     const face = this.conversation(id)?.face;
     if (face && face !== this.settings.face && this.settings.faces.some((f) => f.id === face)) await this.useFace(face).catch(() => {});
@@ -400,6 +425,7 @@ class Gilgamesh {
       this.interrupt();
       this.turns = [];
       this.about = null;
+      this.book = null;
     }
     await api.del(`/v1/chats/${id}`).catch(() => {});
     await this.saveSettings({ chatId: this.settings.chatId === id ? null : this.settings.chatId, conversations: this.settings.conversations.filter((c) => c.id !== id) });
@@ -409,11 +435,12 @@ class Gilgamesh {
   private async chatId(firstWords: string): Promise<number> {
     const id = this.settings.chatId;
     if (id && this.conversation(id)) return id;
-    const title = this.about ? `Gilgamesh: about ${this.about.title.slice(0, 44)}` : `Gilgamesh: ${firstWords.replace(/\s+/g, ' ').slice(0, 50)}`;
+    const topic = this.about?.title ?? this.book?.title;
+    const title = topic ? `Gilgamesh: about ${topic.slice(0, 44)}` : `Gilgamesh: ${firstWords.replace(/\s+/g, ' ').slice(0, 50)}`;
     const c = await api.post<Chat>('/v1/chats', { title });
     store.reloadChats();
     const now = Date.now();
-    const list = [{ id: c.id, title, started: now, updated: now, summary: '', summarized: 0, face: this.settings.face ?? undefined, transcript: this.about?.id }, ...this.settings.conversations].slice(0, KEEP_CONVERSATIONS);
+    const list = [{ id: c.id, title, started: now, updated: now, summary: '', summarized: 0, face: this.settings.face ?? undefined, transcript: this.about?.id, book: this.book?.id }, ...this.settings.conversations].slice(0, KEEP_CONVERSATIONS);
     await this.saveSettings({ chatId: c.id, conversations: list });
     return c.id;
   }
@@ -527,6 +554,8 @@ class Gilgamesh {
         this.speechAt = Date.now();
         // Talking over Gilgamesh stops him (not talking to someone else, when he can tell).
         if ((this.phase === 'speaking' || this.phase === 'thinking') && sight.addressed(this.speechAt)) this.interrupt();
+        // Talking over a book he's reading pauses it.
+        if (books.playing && sight.addressed(this.speechAt)) books.pause();
         this.phase = 'hearing';
         this.heard = '';
         if (this.head) {
@@ -587,6 +616,8 @@ class Gilgamesh {
     text = text.trim();
     if (!text) return;
     this.interrupt();
+    // A book being read aloud waits while they talk.
+    books.pause();
     clearTimeout(this.recapTimer);
     const run = ++this.run;
     this.error = null;
@@ -657,7 +688,9 @@ class Gilgamesh {
     }
     const made = [sight.describe(), transcripts.describe(), monitor.describe(), bots.describe(), photocraft.describe()].filter(Boolean).join('\n\n');
     // The transcript under discussion goes last, so a long one is what gets cut at the limit.
-    context = `${PERSONA.replace('{FRIDAY}', nextFriday())}\n\n${context}\n${activity.describe()}\n\n${this.recaps()}${made ? `\n\n${made}` : ''}${topic ? `\n\n${topic}` : ''}`;
+    // The page being read goes at the very end, after any transcript.
+    const reading = books.describe();
+    context = `${PERSONA.replace('{FRIDAY}', nextFriday())}\n\n${context}\n${activity.describe()}\n\n${this.recaps()}${made ? `\n\n${made}` : ''}${topic ? `\n\n${topic}` : ''}${reading ? `\n\n${reading}` : ''}`;
     this.streaming = true;
     try {
       await rad.chatSend(chatId, { content: text, context, attachments: [], model: null }, (ev: ChatStreamEvent) => {
@@ -832,7 +865,8 @@ class Gilgamesh {
    *  voice is set up, and shown in the transcript. */
   async announce(text: string, mood: Mood | null = null) {
     // Not over the owner, nor over himself: wait (up to two minutes) until he's free.
-    for (let i = 0; i < 60 && ['starting', 'hearing', 'thinking', 'speaking'].includes(this.phase); i++) await new Promise((r) => setTimeout(r, 2000));
+    for (let i = 0; i < 60 && (['starting', 'hearing', 'thinking', 'speaking'].includes(this.phase) || books.playing); i++) await new Promise((r) => setTimeout(r, 2000));
+    books.pause();
     this.turns.push({ who: 'gilgamesh', text });
     const tts = await invoke<{ installed: boolean; engine: boolean }>('tts_status').catch(() => null);
     if (!tts?.installed || !tts.engine) return;
@@ -849,6 +883,83 @@ class Gilgamesh {
     }
     this.streamDone = true;
     this.wake?.();
+  }
+
+  // ---------------------------------------------------------------- reading a book aloud
+
+  private reciting: HTMLAudioElement | null = null;
+
+  /** A passage of a book in his voice (books.svelte.ts reads with it). */
+  synthReading(text: string, voice = this.settings.voice || 'en_male'): Promise<ArrayBuffer> {
+    const cfg = store.config;
+    return invoke<ArrayBuffer>('tts_speak', {
+      text,
+      voice,
+      temperature: cfg?.tts_temperature,
+      topP: cfg?.tts_top_p,
+      topK: cfg?.tts_top_k,
+      repetitionPenalty: cfg?.tts_repetition_penalty,
+    });
+  }
+
+  /** Plays a passage of a book; with `lips` his mouth reads it (on every picture of him).
+   *  Resolves when it's over or stopped. Through the speakers the microphone rests meanwhile. */
+  recite(wav: ArrayBuffer, lips: boolean): Promise<void> {
+    this.reciting?.pause();
+    let track: Track | null = null;
+    if (lips) {
+      try {
+        const { rate, samples } = decodeWav(wav);
+        track = analyse(rate, samples);
+      } catch {
+        // No lips this time; the voice still plays.
+      }
+    }
+    if (!this.settings.headphones) this.pauseMic(true);
+    const cfg = store.config;
+    return new Promise<void>((resolve, reject) => {
+      const url = URL.createObjectURL(new Blob([wav], { type: 'audio/wav' }));
+      const a = new Audio(url);
+      a.preservesPitch = true;
+      a.playbackRate = Math.min(2, Math.max(0.5, books.settings.speed || cfg?.tts_speed || 1));
+      a.volume = Math.min(1, Math.max(0, cfg?.tts_volume ?? 1));
+      this.reciting = a;
+      if (track && this.head) {
+        this.head.attention = 'speaking';
+        this.head.speech = { track, time: () => a.currentTime };
+      }
+      let over = false;
+      const done = () => {
+        if (over) return;
+        over = true;
+        URL.revokeObjectURL(url);
+        if (this.reciting === a) this.reciting = null;
+        if (track && this.head?.speech?.track === track) this.head.speech = null;
+        resolve();
+      };
+      a.onended = done;
+      a.onpause = done;
+      a.onerror = () => {
+        done();
+        reject(new Error('Couldn’t play the reading'));
+      };
+      a.play().catch((e) => {
+        done();
+        reject(e);
+      });
+    });
+  }
+
+  /** The reading has stopped: the passage playing ends, and he listens again. */
+  stopReciting() {
+    this.reciting?.pause();
+    this.reciting = null;
+    if (this.phase === 'speaking' || this.phase === 'thinking') return;
+    if (this.head) {
+      this.head.speech = null;
+      this.head.attention = this.micOn ? 'listening' : 'idle';
+    }
+    this.pauseMic(!this.wantMic());
   }
 
   /** Stops the answer now: the speech, the sentences still waiting and the writing. */

@@ -1,5 +1,6 @@
 //! RAD desktop client: a thin, secure shell around the RAD server API.
 
+mod books;
 mod browser;
 mod capture;
 mod client;
@@ -349,6 +350,7 @@ pub fn run() {
             app.manage(media::Media::default());
             app.manage(faceid::FaceId::default());
             app.manage(photocraft::Photocraft::default());
+            app.manage(books::Books::default());
             app.manage(rymnet::Rymnet::default());
             app.manage(vpn::Vpn::default());
             vpn::restore(app.handle());
@@ -438,6 +440,13 @@ pub fn run() {
             mail::mail_list,
             mail::mail_read,
             mail::mail_set_flags,
+            books::books_list,
+            books::books_import,
+            books::books_file,
+            books::books_content,
+            books::books_update,
+            books::books_delete,
+            books::books_path,
             photocraft::photocraft_status,
             photocraft::photocraft_install,
             photocraft::photocraft_open,

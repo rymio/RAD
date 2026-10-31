@@ -15,6 +15,8 @@
   import { stage } from '../lib/gilgamesh/stage.svelte';
   import BotsView from './BotsView.svelte';
   import PhotoCraftView from './PhotoCraftView.svelte';
+  import BooksView from './BooksView.svelte';
+  import { books, BOOK_EXTENSIONS } from '../lib/books.svelte';
   import { photocraft } from '../lib/photocraft.svelte';
   import { MicOff } from '@lucide/svelte';
   import ChatView from './ChatView.svelte';
@@ -102,10 +104,15 @@
     getCurrentWebview()
       .onDragDropEvent((ev) => {
         const p = ev.payload;
-        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots', 'photocraft', 'mood'].includes(store.route.kind);
+        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots', 'photocraft', 'mood', 'books'].includes(store.route.kind) || (store.route.kind === 'books' && !books.openId);
         else if (p.type === 'leave') dragging = false;
         else if (p.type === 'drop') {
           dragging = false;
+          // E-books dropped on the library go into Books (kept on this computer, not the vault).
+          if (store.route.kind === 'books') {
+            if (!books.openId) void books.import(p.paths.filter((x) => BOOK_EXTENSIONS.includes(x.split('.').pop()?.toLowerCase() ?? '')));
+            return;
+          }
           if (['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots', 'photocraft', 'mood'].includes(store.route.kind)) return;
           uploadTo(p.paths);
         }
@@ -168,6 +175,8 @@
       <BotsView />
     {:else if store.route.kind === 'photocraft'}
       <PhotoCraftView />
+    {:else if store.route.kind === 'books'}
+      <BooksView />
     {:else if store.route.kind === 'chromium'}
       <BrowserView kind="chromium" />
     {:else if store.route.kind === 'tor'}
@@ -216,8 +225,8 @@
     <div class="dropzone">
       <div class="drop-card">
         <UploadCloud size={40} strokeWidth={1.5} />
-        <div class="t">Drop to add to {dropTarget ?? 'this chat'}</div>
-        <div class="s">{dropTarget ? 'Files are encrypted into your vault and indexed for chat.' : 'Saved to your Inbox and attached to your message.'}</div>
+        <div class="t">Drop to add to {store.route.kind === 'books' ? 'your books' : (dropTarget ?? 'this chat')}</div>
+        <div class="s">{store.route.kind === 'books' ? 'E-books are kept on this computer, in RAD’s Books folder.' : dropTarget ? 'Files are encrypted into your vault and indexed for chat.' : 'Saved to your Inbox and attached to your message.'}</div>
       </div>
     </div>
   {/if}

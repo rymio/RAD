@@ -27,7 +27,7 @@ RAD is a personal RAG assistant. You put documents, notes, screenshots, images a
 
 | Kind | Formats | How |
 |---|---|---|
-| Documents | PDF, DOCX/ODT, PPTX/ODP, XLSX/XLS/ODS/CSV, EPUB, HTML, RTF, EML (with attachments), ZIP (recursively) | Text extraction with page, slide, sheet and heading anchors |
+| Documents | PDF, DOCX/ODT, PPTX/ODP, XLSX/XLS/ODS/CSV, EPUB, MOBI/AZW/AZW3 and FB2 (DRM-free), HTML, RTF, EML (with attachments), ZIP (recursively) | Text extraction with page, slide, sheet and heading anchors |
 | Text | Markdown, TXT, code, JSON, YAML, logs… | Heading-aware chunking |
 | Notes | Written in RAD or pasted text | Markdown editor with autosave; re-indexed whenever you edit |
 | Images & screenshots | PNG, JPG, WebP, GIF, BMP, TIFF | A vision model transcribes the text and describes the image |
@@ -194,6 +194,18 @@ The bots and their loop are in `app/ui/src/lib/bots.svelte.ts`; the browser help
 - **Bots.** A bot can have a picture from its computer edited (`edit_image`): it goes into PhotoCraft's folder, is edited in the background, and the result comes back to the bot's `/root/shared`.
 
 How it works (`app/src-tauri/src/photocraft.rs`, `app/ui/src/lib/photocraft.svelte.ts`): the window is started with PhotoCraft's control channel (loopback only, a 256-bit token in RAD's app data), and background edits use its headless engine (`photocraft-cli serve`, over a pipe). Both get the folder as their only automation root. Test with the real engine: `RAD_PHOTOCRAFT=/path/to/PhotoCraft.app cargo test -p rad-app --lib photocraft -- --ignored`.
+
+## Books (read aloud, ask Gilgamesh)
+
+**Books** (sidebar → Media) is a library and reader for e-books you own: PDF, EPUB, MOBI, AZW, AZW3, PRC, FB2, TXT and HTML.
+
+- **Your library.** **Add books** (or drop the files on the Books view) copies them into RAD's own folder on this computer (`books/` in the app data folder, next to `models`), not into the vault. Covers, titles and authors come from the books themselves. Kindle books bought from Amazon are usually DRM-locked: RAD says so and doesn't open them.
+- **Reading.** EPUB, MOBI and the rest are laid out as pages (two side by side on a wide window), with the book's table of contents, text size, serif or sans, and Paper, Sepia or Night pages. PDFs show a page at a time, with selectable text. <kbd>←</kbd> <kbd>→</kbd> turn pages, and RAD remembers where you are.
+- **Read aloud.** **Read aloud** (or <kbd>Space</kbd>) reads from where you are, page after page. The paragraph being read is marked, and the pages turn by themselves until you pause. Choose **Gilgamesh** (his voice, and his lips move with it on every picture of him) or **Narrator** (the voice from Settings → Voice), and a speed.
+- **Ask Gilgamesh.** The chat under the book is a conversation with Gilgamesh about it. He sees the page in front of you and any words you've selected, so you can stop anywhere and ask what something means, who someone is or what just happened. **Explain**, **Summarise** and **Read page** are one click. Asking, or talking over the reading, pauses it. He can also read for you: "read it to me", "stop", "next page", "open Alice in Wonderland" (`[read: …]`).
+- **Add to RAG.** Puts a book into the vault's **Books** project, where it's indexed like any document, so every chat can search and cite it. MOBI, AZW3 and FB2 are indexed too.
+
+How it works: `crates/rad-ingest/src/book.rs` opens the formats (EPUB's package and table of contents; Mobipocket/KF8 with PalmDOC and HUFF/CDIC decompression; FictionBook). `app/src-tauri/src/books.rs` keeps the library, and `app/ui/src/lib/books.svelte.ts` reads aloud and gives Gilgamesh the page. Test with real books: `RAD_BOOKS=/folder/of/books cargo test -p rad-ingest real_books -- --ignored --nocapture`.
 
 ## AI API server (share your models)
 

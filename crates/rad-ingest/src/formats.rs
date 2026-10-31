@@ -28,7 +28,8 @@ pub(crate) fn extract_kind(kind: Kind, bytes: &[u8], filename: &str, depth: u32)
         Kind::Odp => odf(bytes, true),
         Kind::Csv => csv_file(bytes, filename),
         Kind::Html => html(bytes),
-        Kind::Epub => epub(bytes),
+        Kind::Epub if crate::extension(filename) == "epub" || bytes.starts_with(b"PK\x03\x04") => epub(bytes),
+        Kind::Epub => ebook(bytes, filename),
         Kind::Email => email(bytes, depth),
         Kind::Markdown => {
             let text = decode_text(bytes);
@@ -485,6 +486,24 @@ fn epub(bytes: &[u8]) -> Result<Extracted> {
         });
     }
     e.page_count = Some(chapter as i64);
+    Ok(e)
+}
+
+/// MOBI / AZW / AZW3 / FB2: the chapters from book.rs, as text.
+fn ebook(bytes: &[u8], filename: &str) -> Result<Extracted> {
+    let b = crate::book::open(bytes, filename)?;
+    let mut e = base(Kind::Epub);
+    e.title = b.title.clone();
+    let texts = crate::book::chapter_texts(&b);
+    for (i, text) in texts.iter().enumerate() {
+        e.sections.push(Section {
+            text: text.clone(),
+            anchor: Anchor { heading: Some(format!("Chapter {}", i + 1)), ..Default::default() },
+            kind: "text",
+            markdown: true,
+        });
+    }
+    e.page_count = Some(texts.len() as i64);
     Ok(e)
 }
 

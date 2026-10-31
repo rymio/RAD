@@ -1,7 +1,7 @@
 // What Gilgamesh can do for the owner, through RAD's own features: remember facts (RAD's
 // memories, shared with every chat), save notes (Inbox project), add calendar events, open views
 // and web pages, search the web, control the music, give the owner's bots tasks and look through
-// the camera, and edit pictures in PhotoCraft. Also what
+// the camera, edit pictures in PhotoCraft and read the owner's books aloud. Also what
 // he knows about "now".
 
 import { api } from '../api';
@@ -15,6 +15,7 @@ import { gilgamesh } from './gilgamesh.svelte';
 import { bots } from '../bots.svelte';
 import { sight } from './sight.svelte';
 import { photocraft } from '../photocraft.svelte';
+import { books } from '../books.svelte';
 
 export interface Outcome {
   /** Shown in the transcript, e.g. "Remembered: …". */
@@ -29,7 +30,7 @@ const VIEWS: Record<string, T.Route> = {
   terminal: { kind: 'terminal' }, files: { kind: 'files' }, calendar: { kind: 'calendar' }, email: { kind: 'email' },
   mail: { kind: 'email' }, music: { kind: 'music' }, video: { kind: 'video' }, settings: { kind: 'settings' },
   memories: { kind: 'settings', tab: 'memories' }, chat: { kind: 'chat', id: null }, database: { kind: 'database' },
-  games: { kind: 'games' }, bots: { kind: 'bots' }, bot: { kind: 'bots' }, photocraft: { kind: 'photocraft' }, pictures: { kind: 'photocraft' }, monitoring: { kind: 'monitor' }, monitor: { kind: 'monitor' }, websites: { kind: 'monitor' }, rymnet: { kind: 'rymnet' }, rymwin: { kind: 'rymwin' }, zx: { kind: 'zx' }, spectrum: { kind: 'zx' },
+  games: { kind: 'games' }, bots: { kind: 'bots' }, bot: { kind: 'bots' }, books: { kind: 'books' }, book: { kind: 'books' }, library: { kind: 'books' }, photocraft: { kind: 'photocraft' }, pictures: { kind: 'photocraft' }, monitoring: { kind: 'monitor' }, monitor: { kind: 'monitor' }, websites: { kind: 'monitor' }, rymnet: { kind: 'rymnet' }, rymwin: { kind: 'rymwin' }, zx: { kind: 'zx' }, spectrum: { kind: 'zx' },
   c64: { kind: 'c64' }, commodore: { kind: 'c64' }, dos: { kind: 'dos' }, sidex: { kind: 'sidex' }, editor: { kind: 'sidex' },
 };
 
@@ -99,6 +100,26 @@ export async function runAction(name: ActionName, arg: string): Promise<Outcome>
         const route = VIEWS[a.toLowerCase().replace(/^the\s+/, '').split(/\s+/)[0]];
         if (!route) return { label: `Don’t know how to open “${a}”`, ok: false };
         return { label: `Opening ${a}`, ok: true, later: () => store.navigate(route) };
+      }
+      case 'read': {
+        // "start", "stop", "page", "next", "previous" or "open | title".
+        const [cmd, ...rest] = arg.split('|').map((x) => x.trim());
+        const c = cmd.toLowerCase();
+        if (c === 'open' || rest.length) {
+          await books.load();
+          const b = books.match(rest.join(' ') || cmd.replace(/^open\s*/i, ''));
+          if (!b) return { label: `No book “${rest.join(' ') || cmd}” in Books`, ok: false };
+          return { label: `Opening ${b.title}`, ok: true, later: () => books.openBook(b.id) };
+        }
+        if (!books.reader) return { label: 'No book is open', ok: false };
+        if (/^(stop|pause|quiet)/.test(c)) {
+          books.pause();
+          return { label: 'Stopped reading', ok: true };
+        }
+        if (/^(next|forward)/.test(c)) return { label: 'Next page', ok: true, later: () => books.turn(1) };
+        if (/^(prev|back)/.test(c)) return { label: 'Previous page', ok: true, later: () => books.turn(-1) };
+        if (/^(page|this page|the page)/.test(c)) return { label: 'Reading this page', ok: true, later: () => books.readPage() };
+        return { label: `Reading ${books.reader.book.title}`, ok: true, later: () => books.play() };
       }
       case 'search': {
         const url = `https://duckduckgo.com/?q=${encodeURIComponent(arg)}`;

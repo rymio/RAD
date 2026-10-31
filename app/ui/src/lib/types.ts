@@ -172,6 +172,7 @@ export type Route =
   | { kind: 'monitor' }
   | { kind: 'bots'; bot?: string }
   | { kind: 'photocraft' }
+  | { kind: 'books' }
   | { kind: 'mood' };
 
 /** Something the assistant asks the app to do (see crates/rad-server/src/agent.rs). */
