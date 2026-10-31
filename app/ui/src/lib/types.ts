@@ -174,6 +174,7 @@ export type Route =
   | { kind: 'photocraft' }
   | { kind: 'books' }
   | { kind: 'chess' }
+  | { kind: 'z80lab' }
   | { kind: 'mood' };
 
 /** Something the assistant asks the app to do (see crates/rad-server/src/agent.rs). */

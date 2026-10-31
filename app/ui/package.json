@@ -26,7 +26,8 @@
     "highlight.js": "^11.12.0",
     "marked": "^18.1.0",
     "pdfjs-dist": "^6.4.299",
-    "svelte": "^5.57.2"
+    "svelte": "^5.57.2",
+    "z80-emulator": "2.3.0"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",

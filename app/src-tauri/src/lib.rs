@@ -27,6 +27,7 @@ mod c64lab;
 mod zx;
 mod zxdev;
 mod zxlab;
+mod z80lab;
 mod secrets;
 mod terminal;
 mod term_agent;
@@ -452,6 +453,7 @@ pub fn run() {
             chess::chess_status,
             chess::chess_think,
             chess::chess_stop,
+            z80lab::z80lab_assemble,
             photocraft::photocraft_status,
             photocraft::photocraft_install,
             photocraft::photocraft_open,

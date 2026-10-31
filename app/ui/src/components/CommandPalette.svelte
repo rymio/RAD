@@ -4,7 +4,7 @@
   import { anchorLabel, debounce, docKind } from '../lib/util';
   import type { Citation } from '../lib/types';
   import DocIcon from './DocIcon.svelte';
-  import { Search, MessageSquare, SquarePen, Settings, Lock, StickyNote, Camera, Loader, CornerDownLeft, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, ScanFace, Activity, Bot, Palette, BookOpen, Crown } from '@lucide/svelte';
+  import { Search, MessageSquare, SquarePen, Settings, Lock, StickyNote, Camera, Loader, CornerDownLeft, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, ScanFace, Activity, Bot, Palette, BookOpen, Crown, CircuitBoard } from '@lucide/svelte';
   import { rad } from '../lib/api';
 
   type Item = { id: string; group: string; label: string; sub?: string; icon?: any; color?: string; doc?: Citation; run: () => void };
@@ -57,6 +57,7 @@
       { id: 'a-gilgamesh', group: 'Actions', label: 'Talk with Gilgamesh', icon: ScanFace, run: () => store.navigate({ kind: 'gilgamesh' }) },
       { id: 'a-monitor', group: 'Actions', label: 'Web Monitoring', icon: Activity, run: () => store.navigate({ kind: 'monitor' }) },
       { id: 'a-bots', group: 'Actions', label: 'Bots', icon: Bot, run: () => store.navigate({ kind: 'bots' }) },
+      { id: 'a-z80lab', group: 'Actions', label: 'Z80 Lab (build a Z80 computer)', icon: CircuitBoard, run: () => store.navigate({ kind: 'z80lab' }) },
       { id: 'a-chess', group: 'Actions', label: 'Chess (play with Gilgamesh)', icon: Crown, run: () => store.navigate({ kind: 'chess' }) },
       { id: 'a-books', group: 'Actions', label: 'Books (read your e-books)', icon: BookOpen, run: () => store.navigate({ kind: 'books' }) },
       { id: 'a-photocraft', group: 'Actions', label: 'PhotoCraft (draw and edit pictures)', icon: Palette, run: () => store.navigate({ kind: 'photocraft' }) },

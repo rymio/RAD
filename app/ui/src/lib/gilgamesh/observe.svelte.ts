@@ -18,6 +18,7 @@ const NAMES: Record<Route['kind'], string> = {
   photocraft: 'PhotoCraft (the image editor: their pictures)',
   books: 'Books (their e-books: a library and a reader)',
   chess: 'Chess (a game of chess with you)',
+  z80lab: 'Z80 Lab (a Z80 computer they are wiring up on a canvas)',
   // Private: nothing of it reaches his other conversations.
   mood: 'Gilgamesh’s own view',
 };

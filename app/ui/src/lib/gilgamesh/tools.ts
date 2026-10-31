@@ -1,7 +1,8 @@
 // What Gilgamesh can do for the owner, through RAD's own features: remember facts (RAD's
 // memories, shared with every chat), save notes (Inbox project), add calendar events, open views
 // and web pages, search the web, control the music, give the owner's bots tasks and look through
-// the camera, edit pictures in PhotoCraft, read the owner's books aloud and play chess. Also what
+// the camera, edit pictures in PhotoCraft, read the owner's books aloud, play chess and build
+// Z80 computers in Z80 Lab. Also what
 // he knows about "now".
 
 import { api } from '../api';
@@ -17,6 +18,8 @@ import { sight } from './sight.svelte';
 import { photocraft } from '../photocraft.svelte';
 import { books } from '../books.svelte';
 import { chess, LEVELS, type Level } from '../chess.svelte';
+import { lab, CLOCKS } from '../z80lab.svelte';
+import { PROGRAMS } from '../z80lab/templates';
 
 export interface Outcome {
   /** Shown in the transcript, e.g. "Remembered: …". */
@@ -31,7 +34,7 @@ const VIEWS: Record<string, T.Route> = {
   terminal: { kind: 'terminal' }, files: { kind: 'files' }, calendar: { kind: 'calendar' }, email: { kind: 'email' },
   mail: { kind: 'email' }, music: { kind: 'music' }, video: { kind: 'video' }, settings: { kind: 'settings' },
   memories: { kind: 'settings', tab: 'memories' }, chat: { kind: 'chat', id: null }, database: { kind: 'database' },
-  games: { kind: 'games' }, chess: { kind: 'chess' }, bots: { kind: 'bots' }, bot: { kind: 'bots' }, books: { kind: 'books' }, book: { kind: 'books' }, library: { kind: 'books' }, photocraft: { kind: 'photocraft' }, pictures: { kind: 'photocraft' }, monitoring: { kind: 'monitor' }, monitor: { kind: 'monitor' }, websites: { kind: 'monitor' }, rymnet: { kind: 'rymnet' }, rymwin: { kind: 'rymwin' }, zx: { kind: 'zx' }, spectrum: { kind: 'zx' },
+  games: { kind: 'games' }, chess: { kind: 'chess' }, z80lab: { kind: 'z80lab' }, z80: { kind: 'z80lab' }, lab: { kind: 'z80lab' }, bots: { kind: 'bots' }, bot: { kind: 'bots' }, books: { kind: 'books' }, book: { kind: 'books' }, library: { kind: 'books' }, photocraft: { kind: 'photocraft' }, pictures: { kind: 'photocraft' }, monitoring: { kind: 'monitor' }, monitor: { kind: 'monitor' }, websites: { kind: 'monitor' }, rymnet: { kind: 'rymnet' }, rymwin: { kind: 'rymwin' }, zx: { kind: 'zx' }, spectrum: { kind: 'zx' },
   c64: { kind: 'c64' }, commodore: { kind: 'c64' }, dos: { kind: 'dos' }, sidex: { kind: 'sidex' }, editor: { kind: 'sidex' },
 };
 
@@ -143,6 +146,74 @@ export async function runAction(name: ActionName, arg: string): Promise<Outcome>
         if (/^hint/.test(c)) return { label: 'Showing a hint', ok: true, later: () => void chess.requestHint() };
         if (/^(show|point|arrow)/.test(c)) return chess.show(what) ? { label: `Showing ${what}`, ok: true } : { label: `Can’t show “${what}”`, ok: false };
         return { label: `Don’t know the chess action “${cmd}”`, ok: false };
+      }
+      case 'circuit': {
+        // "add | part", "wire | U1.6 - X1 OUT", "connect | U1 - U5", "delete | U3", "program | blinky",
+        // "clock | 5 Hz", "run", "stop", "step", "reset", "power | on", "new | easy" or "open".
+        const [cmd, ...rest] = arg.split('|').map((x) => x.trim());
+        const c = cmd.toLowerCase();
+        const what = rest.join('|').trim();
+        if (/^(new|template)/.test(c)) return { label: 'New Z80 computer', ok: true, later: () => void lab.create(/blank|empty|own/i.test(what) ? 'blank' : 'easy') };
+        if (/^open/.test(c)) return { label: 'Opening Z80 Lab', ok: true, later: () => store.navigate({ kind: 'z80lab' }) };
+        if (!lab.project) return { label: 'No circuit is open in Z80 Lab', ok: false };
+        switch (c) {
+          case 'add': {
+            const type = lab.partType(what);
+            if (!type) return { label: `No part like “${what}”`, ok: false };
+            const at = lab.freeSpot();
+            const p = lab.addPart(type, at.x, at.y);
+            return p ? { label: `Added ${p.ref}`, ok: true } : { label: 'Couldn’t add it', ok: false };
+          }
+          case 'wire': {
+            const [a, b] = what.split(/\s+(?:-|to|–|—)\s+|\s*[-–—]\s*(?=[A-Za-z]+\d)/).map((x) => lab.pinRef(x));
+            if (!a || !b) return { label: `Can’t find the pins in “${what}”`, ok: false };
+            lab.addWire(a, b);
+            return { label: `Wired ${what}`, ok: true };
+          }
+          case 'connect': {
+            const [a, b] = what.split(/\s+(?:-|to|and|–|—)\s+|\s*[-–—,]\s*/).map((x) => lab.partByRef(x));
+            if (!a || !b) return { label: `Can’t find the parts in “${what}”`, ok: false };
+            const n = lab.connectMatching(a.id, b.id);
+            return { label: `Connected ${n} matching pins of ${a.ref} and ${b.ref}`, ok: n > 0 };
+          }
+          case 'delete':
+          case 'remove': {
+            const p = lab.partByRef(what);
+            if (!p) return { label: `No part ${what}`, ok: false };
+            lab.removeParts([p.id]);
+            return { label: `Removed ${p.ref}`, ok: true };
+          }
+          case 'program': {
+            const key = Object.keys(PROGRAMS).find((k) => what.toLowerCase().includes(k));
+            if (!key) return { label: `No example program “${what}”`, ok: false };
+            lab.setSource(PROGRAMS[key].source);
+            return { label: `Loaded the ${key} program`, ok: true };
+          }
+          case 'clock': {
+            const m = what.toLowerCase().match(/([\d.]+)\s*(mhz|khz|hz)?/);
+            if (/full|fast|normal/.test(what.toLowerCase())) lab.setClock(0);
+            else if (m) {
+              const hz = Number(m[1]) * (m[2] === 'mhz' ? 1e6 : m[2] === 'khz' ? 1e3 : 1);
+              const near = CLOCKS.filter((x) => x.hz).reduce((best, x) => (Math.abs(Math.log(x.hz / hz)) < Math.abs(Math.log(best.hz / hz)) ? x : best));
+              lab.setClock(near.hz);
+            } else return { label: `Can’t read the clock “${what}”`, ok: false };
+            return { label: `Clock: ${CLOCKS.find((x) => x.hz === lab.clock)?.label}`, ok: true };
+          }
+          case 'power':
+            lab.setPower(!/off/i.test(what));
+            return { label: `Power ${lab.power ? 'on' : 'off'}`, ok: true };
+          case 'run':
+            return { label: 'Running the program', ok: true, later: () => void lab.run() };
+          case 'stop':
+            lab.stop();
+            return { label: 'Stopped', ok: true };
+          case 'step':
+            return { label: 'One instruction', ok: true, later: () => void lab.step() };
+          case 'reset':
+            lab.reset();
+            return { label: 'Reset', ok: true };
+        }
+        return { label: `Don’t know the circuit action “${cmd}”`, ok: false };
       }
       case 'search': {
         const url = `https://duckduckgo.com/?q=${encodeURIComponent(arg)}`;
