@@ -712,13 +712,25 @@ export class Head {
   }
 }
 
-/** All the pictures of Gilgamesh on screen (the sidebar, his own view): they show the same mood,
- *  attention, speech and gestures. A picture added later starts from where the others are. */
+/** What follows Gilgamesh's state: a picture of him, or his picture in another window (stage.svelte.ts). */
+export interface HeadLike {
+  mood: Mood;
+  attention: Attention;
+  speech: Head['speech'];
+  blink(): void;
+  gesture(g: Gesture): void;
+  acknowledge(): void;
+  see(x: number, y: number): void;
+}
+
+/** All the pictures of Gilgamesh on screen (the sidebar, his own view, his own window): they show
+ *  the same mood, attention, speech and gestures. A picture added later starts from where the
+ *  others are. */
 export class Heads {
-  private all = new Set<Head>();
+  private all = new Set<HeadLike>();
   private state: { mood: Mood; attention: Attention; speech: Head['speech'] } = { mood: 'neutral', attention: 'idle', speech: null };
 
-  add(h: Head) {
+  add(h: HeadLike) {
     h.mood = this.state.mood;
     h.attention = this.state.attention;
     h.speech = this.state.speech;

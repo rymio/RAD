@@ -8,6 +8,7 @@ mod config;
 mod files;
 mod mail;
 mod faceid;
+mod photocraft;
 mod media;
 mod monitor;
 mod events;
@@ -347,6 +348,7 @@ pub fn run() {
             app.manage(mail::Mail::default());
             app.manage(media::Media::default());
             app.manage(faceid::FaceId::default());
+            app.manage(photocraft::Photocraft::default());
             app.manage(rymnet::Rymnet::default());
             app.manage(vpn::Vpn::default());
             vpn::restore(app.handle());
@@ -401,6 +403,7 @@ pub fn run() {
             commands::open_main,
             commands::hide_quick,
             commands::toggle_quick_cmd,
+            commands::gilgamesh_window,
             browser::browser_start,
             browser::browser_stop,
             browser::browser_send,
@@ -435,6 +438,15 @@ pub fn run() {
             mail::mail_list,
             mail::mail_read,
             mail::mail_set_flags,
+            photocraft::photocraft_status,
+            photocraft::photocraft_install,
+            photocraft::photocraft_open,
+            photocraft::photocraft_call,
+            photocraft::photocraft_picture,
+            photocraft::photocraft_files,
+            photocraft::photocraft_import,
+            photocraft::photocraft_export_to_container,
+            photocraft::photocraft_reveal,
             faceid::faceid_status,
             faceid::faceid_download,
             faceid::faceid_remove,
@@ -579,6 +591,7 @@ pub fn run() {
                 // Drop the session — and in standalone mode lock the vault and checkpoint it.
                 app.state::<browser::Browsers>().stop();
                 app.state::<media::Media>().stop();
+                app.state::<photocraft::Photocraft>().stop();
                 app.state::<rymnet::Rymnet>().stop();
                 app.state::<terminal::Terminals>().close_all();
                 // Containers power off cleanly (their files are on their drives).

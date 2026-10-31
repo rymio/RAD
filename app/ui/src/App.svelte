@@ -8,15 +8,19 @@
   import Toasts from './components/Toasts.svelte';
   import About from './components/About.svelte';
   import Logo from './components/Logo.svelte';
+  import GilgameshStage from './components/GilgameshStage.svelte';
 
   let { view }: { view: string } = $props();
 
   onMount(() => {
-    store.boot(view === 'quick');
+    // Gilgamesh's own window is only a picture: the main window drives it.
+    if (view !== 'gilgamesh') store.boot(view === 'quick');
   });
 </script>
 
-{#if view === 'quick'}
+{#if view === 'gilgamesh'}
+  <GilgameshStage />
+{:else if view === 'quick'}
   <QuickAsk />
 {:else if store.phase === 'boot'}
   <div class="boot drag"><div class="pulse"><Logo size={56} /></div></div>
@@ -27,8 +31,8 @@
 {:else}
   <Onboarding />
 {/if}
-<Toasts />
-{#if view !== 'quick'}<About />{/if}
+{#if view !== 'gilgamesh'}<Toasts />{/if}
+{#if view !== 'quick' && view !== 'gilgamesh'}<About />{/if}
 
 <style>
   .boot {

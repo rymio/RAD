@@ -496,6 +496,9 @@ pub struct AssistRequest {
     /// The longest reply wanted (at most the vault's setting, and 4096 if not given).
     #[serde(default)]
     pub max_tokens: Option<u32>,
+    /// 0.2 if not given (steady answers for agents); conversation wants more.
+    #[serde(default)]
+    pub temperature: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

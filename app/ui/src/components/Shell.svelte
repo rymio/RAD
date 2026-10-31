@@ -12,7 +12,10 @@
   import MonitorView from './MonitorView.svelte';
   import { bots } from '../lib/bots.svelte';
   import { sight } from '../lib/gilgamesh/sight.svelte';
+  import { stage } from '../lib/gilgamesh/stage.svelte';
   import BotsView from './BotsView.svelte';
+  import PhotoCraftView from './PhotoCraftView.svelte';
+  import { photocraft } from '../lib/photocraft.svelte';
   import { MicOff } from '@lucide/svelte';
   import ChatView from './ChatView.svelte';
   import ProjectView from './ProjectView.svelte';
@@ -36,6 +39,8 @@
   import C64LabView from './C64LabView.svelte';
   import DosView from './DosView.svelte';
   import GilgameshView from './GilgameshView.svelte';
+  import MoodView from './MoodView.svelte';
+  import { mood } from '../lib/mood.svelte';
   import CommandPalette from './CommandPalette.svelte';
   import VpnToggle from './VpnToggle.svelte';
   import { UploadCloud, PanelLeftOpen } from '@lucide/svelte';
@@ -89,15 +94,19 @@
     bots.start().catch((e) => store.error(e, 'Couldn’t load the bots'));
     // His camera, when the owner has turned his sight on (off when the vault locks).
     sight.start().catch((e) => store.error(e, 'Couldn’t load Gilgamesh’s sight'));
-    const un: Array<() => void> = [() => gilgamesh.unload(), () => monitor.unload(), () => bots.unload(), () => sight.unload()];
+    // Whether PhotoCraft is there (for Gilgamesh's answers).
+    void photocraft.refresh();
+    // His own window (if it's open from before) follows him again; it closes when the vault locks.
+    stage.start().catch((e) => console.warn('Gilgamesh window', e));
+    const un: Array<() => void> = [() => gilgamesh.unload(), () => monitor.unload(), () => bots.unload(), () => sight.unload(), () => stage.unload(), () => mood.unload()];
     getCurrentWebview()
       .onDragDropEvent((ev) => {
         const p = ev.payload;
-        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots'].includes(store.route.kind);
+        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots', 'photocraft', 'mood'].includes(store.route.kind);
         else if (p.type === 'leave') dragging = false;
         else if (p.type === 'drop') {
           dragging = false;
-          if (['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots'].includes(store.route.kind)) return;
+          if (['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots', 'photocraft', 'mood'].includes(store.route.kind)) return;
           uploadTo(p.paths);
         }
       })
@@ -157,6 +166,8 @@
       <MonitorView />
     {:else if store.route.kind === 'bots'}
       <BotsView />
+    {:else if store.route.kind === 'photocraft'}
+      <PhotoCraftView />
     {:else if store.route.kind === 'chromium'}
       <BrowserView kind="chromium" />
     {:else if store.route.kind === 'tor'}
@@ -189,6 +200,8 @@
       <DosView />
     {:else if store.route.kind === 'gilgamesh'}
       <GilgameshView />
+    {:else if store.route.kind === 'mood'}
+      <MoodView />
     {:else if store.route.kind === 'games'}
       <GamesView />
     {:else if store.route.kind === 'database'}

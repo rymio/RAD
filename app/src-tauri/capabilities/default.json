@@ -4,7 +4,8 @@
   "description": "RAD windows",
   "windows": [
     "main",
-    "quick"
+    "quick",
+    "gilgamesh"
   ],
   "permissions": [
     "core:default",
@@ -16,6 +17,8 @@
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-set-fullscreen",
+    "core:window:allow-is-fullscreen",
+    "core:event:allow-emit-to",
     "core:webview:allow-internal-toggle-devtools",
     "dialog:allow-open",
     "dialog:allow-save",

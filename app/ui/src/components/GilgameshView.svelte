@@ -10,8 +10,9 @@
   import { Head } from '../lib/gilgamesh/head';
   import { MOODS, GESTURES, type Mood, type Gesture } from '../lib/gilgamesh/text';
   import { sight, type SightMode, type StrangerAction } from '../lib/gilgamesh/sight.svelte';
+  import { stage } from '../lib/gilgamesh/stage.svelte';
   import type { Citation } from '../lib/types';
-  import { Mic, MicOff, ImageUp, SlidersHorizontal, RotateCcw, Loader, Download, Headphones, SendHorizontal, MessageSquareText, Hand, Square, X, CircleAlert, ScanFace, History, Trash2, FileText, MessageSquare, Check, Plus, Shuffle, AudioLines, Pause, Play, Circle, Sparkles, FolderOpen, Camera, CameraOff, Eye, UserCheck } from '@lucide/svelte';
+  import { Mic, MicOff, ImageUp, SlidersHorizontal, RotateCcw, Loader, Download, Headphones, SendHorizontal, MessageSquareText, Hand, Square, X, CircleAlert, ScanFace, History, Trash2, FileText, MessageSquare, Check, Plus, Shuffle, AudioLines, Pause, Play, Circle, Sparkles, FolderOpen, Camera, CameraOff, Eye, UserCheck, MonitorUp, Heart } from '@lucide/svelte';
 
   interface TtsStatus { installed: boolean; engine: boolean; dev_build: boolean; bytes: number; downloading: { done: number; total: number } | null; voices: { key: string; name: string }[] }
   interface SttStatus { installed: boolean; bytes: number; downloading: { done: number; total: number } | null }
@@ -343,8 +344,10 @@
         {#if transcripts.recording}<span class="recdot" class:paused={transcripts.paused}></span>{:else}<AudioLines size={14} />{/if} Transcripts
       </button>
       <button class="icon-btn no-drag" class:active={showTranscript && panel !== 'transcripts'} title="Conversation" onclick={showConversation}><MessageSquareText size={17} /></button>
+      <button class="icon-btn no-drag" class:active={stage.open} disabled={!g.avatar} title={stage.open ? 'Close his own window' : 'Open him in a window of his own (e.g. full screen on another monitor)'} onclick={() => stage.toggle().catch((e) => store.error(e, 'Couldn’t open his window'))}><MonitorUp size={17} /></button>
       <button class="icon-btn no-drag" class:active={showSettings} title="Settings" onclick={() => (showSettings = !showSettings)}><SlidersHorizontal size={17} /></button>
     {/if}
+    <button class="icon-btn no-drag mood-btn" title="My Mood" onclick={() => store.navigate({ kind: 'mood' })}><Heart size={16} /></button>
   </header>
 
   <input bind:this={fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onchange={pickPhotos} />
@@ -722,6 +725,9 @@
     height: var(--titlebar-h);
     padding: 0 12px 0 calc(14px + var(--lead));
     border-bottom: 1px solid var(--border);
+  }
+  .mood-btn:hover {
+    color: #ec4899;
   }
   h1 {
     margin: 0;

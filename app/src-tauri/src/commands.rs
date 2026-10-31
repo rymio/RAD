@@ -589,3 +589,43 @@ pub fn hide_quick(app: AppHandle) {
 pub fn toggle_quick_cmd(app: AppHandle) {
     crate::toggle_quick(&app);
 }
+
+/// Gilgamesh's own window (just his picture, e.g. full screen on a second monitor; the main
+/// window drives it): `open` true opens or shows it, false closes it, null only asks. Returns
+/// whether it's open. It reopens where it was last (the window-state plugin).
+#[tauri::command]
+pub fn gilgamesh_window(app: AppHandle, open: Option<bool>) -> CmdResult<bool> {
+    let w = app.get_webview_window("gilgamesh");
+    match (open, w) {
+        (None, w) => Ok(w.is_some()),
+        (Some(false), w) => {
+            if let Some(w) = w {
+                let _ = w.close();
+            }
+            Ok(false)
+        }
+        (Some(true), Some(w)) => {
+            let _ = w.unminimize();
+            let _ = w.show();
+            let _ = w.set_focus();
+            Ok(true)
+        }
+        (Some(true), None) => {
+            let w = tauri::WebviewWindowBuilder::new(&app, "gilgamesh", tauri::WebviewUrl::App("index.html?view=gilgamesh".into()))
+                .title("Gilgamesh")
+                .inner_size(720.0, 900.0)
+                .min_inner_size(240.0, 300.0)
+                .background_color(tauri::window::Color(0, 0, 0, 255))
+                .build()
+                .map_err(|e| CmdError::new("window", e.to_string()))?;
+            // The main window stops sending to it once it's gone.
+            let a = app.clone();
+            w.on_window_event(move |ev| {
+                if let tauri::WindowEvent::Destroyed = ev {
+                    let _ = a.emit_to("main", "gil-stage-closed", ());
+                }
+            });
+            Ok(true)
+        }
+    }
+}

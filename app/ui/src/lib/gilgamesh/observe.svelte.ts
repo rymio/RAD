@@ -15,6 +15,9 @@ const NAMES: Record<Route['kind'], string> = {
   dos: 'the DOS PC emulator', gilgamesh: 'Gilgamesh’s own view (talking with you)',
   monitor: 'Web Monitoring (the websites you watch for them)',
   bots: 'Bots (their assistants that work on computers of their own)',
+  photocraft: 'PhotoCraft (the image editor: their pictures)',
+  // Private: nothing of it reaches his other conversations.
+  mood: 'Gilgamesh’s own view',
 };
 
 const KEEP = 12;

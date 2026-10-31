@@ -170,7 +170,9 @@ export type Route =
   | { kind: 'dos' }
   | { kind: 'gilgamesh' }
   | { kind: 'monitor' }
-  | { kind: 'bots'; bot?: string };
+  | { kind: 'bots'; bot?: string }
+  | { kind: 'photocraft' }
+  | { kind: 'mood' };
 
 /** Something the assistant asks the app to do (see crates/rad-server/src/agent.rs). */
 export interface AgentAction { kind: 'ssh' | 'open_url' | 'terminal' | string; host?: string; user?: string; port?: number; identity_file?: string; url?: string }

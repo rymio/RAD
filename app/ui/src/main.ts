@@ -8,7 +8,8 @@ const view = new URLSearchParams(location.search).get('view') ?? 'main';
 
 initPlatform().then((os) => {
   document.documentElement.dataset.os = os;
-  if (os === 'macos' || os === 'windows') document.documentElement.classList.add('translucent');
+  // Gilgamesh's own window is opaque black (for a second monitor).
+  if ((os === 'macos' || os === 'windows') && view !== 'gilgamesh') document.documentElement.classList.add('translucent');
   if (view === 'quick') document.documentElement.classList.add('quick');
   installWindowDrag();
   mount(App, { target: document.getElementById('app')!, props: { view } });

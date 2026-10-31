@@ -1,7 +1,7 @@
 // What Gilgamesh can do for the owner, through RAD's own features: remember facts (RAD's
 // memories, shared with every chat), save notes (Inbox project), add calendar events, open views
 // and web pages, search the web, control the music, give the owner's bots tasks and look through
-// the camera. Also what
+// the camera, and edit pictures in PhotoCraft. Also what
 // he knows about "now".
 
 import { api } from '../api';
@@ -14,6 +14,7 @@ import { monitor, siteName } from '../monitor.svelte';
 import { gilgamesh } from './gilgamesh.svelte';
 import { bots } from '../bots.svelte';
 import { sight } from './sight.svelte';
+import { photocraft } from '../photocraft.svelte';
 
 export interface Outcome {
   /** Shown in the transcript, e.g. "Remembered: …". */
@@ -28,7 +29,7 @@ const VIEWS: Record<string, T.Route> = {
   terminal: { kind: 'terminal' }, files: { kind: 'files' }, calendar: { kind: 'calendar' }, email: { kind: 'email' },
   mail: { kind: 'email' }, music: { kind: 'music' }, video: { kind: 'video' }, settings: { kind: 'settings' },
   memories: { kind: 'settings', tab: 'memories' }, chat: { kind: 'chat', id: null }, database: { kind: 'database' },
-  games: { kind: 'games' }, bots: { kind: 'bots' }, bot: { kind: 'bots' }, monitoring: { kind: 'monitor' }, monitor: { kind: 'monitor' }, websites: { kind: 'monitor' }, rymnet: { kind: 'rymnet' }, rymwin: { kind: 'rymwin' }, zx: { kind: 'zx' }, spectrum: { kind: 'zx' },
+  games: { kind: 'games' }, bots: { kind: 'bots' }, bot: { kind: 'bots' }, photocraft: { kind: 'photocraft' }, pictures: { kind: 'photocraft' }, monitoring: { kind: 'monitor' }, monitor: { kind: 'monitor' }, websites: { kind: 'monitor' }, rymnet: { kind: 'rymnet' }, rymwin: { kind: 'rymwin' }, zx: { kind: 'zx' }, spectrum: { kind: 'zx' },
   c64: { kind: 'c64' }, commodore: { kind: 'c64' }, dos: { kind: 'dos' }, sidex: { kind: 'sidex' }, editor: { kind: 'sidex' },
 };
 
@@ -116,6 +117,19 @@ export async function runAction(name: ActionName, arg: string): Promise<Outcome>
       }
       case 'bot':
         return await bots.fromGilgamesh(arg);
+      case 'edit': {
+        // "file | request" or just the request (on whatever is open in PhotoCraft).
+        await photocraft.refresh();
+        if (!photocraft.status?.installed) return { label: 'PhotoCraft isn’t installed (see the PhotoCraft view)', ok: false };
+        if (photocraft.busy()) return { label: 'PhotoCraft is busy with another edit', ok: false };
+        const [head, ...rest] = arg.split('|').map((x) => x.trim());
+        const file = rest.length ? photocraft.files.find((f) => f.name.toLowerCase() === head.toLowerCase())?.name : undefined;
+        const request = file ? rest.join('|') : arg;
+        void photocraft
+          .edit(request, { target: 'app', from: 'gilgamesh', file })
+          .then((j) => gilgamesh.announce(j.status === 'done' ? `Done in PhotoCraft: ${j.result}` : `I couldn't finish that in PhotoCraft: ${j.result}`, j.status === 'done' ? 'happy' : 'concerned'));
+        return { label: `Editing in PhotoCraft: ${request}`, ok: true };
+      }
       case 'look': {
         // A picture from the camera, answered once he's finished what he's saying.
         const answer = await sight.look(arg);

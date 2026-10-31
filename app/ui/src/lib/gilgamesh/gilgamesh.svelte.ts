@@ -35,6 +35,7 @@ import { transcripts } from './transcripts.svelte';
 import { monitor } from '../monitor.svelte';
 import { bots } from '../bots.svelte';
 import { sight } from './sight.svelte';
+import { photocraft } from '../photocraft.svelte';
 
 export type Mode = 'hands_free' | 'push_to_talk';
 
@@ -115,6 +116,7 @@ You can act for the owner by writing an action tag in your reply. It is carried 
 - [check: websites] checks the websites the owner monitors again now; you tell them the result once it's done (say you're checking).
 - [open: monitoring] opens Web Monitoring.
 - [bot: Name | task] gives one of the owner's bots a task (YOUR BOTS, below). A bot works in the background on a computer of its own: it browses, fills in forms, logs in with the owner's saved logins, downloads and checks things, and can follow the skills it has learned. Write the task out in full. Leave "Name |" out to give it to whichever bot is free. Say you've passed it on; you'll be told when it's done.
+- [edit: request] edits or draws in PhotoCraft, the image editor, in front of the owner (its window opens): layers, adjustments, filters, text, shapes, colours, a new picture. Write the request out in full. [edit: file name | request] opens one of PhotoCraft's files first (PHOTOCRAFT, below). Say you're on it; you'll say what you did once it's done.
 - [look: question] looks through the camera and answers the question about what's in front of it (what the owner is holding, wearing or showing you). Use it when they ask you to look at something; say you're having a look. The answer comes once you've finished speaking.
 - [bot: approve] or [bot: deny] answers a bot that waits for the owner's OK, only when the owner has said yes or no to it. [bot: answer | text] passes on the owner's answer to a bot's question. [bot: stop | Name] stops a bot.
 Only act when the owner asks or clearly wants it, and always say a few words about what you're doing. You go with the owner everywhere in RAD (your face is in the sidebar), so opening something or searching doesn't end the conversation; it happens once you've finished speaking.
@@ -653,7 +655,7 @@ class Gilgamesh {
       this.fail(run, e);
       return;
     }
-    const made = [sight.describe(), transcripts.describe(), monitor.describe(), bots.describe()].filter(Boolean).join('\n\n');
+    const made = [sight.describe(), transcripts.describe(), monitor.describe(), bots.describe(), photocraft.describe()].filter(Boolean).join('\n\n');
     // The transcript under discussion goes last, so a long one is what gets cut at the limit.
     context = `${PERSONA.replace('{FRIDAY}', nextFriday())}\n\n${context}\n${activity.describe()}\n\n${this.recaps()}${made ? `\n\n${made}` : ''}${topic ? `\n\n${topic}` : ''}`;
     this.streaming = true;

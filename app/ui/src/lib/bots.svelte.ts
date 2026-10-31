@@ -18,10 +18,12 @@
 // RAD is open. Bots can hand each other work (message_bot), and Gilgamesh can give them tasks,
 // pass on approvals and answers, and says when they're done.
 
+import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { api, rad } from './api';
 import { store } from './state.svelte';
 import { gilgamesh } from './gilgamesh/gilgamesh.svelte';
+import { photocraft } from './photocraft.svelte';
 
 export interface Bot {
   id: string;
@@ -229,6 +231,7 @@ Pop-ups (alert, confirm) are answered for you: alerts OK'd, confirms cancelled. 
 {"do":"ask","question":"…"}  ask the owner and wait (a code they were sent, a choice only they can make)
 {"do":"confirm","what":"…"}  ask the owner's OK before something that can't be undone
 {"do":"message_bot","bot":"NAME","text":"…"}  give another bot a task and get its answer
+{"do":"edit_image","file":"/root/shared/photo.jpg","task":"…","save_as":"photo-edited.png"}  have PhotoCraft (an image editor on the owner's Mac) edit a picture: crop, resize, adjust, add text, remove the background… The result comes back in /root/shared.
 {"do":"remember","fact":"…"}  keep something for later tasks (where things are, the owner's preferences)
 {"do":"done","summary":"…"}  finish: what you did and found, with the facts the owner asked for
 
@@ -312,6 +315,7 @@ function actionLabel(a: Record<string, any>, labels: Map<number, string>): strin
     case 'desktop': return `Screen: ${a.action}${a.x !== undefined ? ` at ${a.x}, ${a.y}` : ''}${a.text ? ` “${clip(String(a.text), 40)}”` : ''}${a.key ? ` ${a.key}` : ''}`;
     case 'wait': return `Wait ${a.seconds ?? 2} s`;
     case 'message_bot': return `Ask ${a.bot}: ${clip(String(a.text ?? ''), 120)}`;
+    case 'edit_image': return `Edit ${a.file} in PhotoCraft: ${clip(String(a.task ?? ''), 120)}`;
     case 'remember': return `Remember: ${a.fact}`;
     default: return a.do;
   }
@@ -814,6 +818,18 @@ class Bots {
         this.status[bot.id] = `Waiting for ${other.name}…`;
         const t = await this.run(other.id, `${bot.name} (another of the owner's bots) asks you: ${a.text}`, { from: 'bot', depth: run.depth + 1 });
         return { text: `${other.name} ${t.status === 'done' ? 'answered' : `couldn’t finish (${t.status})`}: ${t.result}`, ok: t.status === 'done', page: false };
+      }
+      case 'edit_image': {
+        const file = String(a.file ?? '');
+        if (!file.startsWith('/root/shared/') || file.includes('..')) return { text: 'Failed: the picture must be in /root/shared (copy it there first).', ok: false, page: false };
+        const out = String(a.save_as ?? '').replace(/[^\w.\- ]/g, '') || `${file.split('/').pop()!.replace(/\.[^.]+$/, '')}-edited.png`;
+        const shared = await rad.containerSharedDir(container);
+        const name = await photocraft.importFile(`${shared}/${file.slice('/root/shared/'.length)}`);
+        this.status[bot.id] = 'Editing the picture in PhotoCraft…';
+        const j = await photocraft.edit(String(a.task ?? ''), { target: 'headless', from: 'bot', file: name, out });
+        if (j.status !== 'done' || !j.output) return { text: `Failed: PhotoCraft couldn't do it: ${j.result}`, ok: false, page: false };
+        const back = await invoke<string>('photocraft_export_to_container', { name: j.output, container });
+        return { text: `Done: ${j.result} The result is ${back}.`, ok: true, page: false };
       }
       case 'remember': {
         const fact = String(a.fact ?? '').trim().slice(0, 300);

@@ -9,7 +9,8 @@
   import { avatarImage } from '../lib/gilgamesh/face';
   import { Head } from '../lib/gilgamesh/head';
   import { sight } from '../lib/gilgamesh/sight.svelte';
-  import { Mic, MicOff, Eye, EyeOff, Square, Loader, ScanFace, SendHorizontal, Camera, CameraOff } from '@lucide/svelte';
+  import { stage } from '../lib/gilgamesh/stage.svelte';
+  import { Mic, MicOff, Eye, EyeOff, Square, Loader, ScanFace, SendHorizontal, Camera, CameraOff, MonitorUp } from '@lucide/svelte';
 
   const g = gilgamesh;
   let canvas = $state<HTMLCanvasElement | null>(null);
@@ -108,6 +109,9 @@
       <button class="icon-btn sm seeing" title="Gilgamesh can see{sight.present ? (sight.who === 'owner' ? ' you' : sight.who === 'stranger' ? ' someone he doesn’t know' : ' someone') : ' (nobody there)'} — turn his sight off" onclick={() => sight.saveSettings({ mode: 'off' })}><Camera size={14} /></button>
     {:else if sight.error && sight.settings.mode !== 'off'}
       <button class="icon-btn sm" title={sight.error} onclick={() => store.navigate({ kind: 'gilgamesh' })}><CameraOff size={14} /></button>
+    {/if}
+    {#if g.avatar}
+      <button class="icon-btn sm" class:seeing={stage.open} title={stage.open ? 'Close his own window' : 'Open him in a window of his own (e.g. on another monitor)'} onclick={() => stage.toggle().catch((e) => store.error(e, 'Couldn’t open his window'))}><MonitorUp size={14} /></button>
     {/if}
     <button class="icon-btn sm" title={g.settings.dock ? 'Hide his face' : 'Show his face'} onclick={() => g.saveSettings({ dock: !g.settings.dock })}>
       {#if g.settings.dock}<EyeOff size={14} />{:else}<Eye size={14} />{/if}

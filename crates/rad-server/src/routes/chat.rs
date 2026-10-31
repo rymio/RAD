@@ -259,6 +259,7 @@ pub async fn assist(State(state): State<Shared>, a: Authed, Json(req): Json<Assi
         Ok((m, conn, settings.max_output_tokens.min(req.max_tokens.unwrap_or(4096).max(256))))
     })
     .await?;
+    let temperature = req.temperature.unwrap_or(0.2).clamp(0.0, 1.5);
     let mut messages = Vec::with_capacity(req.messages.len());
     for m in &req.messages {
         let mut msg = ChatMsg::new(if m.role == "assistant" { "assistant" } else { "user" }, m.content.chars().take(40_000).collect::<String>());
@@ -267,7 +268,7 @@ pub async fn assist(State(state): State<Shared>, a: Authed, Json(req): Json<Assi
         }
         messages.push(msg);
     }
-    let r = ChatRequest { system: Some(req.system), messages, temperature: Some(0.2), max_tokens };
+    let r = ChatRequest { system: Some(req.system), messages, temperature: Some(temperature), max_tokens };
     let text = state.llm.complete(&conn, &model.model, &r).await?;
     Ok(Json(AssistResponse { content: strip_thinking(&text).trim().to_string(), model: model.model }))
 }
