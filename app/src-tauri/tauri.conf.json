@@ -23,7 +23,7 @@
         "font-src": "'self' data:",
         "worker-src": "'self' blob:",
         "script-src": "'self' 'wasm-unsafe-eval'",
-        "frame-src": "'none'",
+        "frame-src": "rad: http://rad.localhost",
         "object-src": "'none'"
       }
     }

@@ -3,6 +3,8 @@
 mod books;
 mod browser;
 mod chess;
+mod colab;
+mod scraper;
 mod capture;
 mod client;
 mod commands;
@@ -354,6 +356,8 @@ pub fn run() {
             app.manage(photocraft::Photocraft::default());
             app.manage(books::Books::default());
             app.manage(chess::Chess::default());
+            app.manage(scraper::Scraper::default());
+            app.manage(colab::Colab::default());
             app.manage(rymnet::Rymnet::default());
             app.manage(vpn::Vpn::default());
             vpn::restore(app.handle());
@@ -453,6 +457,33 @@ pub fn run() {
             chess::chess_status,
             chess::chess_think,
             chess::chess_stop,
+            scraper::scraper_list,
+            scraper::scraper_start,
+            scraper::scraper_stop,
+            scraper::scraper_delete,
+            scraper::scraper_pages,
+            scraper::scraper_page_text,
+            scraper::scraper_rag_files,
+            scraper::scraper_set_rag,
+            scraper::scraper_folder,
+            colab::colab_status,
+            colab::colab_set_network,
+            colab::colab_download,
+            colab::colab_download_stop,
+            colab::colab_packages,
+            colab::colab_list,
+            colab::colab_open,
+            colab::colab_save,
+            colab::colab_delete,
+            colab::colab_import,
+            colab::colab_export,
+            colab::colab_folder,
+            colab::colab_kernel_start,
+            colab::colab_run,
+            colab::colab_interrupt,
+            colab::colab_restart,
+            colab::colab_shutdown,
+            colab::colab_vars,
             z80lab::z80lab_assemble,
             photocraft::photocraft_status,
             photocraft::photocraft_install,
@@ -613,6 +644,7 @@ pub fn run() {
                 // Containers power off cleanly (their files are on their drives).
                 app.state::<containers::Containers>().stop_all();
                 app.state::<games::Games>().stop_all();
+                app.state::<colab::Colab>().stop_all();
                 app.state::<zx::Zx>().stop();
                 app.state::<c64::C64State>().stop();
                 app.state::<dos::Dos>().stop();

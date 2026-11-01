@@ -17,6 +17,9 @@
   import PhotoCraftView from './PhotoCraftView.svelte';
   import BooksView from './BooksView.svelte';
   import ChessView from './ChessView.svelte';
+  import ScraperView from './ScraperView.svelte';
+  import ColabView from './ColabView.svelte';
+  import { colab } from '../lib/colab.svelte';
   import Z80LabView from './Z80LabView.svelte';
   import { books, BOOK_EXTENSIONS } from '../lib/books.svelte';
   import { photocraft } from '../lib/photocraft.svelte';
@@ -106,7 +109,7 @@
     getCurrentWebview()
       .onDragDropEvent((ev) => {
         const p = ev.payload;
-        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots', 'photocraft', 'mood', 'books', 'chess', 'z80lab'].includes(store.route.kind) || (store.route.kind === 'books' && !books.openId);
+        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots', 'photocraft', 'mood', 'books', 'chess', 'z80lab', 'scraper', 'colab'].includes(store.route.kind) || (store.route.kind === 'books' && !books.openId);
         else if (p.type === 'leave') dragging = false;
         else if (p.type === 'drop') {
           dragging = false;
@@ -115,7 +118,15 @@
             if (!books.openId) void books.import(p.paths.filter((x) => BOOK_EXTENSIONS.includes(x.split('.').pop()?.toLowerCase() ?? '')));
             return;
           }
-          if (['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots', 'photocraft', 'mood', 'chess', 'z80lab'].includes(store.route.kind)) return;
+          // Notebooks dropped on Colab open there; documents (PDFs, books) go to RAG, in the Colab Library.
+          if (store.route.kind === 'colab') {
+            const nbs = p.paths.filter((x) => x.toLowerCase().endsWith('.ipynb'));
+            const docs = p.paths.filter((x) => !x.toLowerCase().endsWith('.ipynb'));
+            if (nbs.length) void colab.importFiles(nbs);
+            if (docs.length) void colab.addToRag(docs);
+            return;
+          }
+          if (['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots', 'photocraft', 'mood', 'chess', 'z80lab', 'scraper', 'colab'].includes(store.route.kind)) return;
           uploadTo(p.paths);
         }
       })
@@ -217,6 +228,10 @@
       <GamesView />
     {:else if store.route.kind === 'chess'}
       <ChessView />
+    {:else if store.route.kind === 'scraper'}
+      <ScraperView />
+    {:else if store.route.kind === 'colab'}
+      <ColabView lang={store.route.lang} />
     {:else if store.route.kind === 'z80lab'}
       <Z80LabView />
     {:else if store.route.kind === 'database'}

@@ -18,6 +18,8 @@ const NAMES: Record<Route['kind'], string> = {
   photocraft: 'PhotoCraft (the image editor: their pictures)',
   books: 'Books (their e-books: a library and a reader)',
   chess: 'Chess (a game of chess with you)',
+  scraper: 'the Scraper (websites saved for offline reading)',
+  colab: 'Colab (their Rust or Python notebooks for maths, machine learning and LLMs)',
   z80lab: 'Z80 Lab (a Z80 computer they are wiring up on a canvas)',
   // Private: nothing of it reaches his other conversations.
   mood: 'Gilgamesh’s own view',
@@ -49,6 +51,7 @@ class Activity {
       s = p ? `the project “${p.name}”${r.doc ? ' (reading one of its documents)' : ''}` : s;
     } else if (r.kind === 'settings' && r.tab) s = `Settings → ${r.tab}`;
     else if (r.kind === 'container') s = `the ${r.type === 'rust' ? 'Rust' : 'Python'} container`;
+    else if (r.kind === 'colab') s = `${r.lang === 'rust' ? 'Rust' : 'Python'} Colab (notebooks for maths, machine learning and LLMs)`;
     return s;
   }
 

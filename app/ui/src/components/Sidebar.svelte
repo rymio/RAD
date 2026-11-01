@@ -9,7 +9,7 @@
   import Modal from './Modal.svelte';
   import VpnToggle from './VpnToggle.svelte';
   import GilgameshDock from './GilgameshDock.svelte';
-  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, Cog, FileCode, Code, Database, Gamepad2, Joystick, Microscope, Keyboard, FlaskConical, Computer, ScanFace, ChevronRight, AppWindow, MonitorPlay, Wrench, Cpu, Activity, Bot, Palette, BookOpen, Crown, CircuitBoard } from '@lucide/svelte';
+  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, Cog, FileCode, Code, Database, Gamepad2, Joystick, Microscope, Keyboard, FlaskConical, Computer, ScanFace, ChevronRight, AppWindow, MonitorPlay, Wrench, Cpu, Activity, Bot, Palette, BookOpen, Crown, CircuitBoard, CloudDownload, NotebookPen, Sigma } from '@lucide/svelte';
   import type { Component } from 'svelte';
 
   let newProjectOpen = $state(false);
@@ -23,7 +23,7 @@
 
   // ---- the app's views: everyday ones at the top, the rest in groups that fold away
   interface View { label: string; icon: Component<any>; route: Route }
-  const same = (a: Route, b: Route) => a.kind === b.kind && (a.kind !== 'container' || (b.kind === 'container' && a.type === b.type));
+  const same = (a: Route, b: Route) => a.kind === b.kind && (a.kind !== 'container' || (b.kind === 'container' && a.type === b.type)) && (a.kind !== 'colab' || (b.kind === 'colab' && a.lang === b.lang));
   const isActive = (v: View) => same(store.route, v.route);
 
   const MAIN: View[] = [
@@ -41,6 +41,7 @@
         { label: 'Web Browser', icon: Globe, route: { kind: 'browser' } },
         { label: 'Chromium', icon: Compass, route: { kind: 'chromium' } },
         { label: 'TOR', icon: Shield, route: { kind: 'tor' } },
+        { label: 'Scraper', icon: CloudDownload, route: { kind: 'scraper' } },
       ],
     },
     {
@@ -66,6 +67,8 @@
         { label: 'Games', icon: Gamepad2, route: { kind: 'games' } },
         { label: 'Chess', icon: Crown, route: { kind: 'chess' } },
         { label: 'Z80 Lab', icon: CircuitBoard, route: { kind: 'z80lab' } },
+        { label: 'Rust Colab', icon: Sigma, route: { kind: 'colab', lang: 'rust' } },
+        { label: 'Python Colab', icon: NotebookPen, route: { kind: 'colab', lang: 'python' } },
         { label: 'Database', icon: Database, route: { kind: 'database' } },
         { label: 'Rust Container', icon: Cog, route: { kind: 'container', type: 'rust' } },
         { label: 'Python Container', icon: FileCode, route: { kind: 'container', type: 'python' } },

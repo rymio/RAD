@@ -1,0 +1,23 @@
+[package]
+name = "rad-rust-kernel"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "RAD's Rust Colab kernel: evcxr (Rust evaluated cell by cell, state kept) behind JSON lines"
+publish = false
+
+# Its own workspace: evcxr brings a large tree (rust-analyzer's crates) that RAD itself doesn't need.
+[workspace]
+
+[dependencies]
+evcxr = "0.22"
+# For the plain-text error reports evcxr builds (same version as evcxr uses).
+ariadne = "0.6"
+serde_json = "1"
+# evcxr 0.22's rust-analyzer crates (ra_ap_* 0.0.347) don't build with salsa 0.28.5: hold salsa at 0.28.2.
+salsa = "=0.28.2"
+salsa-macros = "=0.28.2"
+salsa-macro-rules = "=0.28.2"
+
+[profile.release]
+codegen-units = 16

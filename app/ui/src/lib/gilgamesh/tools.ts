@@ -18,6 +18,8 @@ import { sight } from './sight.svelte';
 import { photocraft } from '../photocraft.svelte';
 import { books } from '../books.svelte';
 import { chess, LEVELS, type Level } from '../chess.svelte';
+import { scraper } from '../scraper.svelte';
+import { colab, TEMPLATES } from '../colab.svelte';
 import { lab, CLOCKS } from '../z80lab.svelte';
 import { PROGRAMS } from '../z80lab/templates';
 
@@ -34,7 +36,7 @@ const VIEWS: Record<string, T.Route> = {
   terminal: { kind: 'terminal' }, files: { kind: 'files' }, calendar: { kind: 'calendar' }, email: { kind: 'email' },
   mail: { kind: 'email' }, music: { kind: 'music' }, video: { kind: 'video' }, settings: { kind: 'settings' },
   memories: { kind: 'settings', tab: 'memories' }, chat: { kind: 'chat', id: null }, database: { kind: 'database' },
-  games: { kind: 'games' }, chess: { kind: 'chess' }, z80lab: { kind: 'z80lab' }, z80: { kind: 'z80lab' }, lab: { kind: 'z80lab' }, bots: { kind: 'bots' }, bot: { kind: 'bots' }, books: { kind: 'books' }, book: { kind: 'books' }, library: { kind: 'books' }, photocraft: { kind: 'photocraft' }, pictures: { kind: 'photocraft' }, monitoring: { kind: 'monitor' }, monitor: { kind: 'monitor' }, websites: { kind: 'monitor' }, rymnet: { kind: 'rymnet' }, rymwin: { kind: 'rymwin' }, zx: { kind: 'zx' }, spectrum: { kind: 'zx' },
+  games: { kind: 'games' }, chess: { kind: 'chess' }, scraper: { kind: 'scraper' }, scrapper: { kind: 'scraper' }, colab: { kind: 'colab', lang: 'python' }, notebook: { kind: 'colab', lang: 'python' }, notebooks: { kind: 'colab', lang: 'python' }, jupyter: { kind: 'colab', lang: 'python' }, z80lab: { kind: 'z80lab' }, z80: { kind: 'z80lab' }, lab: { kind: 'z80lab' }, bots: { kind: 'bots' }, bot: { kind: 'bots' }, books: { kind: 'books' }, book: { kind: 'books' }, library: { kind: 'books' }, photocraft: { kind: 'photocraft' }, pictures: { kind: 'photocraft' }, monitoring: { kind: 'monitor' }, monitor: { kind: 'monitor' }, websites: { kind: 'monitor' }, rymnet: { kind: 'rymnet' }, rymwin: { kind: 'rymwin' }, zx: { kind: 'zx' }, spectrum: { kind: 'zx' },
   c64: { kind: 'c64' }, commodore: { kind: 'c64' }, dos: { kind: 'dos' }, sidex: { kind: 'sidex' }, editor: { kind: 'sidex' },
 };
 
@@ -214,6 +216,57 @@ export async function runAction(name: ActionName, arg: string): Promise<Outcome>
             return { label: 'Reset', ok: true };
         }
         return { label: `Don’t know the circuit action “${cmd}”`, ok: false };
+      }
+      case 'colab': {
+        // "run", "run all", "stop", "restart", "new | python" or "open | title".
+        const [what, ...rest] = arg.split('|').map((x) => x.trim());
+        const cmd = what.toLowerCase();
+        const opt = rest.join(' ').trim();
+        if (cmd === 'new') {
+          const lang = /rust/i.test(opt) ? 'rust' : 'python';
+          const t = TEMPLATES.find((t) => t.lang === lang && t.id.endsWith('blank'));
+          return { label: `New ${lang === 'rust' ? 'Rust' : 'Python'} notebook`, ok: true, later: () => void colab.create(lang, t) };
+        }
+        if (cmd === 'open') {
+          await Promise.all([colab.loadList('python'), colab.loadList('rust')]);
+          const w = opt.toLowerCase();
+          const n = [...colab.lists.python, ...colab.lists.rust].find((x) => x.title.toLowerCase().includes(w));
+          if (!n) return { label: `No notebook “${opt}”`, ok: false };
+          return { label: `Opening ${n.title}`, ok: true, later: () => void colab.open(n.id) };
+        }
+        const nb = colab.nb;
+        if (!nb || store.route.kind !== 'colab') return { label: 'No notebook is open in Colab', ok: false };
+        if (cmd === 'run all') return { label: 'Running all the cells', ok: true, later: () => colab.runAll() };
+        if (cmd === 'run') {
+          const c = colab.cell(colab.selected);
+          if (!c) return { label: 'No cell is selected', ok: false };
+          return { label: `Running cell ${colab.index(c.id) + 1}`, ok: true, later: () => colab.run(c.id) };
+        }
+        if (cmd === 'stop') return { label: colab.queue.length ? 'Stopping the cell' : 'Nothing is running', ok: !!colab.queue.length, later: () => colab.interrupt() };
+        if (cmd === 'restart') return { label: 'Restarting the kernel', ok: true, later: () => void colab.restart() };
+        return { label: `Don’t know the notebook action “${what}”`, ok: false };
+      }
+      case 'scrape': {
+        // "https://site", "https://site | rag", "stop" or "open | site".
+        const [what, ...rest] = arg.split('|').map((x) => x.trim());
+        const opt = rest.join(' ').toLowerCase();
+        await scraper.load();
+        if (/^stop$/i.test(what)) {
+          for (const s of scraper.running) void scraper.stop(s.id);
+          return { label: scraper.running.length ? 'Stopped saving' : 'Nothing is being saved', ok: !!scraper.running.length };
+        }
+        if (/^open$/i.test(what)) {
+          const s = scraper.list.find((x) => `${x.title} ${x.url}`.toLowerCase().includes(opt));
+          if (!s) return { label: `No saved site “${opt}”`, ok: false };
+          return { label: `Opening ${s.title}`, ok: true, later: () => void scraper.open(s.id) };
+        }
+        if (!/^[\w.-]+\.[a-z]{2,}|^https?:\/\//i.test(what)) return { label: `“${what}” isn’t a web address`, ok: false };
+        try {
+          const s = await scraper.start(what, scraper.options, undefined, /rag|vault/.test(opt));
+          return { label: `Saving ${s.host}${/rag|vault/.test(opt) ? ', then adding it to RAG' : ''}`, ok: true, later: () => store.navigate({ kind: 'scraper' }) };
+        } catch (e: any) {
+          return { label: `Couldn’t save ${what}: ${e?.message ?? e}`, ok: false };
+        }
       }
       case 'search': {
         const url = `https://duckduckgo.com/?q=${encodeURIComponent(arg)}`;

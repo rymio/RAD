@@ -16,6 +16,16 @@ pub fn handle<R: tauri::Runtime>(ctx: UriSchemeContext<'_, R>, req: Request<Vec<
     tauri::async_runtime::spawn(async move {
         let path = req.uri().path().to_string();
         let fail = |status: StatusCode| Response::builder().status(status).body(Vec::new()).unwrap();
+        // Offline copies made by the Scraper, from disk, locked down.
+        if path.starts_with("/scraped/") {
+            let (status, ct, body, html) = crate::scraper::serve(&app, &path, req.uri().query());
+            let mut out = Response::builder().status(status).header(header::CONTENT_TYPE, ct).header("X-Content-Type-Options", "nosniff").header(header::CACHE_CONTROL, "no-store");
+            if html {
+                out = out.header("Content-Security-Policy", crate::scraper::ARCHIVE_CSP);
+            }
+            responder.respond(out.body(body).unwrap_or_else(|_| fail(StatusCode::INTERNAL_SERVER_ERROR)));
+            return;
+        }
         if !allowed(&path) {
             responder.respond(fail(StatusCode::FORBIDDEN));
             return;

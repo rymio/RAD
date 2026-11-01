@@ -174,6 +174,8 @@ export type Route =
   | { kind: 'photocraft' }
   | { kind: 'books' }
   | { kind: 'chess' }
+  | { kind: 'scraper' }
+  | { kind: 'colab'; lang: 'python' | 'rust' }
   | { kind: 'z80lab' }
   | { kind: 'mood' };
 
