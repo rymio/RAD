@@ -23,6 +23,7 @@ const NAMES: Record<Route['kind'], string> = {
   colab: 'Colab (their Rust or Python notebooks for maths, machine learning and LLMs)',
   z80lab: 'Z80 Lab (a Z80 computer they are wiring up on a canvas)',
   oort: 'Oort (the space-fleet programming game: they write Rust to fly spaceships)',
+  fyrox: 'Fyrox (the Rust game engine and its editor, and your own world, which is made with it)',
   // Private: nothing of it reaches his other conversations.
   mood: 'Gilgamesh’s own view',
 };

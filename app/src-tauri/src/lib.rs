@@ -17,6 +17,8 @@ mod photocraft;
 mod media;
 mod monitor;
 mod oort;
+mod fyrox;
+mod fyrox_world;
 mod events;
 mod protocol;
 mod rymnet;
@@ -361,6 +363,7 @@ pub fn run() {
             app.manage(scraper::Scraper::default());
             app.manage(collections::Collections::default());
             app.manage(oort::Oort::default());
+            app.manage(fyrox::Fyrox::default());
             app.manage(colab::Colab::default());
             app.manage(rymnet::Rymnet::default());
             app.manage(vpn::Vpn::default());
@@ -470,6 +473,16 @@ pub fn run() {
             oort::oort_docs_download,
             oort::oort_docs_search,
             oort::oort_docs_scenario,
+            fyrox::fyrox_docs_status,
+            fyrox::fyrox_docs_download,
+            fyrox::fyrox_docs_search,
+            fyrox_world::world_status,
+            fyrox_world::world_start,
+            fyrox_world::world_send,
+            fyrox_world::world_stop,
+            fyrox_world::world_edit,
+            fyrox_world::world_face,
+            fyrox_world::world_reset,
             chess::chess_status,
             chess::chess_think,
             chess::chess_stop,
@@ -654,6 +667,8 @@ pub fn run() {
                 // Drop the session — and in standalone mode lock the vault and checkpoint it.
                 app.state::<browser::Browsers>().stop();
                 app.state::<media::Media>().stop();
+                // Gilgamesh's world saves and closes with RAD.
+                app.state::<fyrox::Fyrox>().world.stop();
                 app.state::<photocraft::Photocraft>().stop();
                 app.state::<rymnet::Rymnet>().stop();
                 app.state::<terminal::Terminals>().close_all();

@@ -179,6 +179,7 @@ export type Route =
   | { kind: 'colab'; lang: 'python' | 'rust' }
   | { kind: 'z80lab' }
   | { kind: 'oort' }
+  | { kind: 'fyrox' }
   | { kind: 'mood' };
 
 /** Something the assistant asks the app to do (see crates/rad-server/src/agent.rs). */

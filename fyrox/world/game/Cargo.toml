@@ -1,0 +1,15 @@
+[package]
+name = "gilgamesh_world"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fyrox = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Gilgamesh's face (a photo from RAD) and test pictures of the world.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+
+[features]
+default = ["fyrox/default"]
+dylib-engine = ["fyrox/dylib"]

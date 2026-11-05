@@ -24,3 +24,6 @@ node_modules
 /c64tools
 /chess/rad-chess/target
 /colab/rad-rust-kernel/target
+/fyrox/world/target
+/fyrox/world/*.log
+/fyrox/world/data/

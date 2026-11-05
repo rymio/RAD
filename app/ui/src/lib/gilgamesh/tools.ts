@@ -21,6 +21,7 @@ import { chess, LEVELS, type Level } from '../chess.svelte';
 import { scraper } from '../scraper.svelte';
 import { colab, TEMPLATES } from '../colab.svelte';
 import { oort, lastRustBlock, scenarioTitle } from '../oort.svelte';
+import { world } from '../world.svelte';
 import { lab, CLOCKS } from '../z80lab.svelte';
 import { PROGRAMS } from '../z80lab/templates';
 
@@ -37,7 +38,7 @@ const VIEWS: Record<string, T.Route> = {
   terminal: { kind: 'terminal' }, files: { kind: 'files' }, calendar: { kind: 'calendar' }, email: { kind: 'email' },
   mail: { kind: 'email' }, music: { kind: 'music' }, video: { kind: 'video' }, settings: { kind: 'settings' },
   memories: { kind: 'settings', tab: 'memories' }, chat: { kind: 'chat', id: null }, database: { kind: 'database' },
-  games: { kind: 'games' }, chess: { kind: 'chess' }, scraper: { kind: 'scraper' }, scrapper: { kind: 'scraper' }, colab: { kind: 'colab', lang: 'python' }, notebook: { kind: 'colab', lang: 'python' }, notebooks: { kind: 'colab', lang: 'python' }, jupyter: { kind: 'colab', lang: 'python' }, oort: { kind: 'oort' }, z80lab: { kind: 'z80lab' }, z80: { kind: 'z80lab' }, lab: { kind: 'z80lab' }, bots: { kind: 'bots' }, bot: { kind: 'bots' }, books: { kind: 'books' }, book: { kind: 'books' }, library: { kind: 'books' }, photocraft: { kind: 'photocraft' }, pictures: { kind: 'photocraft' }, monitoring: { kind: 'monitor' }, monitor: { kind: 'monitor' }, websites: { kind: 'monitor' }, rymnet: { kind: 'rymnet' }, rymwin: { kind: 'rymwin' }, zx: { kind: 'zx' }, spectrum: { kind: 'zx' },
+  games: { kind: 'games' }, chess: { kind: 'chess' }, scraper: { kind: 'scraper' }, scrapper: { kind: 'scraper' }, colab: { kind: 'colab', lang: 'python' }, notebook: { kind: 'colab', lang: 'python' }, notebooks: { kind: 'colab', lang: 'python' }, jupyter: { kind: 'colab', lang: 'python' }, oort: { kind: 'oort' }, fyrox: { kind: 'fyrox' }, world: { kind: 'fyrox' }, z80lab: { kind: 'z80lab' }, z80: { kind: 'z80lab' }, lab: { kind: 'z80lab' }, bots: { kind: 'bots' }, bot: { kind: 'bots' }, books: { kind: 'books' }, book: { kind: 'books' }, library: { kind: 'books' }, photocraft: { kind: 'photocraft' }, pictures: { kind: 'photocraft' }, monitoring: { kind: 'monitor' }, monitor: { kind: 'monitor' }, websites: { kind: 'monitor' }, rymnet: { kind: 'rymnet' }, rymwin: { kind: 'rymwin' }, zx: { kind: 'zx' }, spectrum: { kind: 'zx' },
   c64: { kind: 'c64' }, commodore: { kind: 'c64' }, dos: { kind: 'dos' }, sidex: { kind: 'sidex' }, editor: { kind: 'sidex' },
 };
 
@@ -217,6 +218,35 @@ export async function runAction(name: ActionName, arg: string): Promise<Outcome>
             return { label: 'Reset', ok: true };
         }
         return { label: `Don’t know the circuit action “${cmd}”`, ok: false };
+      }
+      case 'build': {
+        // "what", "what | near what", "what | near what | name".
+        const [what, near, name] = arg.split('|').map((x) => x.trim());
+        if (!what) return { label: 'Build what?', ok: false };
+        if (!world.running) return { label: 'Your world isn’t open', ok: false };
+        world.send({ cmd: 'build', what, near: near || null, name: name || null, by: 'gilgamesh' });
+        return { label: `Building ${name || what}`, ok: true };
+      }
+      case 'world': {
+        // "go | place", "remove | name", "tablet | task; task".
+        const [what, ...rest] = arg.split('|').map((x) => x.trim());
+        const opt = rest.join(' | ').trim();
+        const cmd = what.toLowerCase();
+        if (cmd === 'open') return { label: 'Opening your world', ok: true, later: () => void world.start() };
+        if (!world.running) return { label: 'Your world isn’t open', ok: false };
+        if (cmd === 'go' || cmd === 'goto' || cmd === 'walk') {
+          world.send({ cmd: 'goto', place: opt });
+          return { label: `Walking to ${opt}`, ok: true };
+        }
+        if (cmd === 'remove') {
+          world.send({ cmd: 'remove', name: opt });
+          return { label: `Taking away ${opt}`, ok: true };
+        }
+        if (cmd === 'tablet' || cmd === 'tasks') {
+          world.setTasks(opt.split(/;|\n/));
+          return { label: 'Wrote the tasks on the clay tablet', ok: true };
+        }
+        return { label: `Don’t know the world action “${what}”`, ok: false };
       }
       case 'oort': {
         // "run", "apply" (the code block of this answer) or "open | scenario".
