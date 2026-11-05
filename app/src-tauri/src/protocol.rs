@@ -26,6 +26,17 @@ pub fn handle<R: tauri::Runtime>(ctx: UriSchemeContext<'_, R>, req: Request<Vec<
             responder.respond(out.body(body).unwrap_or_else(|_| fail(StatusCode::INTERNAL_SERVER_ERROR)));
             return;
         }
+        // Collections (PDFs, music, films) from disk, with Range so players can seek.
+        if path.starts_with("/collections/") {
+            let range = req.headers().get(header::RANGE).and_then(|v| v.to_str().ok());
+            let (status, headers, body) = crate::collections::serve(&app, &path, range);
+            let mut out = Response::builder().status(status).header("Access-Control-Allow-Origin", "*").header("X-Content-Type-Options", "nosniff").header(header::CACHE_CONTROL, "no-store");
+            for (k, v) in headers {
+                out = out.header(k, v);
+            }
+            responder.respond(out.body(body).unwrap_or_else(|_| fail(StatusCode::INTERNAL_SERVER_ERROR)));
+            return;
+        }
         if !allowed(&path) {
             responder.respond(fail(StatusCode::FORBIDDEN));
             return;

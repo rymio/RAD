@@ -17,10 +17,12 @@ const NAMES: Record<Route['kind'], string> = {
   bots: 'Bots (their assistants that work on computers of their own)',
   photocraft: 'PhotoCraft (the image editor: their pictures)',
   books: 'Books (their e-books: a library and a reader)',
+  collections: 'Collections (their folders of PDFs, music and videos, kept on this computer)',
   chess: 'Chess (a game of chess with you)',
   scraper: 'the Scraper (websites saved for offline reading)',
   colab: 'Colab (their Rust or Python notebooks for maths, machine learning and LLMs)',
   z80lab: 'Z80 Lab (a Z80 computer they are wiring up on a canvas)',
+  oort: 'Oort (the space-fleet programming game: they write Rust to fly spaceships)',
   // Private: nothing of it reaches his other conversations.
   mood: 'Gilgamesh’s own view',
 };

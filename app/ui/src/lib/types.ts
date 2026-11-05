@@ -142,7 +142,7 @@ export type MediaSource = { kind: 'file'; path: string } | { kind: 'vault'; id: 
 export interface MediaItem { key: string; src: MediaSource; title: string; artist?: string | null; album?: string | null; duration?: number }
 
 /** The built-in browsers: Servo ("Web Browser"), Chromium (CEF) and Tor (Servo over Arti). */
-export type BrowserEngine = 'servo' | 'chromium' | 'tor' | 'rymwin';
+export type BrowserEngine = 'servo' | 'chromium' | 'tor' | 'rymwin' | 'oort';
 
 export type Route =
   | { kind: 'chat'; id: Id | null }
@@ -153,6 +153,7 @@ export type Route =
   | { kind: 'tor' }
   | { kind: 'terminal' }
   | { kind: 'files' }
+  | { kind: 'collections' }
   | { kind: 'calendar' }
   | { kind: 'email' }
   | { kind: 'music' }
@@ -177,6 +178,7 @@ export type Route =
   | { kind: 'scraper' }
   | { kind: 'colab'; lang: 'python' | 'rust' }
   | { kind: 'z80lab' }
+  | { kind: 'oort' }
   | { kind: 'mood' };
 
 /** Something the assistant asks the app to do (see crates/rad-server/src/agent.rs). */

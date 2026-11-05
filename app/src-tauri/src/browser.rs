@@ -36,6 +36,9 @@ pub enum Kind {
     /// (Tor in Rust) SOCKS5 proxy.
     Tor,
     Rymwin,
+    /// Oort (Development → Oort, oort.rs): the Chromium engine again, in a process and profile
+    /// of its own, so the game has a tab nothing else uses and its sign-in is its own.
+    Oort,
 }
 
 impl Kind {
@@ -44,6 +47,7 @@ impl Kind {
             Some("chromium") => Kind::Chromium,
             Some("tor") => Kind::Tor,
             Some("rymwin") => Kind::Rymwin,
+            Some("oort") => Kind::Oort,
             _ => Kind::Servo,
         }
     }
@@ -53,6 +57,7 @@ impl Kind {
             Kind::Chromium => "chromium",
             Kind::Tor => "tor",
             Kind::Rymwin => "rymwin",
+            Kind::Oort => "oort",
         }
     }
 }
@@ -92,11 +97,12 @@ pub struct Browsers {
     chromium: Browser,
     tor: Browser,
     rymwin: Browser,
+    oort: Browser,
 }
 
 impl Default for Browsers {
     fn default() -> Self {
-        Browsers { servo: Browser::new(Kind::Servo), chromium: Browser::new(Kind::Chromium), tor: Browser::new(Kind::Tor), rymwin: Browser::new(Kind::Rymwin) }
+        Browsers { servo: Browser::new(Kind::Servo), chromium: Browser::new(Kind::Chromium), tor: Browser::new(Kind::Tor), rymwin: Browser::new(Kind::Rymwin), oort: Browser::new(Kind::Oort) }
     }
 }
 
@@ -107,6 +113,7 @@ impl Browsers {
             Kind::Chromium => &self.chromium,
             Kind::Tor => &self.tor,
             Kind::Rymwin => &self.rymwin,
+            Kind::Oort => &self.oort,
         }
     }
 
@@ -125,6 +132,7 @@ impl Browsers {
         self.chromium.stop();
         self.tor.stop();
         self.rymwin.stop();
+        self.oort.stop();
     }
 }
 
@@ -230,7 +238,7 @@ const SCRAPE_JS: &str = r#"(() => {
 fn engine_path(app: &AppHandle, kind: Kind) -> Option<PathBuf> {
     match kind {
         Kind::Servo => servo_path(app),
-        Kind::Chromium => chromium_path(app),
+        Kind::Chromium | Kind::Oort => chromium_path(app),
         Kind::Tor => tor_path(app),
         Kind::Rymwin => crate::rymnet::bin_dir(app).map(|d| d.join(crate::rymnet::exe("rymwin"))).filter(|p| p.is_file()),
     }
@@ -315,6 +323,7 @@ fn spawn(app: &AppHandle, b: &Browser, w: u32, h: u32, scale: f64, url: &str) ->
             match (b.kind, cfg!(debug_assertions)) {
                 (Kind::Servo, true) => "The web browser engine isn't built yet. Run ./scripts/build-browser.sh, then reopen the browser.",
                 (Kind::Chromium, true) => "The Chromium engine isn't built yet. Run ./scripts/build-chromium.sh, then reopen Chromium.",
+                (Kind::Oort, true) => "Oort runs in RAD's Chromium engine, which isn't built yet. Run ./scripts/build-chromium.sh, then reopen Oort.",
                 (Kind::Tor, true) => "The Tor engine isn't built yet. Run ./scripts/build-tor-browser.sh, then reopen Tor.",
                 (Kind::Rymwin, true) => "RYMWIN isn't built yet. Run ./scripts/build-rymnet.sh, then reopen RYMWIN.",
                 _ => "This copy of RAD was built without this browser engine. Rebuild it with ./scripts/build-app.sh and reinstall.",
@@ -335,10 +344,12 @@ fn spawn(app: &AppHandle, b: &Browser, w: u32, h: u32, scale: f64, url: &str) ->
     } else {
         cmd.args(["--url", url]);
     }
-    if b.kind == Kind::Chromium {
+    if matches!(b.kind, Kind::Chromium | Kind::Oort) {
         // Sign-ins and site settings persist here (private to this user); downloads go to
-        // the user's Downloads folder.
-        let profile = app.path().app_data_dir().map(|d| d.join("chromium-profile")).map_err(|e| CmdError::new("browser", e.to_string()))?;
+        // the user's Downloads folder. Oort keeps a profile of its own (one profile can only
+        // be open in one engine at a time).
+        let folder = if b.kind == Kind::Oort { PathBuf::from("oort").join("chromium-profile") } else { PathBuf::from("chromium-profile") };
+        let profile = app.path().app_data_dir().map(|d| d.join(folder)).map_err(|e| CmdError::new("browser", e.to_string()))?;
         let downloads = app.path().download_dir().unwrap_or_else(|_| profile.join("Downloads"));
         cmd.arg("--profile").arg(&profile).arg("--downloads").arg(&downloads);
         // RAD's VPN: every request (and name lookup) through its SOCKS5 proxy.
@@ -450,6 +461,7 @@ fn read_engine(
 pub fn vpn_changed(app: &AppHandle) {
     let bs = app.state::<Browsers>();
     bs.chromium.stop();
+    bs.oort.stop();
 }
 
 // ------------------------------------------------------------------ commands
@@ -475,6 +487,7 @@ pub fn browser_start(app: AppHandle, bs: State<'_, Browsers>, engine: Option<Str
     }
     let home = match b.kind {
         Kind::Tor => "https://check.torproject.org",
+        Kind::Oort => crate::oort::HOME,
         _ => "https://rymtech.net",
     };
     spawn(&app, b, w, h, scale, url.as_deref().unwrap_or(home))?;

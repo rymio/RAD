@@ -4,7 +4,7 @@
   import { anchorLabel, debounce, docKind } from '../lib/util';
   import type { Citation } from '../lib/types';
   import DocIcon from './DocIcon.svelte';
-  import { Search, MessageSquare, SquarePen, Settings, Lock, StickyNote, Camera, Loader, CornerDownLeft, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, ScanFace, Activity, Bot, Palette, BookOpen, Crown, CircuitBoard, CloudDownload, NotebookPen, Sigma } from '@lucide/svelte';
+  import { Search, MessageSquare, SquarePen, Settings, Lock, StickyNote, Camera, Loader, CornerDownLeft, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, ScanFace, Activity, Bot, Palette, BookOpen, Crown, CircuitBoard, CloudDownload, NotebookPen, Sigma, LibraryBig, Rocket } from '@lucide/svelte';
   import { rad } from '../lib/api';
 
   type Item = { id: string; group: string; label: string; sub?: string; icon?: any; color?: string; doc?: Citation; run: () => void };
@@ -61,7 +61,9 @@
       { id: 'a-pycolab', group: 'Actions', label: 'Python Colab (notebooks: maths, ML, LLMs)', icon: NotebookPen, run: () => store.navigate({ kind: 'colab', lang: 'python' }) },
       { id: 'a-rscolab', group: 'Actions', label: 'Rust Colab (notebooks: maths, ML, LLMs)', icon: Sigma, run: () => store.navigate({ kind: 'colab', lang: 'rust' }) },
       { id: 'a-scraper', group: 'Actions', label: 'Scraper (save a website offline)', icon: CloudDownload, run: () => store.navigate({ kind: 'scraper' }) },
+      { id: 'a-oort', group: 'Actions', label: 'Oort (the space-fleet programming game, in Rust)', icon: Rocket, run: () => store.navigate({ kind: 'oort' }) },
       { id: 'a-chess', group: 'Actions', label: 'Chess (play with Gilgamesh)', icon: Crown, run: () => store.navigate({ kind: 'chess' }) },
+      { id: 'a-collections', group: 'Actions', label: 'Collections (your folders of PDFs, music and videos)', icon: LibraryBig, run: () => store.navigate({ kind: 'collections' }) },
       { id: 'a-books', group: 'Actions', label: 'Books (read your e-books)', icon: BookOpen, run: () => store.navigate({ kind: 'books' }) },
       { id: 'a-photocraft', group: 'Actions', label: 'PhotoCraft (draw and edit pictures)', icon: Palette, run: () => store.navigate({ kind: 'photocraft' }) },
       { id: 'a-web', group: 'Actions', label: 'Web Browser', icon: Globe, run: () => store.navigate({ kind: 'browser' }) },

@@ -3,6 +3,7 @@
 mod books;
 mod browser;
 mod chess;
+mod collections;
 mod colab;
 mod scraper;
 mod capture;
@@ -15,6 +16,7 @@ mod faceid;
 mod photocraft;
 mod media;
 mod monitor;
+mod oort;
 mod events;
 mod protocol;
 mod rymnet;
@@ -357,6 +359,8 @@ pub fn run() {
             app.manage(books::Books::default());
             app.manage(chess::Chess::default());
             app.manage(scraper::Scraper::default());
+            app.manage(collections::Collections::default());
+            app.manage(oort::Oort::default());
             app.manage(colab::Colab::default());
             app.manage(rymnet::Rymnet::default());
             app.manage(vpn::Vpn::default());
@@ -454,6 +458,18 @@ pub fn run() {
             books::books_update,
             books::books_delete,
             books::books_path,
+            collections::collections_list,
+            collections::collections_import,
+            collections::collections_files,
+            collections::collections_mkdir,
+            collections::collections_rename,
+            collections::collections_delete,
+            collections::collections_to_media,
+            collections::collections_path,
+            oort::oort_docs_status,
+            oort::oort_docs_download,
+            oort::oort_docs_search,
+            oort::oort_docs_scenario,
             chess::chess_status,
             chess::chess_think,
             chess::chess_stop,

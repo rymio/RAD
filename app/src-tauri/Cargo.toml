@@ -69,6 +69,9 @@ sherpa-onnx = "=1.13.8"
 # Gilgamesh knowing the owner's face (faceid.rs): SFace, run in pure Rust.
 tract-onnx = "0.23"
 zip = { version = "9", default-features = false, features = ["deflate"] }
+# Oort (oort.rs): the oort_api crate (a .crate is a gzipped tar) for its docs.
+flate2 = "1"
+tar = "0.4"
 
 [features]
 # The built-in llama.cpp engine on an NVIDIA GPU: scripts/build-linux.sh turns it on when it finds nvcc.

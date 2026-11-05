@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, type Snippet } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
   import { rad, RadError } from '../lib/api';
   import { store } from '../lib/state.svelte';
@@ -10,10 +10,12 @@
   import { activity } from '../lib/gilgamesh/observe.svelte';
   import { ArrowLeft, ArrowRight, RotateCw, Plus, X, Lock, Globe, Camera, FileDown, Loader, MessageSquare, ZoomIn, ZoomOut, Home, TriangleAlert, Star, Download, FolderOpen, FolderInput, Check } from '@lucide/svelte';
 
-  /** Which engine renders this view: Servo ("Web Browser"), Chromium or Tor. */
-  let { kind = 'servo' }: { kind?: BrowserEngine } = $props();
-  const HOME = $derived(kind === 'tor' ? 'https://check.torproject.org' : 'https://rymtech.net');
-  const engineName = $derived(kind === 'chromium' ? 'Chromium' : kind === 'tor' ? 'Tor' : 'browser');
+  /** Which engine renders this view: Servo ("Web Browser"), Chromium, Tor, or Oort's own
+   *  Chromium. `aside` replaces the AI chat with a panel beside the page (Oort's Gilgamesh);
+   *  `onpage` hears about the open tab; `goto` asks for a page (when it changes). */
+  let { kind = 'servo', home, aside, onpage, goto }: { kind?: BrowserEngine; home?: string; aside?: Snippet; onpage?: (t: BrowserTab | null, running: boolean) => void; goto?: string | null } = $props();
+  const HOME = $derived(home ?? (kind === 'tor' ? 'https://check.torproject.org' : 'https://rymtech.net'));
+  const engineName = $derived(kind === 'chromium' ? 'Chromium' : kind === 'tor' ? 'Tor' : kind === 'oort' ? 'Oort' : 'browser');
 
   let viewport: HTMLDivElement | undefined = $state();
   let canvas: HTMLCanvasElement | undefined = $state();
@@ -41,6 +43,16 @@
   let downloads = $state<{ id: number; name: string; path: string; received: number; total: number; state: string; vault?: 'saving' | 'saved' }[]>([]);
 
   const tab = $derived(tabs.find((t) => t.id === active) ?? null);
+  $effect(() => onpage?.(tab, engine === 'running'));
+  // A page asked for from outside (Gilgamesh opening a scenario).
+  let wentTo: string | null = null;
+  $effect(() => {
+    const u = goto;
+    if (u && u !== wentTo && engine === 'running') {
+      wentTo = u;
+      go(u);
+    }
+  });
   // Gilgamesh sees the page that's open.
   $effect(() => {
     const route = kind === 'servo' ? 'browser' : kind;
@@ -206,7 +218,7 @@
     // Both engines share these events; each view follows its own.
     listen<string>('browser-frame', (e) => e.payload === kind && pull()).then((u) => un.push(u));
     listen<any>('browser-event', (e) => (e.payload.engine ?? 'servo') === kind && onEvent(e.payload)).then((u) => un.push(u));
-    if (kind === 'chromium')
+    if (kind === 'chromium' || kind === 'oort')
       listen('vpn-changed', () => {
         if (engine !== 'running' && engine !== 'stopped') return;
         const url = tab?.url || HOME;
@@ -473,10 +485,10 @@
     <button class="icon-btn" title="Save this page's text to your vault" disabled={!tab || !!saving} onclick={() => save('page')}>
       {#if saving === 'page'}<Loader size={16} class="spin" />{:else}<FileDown size={16} />{/if}
     </button>
-    <button class="icon-btn" class:active={chatOpen} title="Ask AI about this page" onclick={() => (chatOpen = !chatOpen)}><MessageSquare size={16} /></button>
+    <button class="icon-btn" class:active={chatOpen} title={aside ? 'Gilgamesh' : 'Ask AI about this page'} onclick={() => (chatOpen = !chatOpen)}><MessageSquare size={16} /></button>
   </div>
 
-  {#if store.bookmarks.length}
+  {#if store.bookmarks.length && !aside}
     <div class="favs">
       {#each store.bookmarks as b (b.url)}
         <button class="fav" title={b.url} onclick={() => go(b.url)}
@@ -501,6 +513,8 @@
     </div>
   {/if}
 
+  <div class="split">
+  <div class="col">
   <!-- Page -->
   <div class="viewport" bind:this={viewport}>
     {#if tab?.loading}<div class="progress"></div>{/if}
@@ -597,9 +611,14 @@
     </div>
   {/if}
 
-  {#if chatOpen}
+  {#if chatOpen && !aside}
     <BrowserChat page={tab} engine={kind} onlink={(href) => go(href)} />
   {/if}
+  </div>
+  {#if chatOpen && aside}
+    <div class="aside">{@render aside()}</div>
+  {/if}
+  </div>
 </div>
 
 <style>
@@ -619,6 +638,26 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+  .split {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+  }
+  .col {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .aside {
+    flex: none;
+    width: clamp(300px, 30vw, 440px);
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--border);
   }
   .tabs {
     flex: none;

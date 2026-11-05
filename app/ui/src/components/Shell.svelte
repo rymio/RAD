@@ -16,6 +16,8 @@
   import BotsView from './BotsView.svelte';
   import PhotoCraftView from './PhotoCraftView.svelte';
   import BooksView from './BooksView.svelte';
+  import CollectionsView from './CollectionsView.svelte';
+  import OortView from './OortView.svelte';
   import ChessView from './ChessView.svelte';
   import ScraperView from './ScraperView.svelte';
   import ColabView from './ColabView.svelte';
@@ -109,10 +111,12 @@
     getCurrentWebview()
       .onDragDropEvent((ev) => {
         const p = ev.payload;
-        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots', 'photocraft', 'mood', 'books', 'chess', 'z80lab', 'scraper', 'colab'].includes(store.route.kind) || (store.route.kind === 'books' && !books.openId);
+        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots', 'photocraft', 'mood', 'books', 'chess', 'z80lab', 'scraper', 'colab', 'collections', 'oort'].includes(store.route.kind) || (store.route.kind === 'books' && !books.openId);
         else if (p.type === 'leave') dragging = false;
         else if (p.type === 'drop') {
           dragging = false;
+          // Collections takes its own drops (onto the folder under the pointer).
+          if (store.route.kind === 'collections') return;
           // E-books dropped on the library go into Books (kept on this computer, not the vault).
           if (store.route.kind === 'books') {
             if (!books.openId) void books.import(p.paths.filter((x) => BOOK_EXTENSIONS.includes(x.split('.').pop()?.toLowerCase() ?? '')));
@@ -126,7 +130,7 @@
             if (docs.length) void colab.addToRag(docs);
             return;
           }
-          if (['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots', 'photocraft', 'mood', 'chess', 'z80lab', 'scraper', 'colab'].includes(store.route.kind)) return;
+          if (['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots', 'photocraft', 'mood', 'chess', 'z80lab', 'scraper', 'colab', 'collections', 'oort'].includes(store.route.kind)) return;
           uploadTo(p.paths);
         }
       })
@@ -190,6 +194,10 @@
       <PhotoCraftView />
     {:else if store.route.kind === 'books'}
       <BooksView />
+    {:else if store.route.kind === 'collections'}
+      <CollectionsView />
+    {:else if store.route.kind === 'oort'}
+      <OortView />
     {:else if store.route.kind === 'chromium'}
       <BrowserView kind="chromium" />
     {:else if store.route.kind === 'tor'}

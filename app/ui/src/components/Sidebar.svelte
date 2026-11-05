@@ -1,6 +1,7 @@
 <script lang="ts">
   import { store } from '../lib/state.svelte';
   import { musicEngine } from '../lib/media.svelte';
+  import { collections } from '../lib/collections.svelte';
   import { api } from '../lib/api';
   import { dayBucket, PROJECT_COLORS } from '../lib/util';
   import type { Chat, Route } from '../lib/types';
@@ -9,7 +10,7 @@
   import Modal from './Modal.svelte';
   import VpnToggle from './VpnToggle.svelte';
   import GilgameshDock from './GilgameshDock.svelte';
-  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, Cog, FileCode, Code, Database, Gamepad2, Joystick, Microscope, Keyboard, FlaskConical, Computer, ScanFace, ChevronRight, AppWindow, MonitorPlay, Wrench, Cpu, Activity, Bot, Palette, BookOpen, Crown, CircuitBoard, CloudDownload, NotebookPen, Sigma } from '@lucide/svelte';
+  import { SquarePen, Search, Plus, Settings, Lock, MoreHorizontal, Pin, PinOff, Trash2, Pencil, Loader, CloudOff, MessageSquare, FolderPlus, Archive, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, PanelLeftClose, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, Cog, FileCode, Code, Database, Gamepad2, Joystick, Microscope, Keyboard, FlaskConical, Computer, ScanFace, ChevronRight, AppWindow, MonitorPlay, Wrench, Cpu, Activity, Bot, Palette, BookOpen, Crown, CircuitBoard, CloudDownload, NotebookPen, Sigma, LibraryBig, Rocket } from '@lucide/svelte';
   import type { Component } from 'svelte';
 
   let newProjectOpen = $state(false);
@@ -30,6 +31,7 @@
     { label: 'Gilgamesh', icon: ScanFace, route: { kind: 'gilgamesh' } },
     { label: 'Terminal', icon: SquareTerminal, route: { kind: 'terminal' } },
     { label: 'Files', icon: FolderOpen, route: { kind: 'files' } },
+    { label: 'Collections', icon: LibraryBig, route: { kind: 'collections' } },
     { label: 'Calendar', icon: CalendarDays, route: { kind: 'calendar' } },
     { label: 'Email', icon: Mail, route: { kind: 'email' } },
     { label: 'Web Monitoring', icon: Activity, route: { kind: 'monitor' } },
@@ -66,6 +68,7 @@
         { label: 'SideX', icon: Code, route: { kind: 'sidex' } },
         { label: 'Games', icon: Gamepad2, route: { kind: 'games' } },
         { label: 'Chess', icon: Crown, route: { kind: 'chess' } },
+        { label: 'Oort', icon: Rocket, route: { kind: 'oort' } },
         { label: 'Z80 Lab', icon: CircuitBoard, route: { kind: 'z80lab' } },
         { label: 'Rust Colab', icon: Sigma, route: { kind: 'colab', lang: 'rust' } },
         { label: 'Python Colab', icon: NotebookPen, route: { kind: 'colab', lang: 'python' } },
@@ -187,7 +190,7 @@
     {#snippet view(v: View, sub = false)}
       <button class="item web" class:sub-item={sub} class:active={isActive(v)} onclick={() => store.navigate(v.route)}>
         <v.icon size={15} /> <span class="spacer">{v.label}</span>
-        {#if v.route.kind === 'music' && musicEngine.status.state === 'playing'}<span class="playing" title="Playing"><i></i><i></i><i></i></span>{/if}
+        {#if (v.route.kind === 'music' && musicEngine.status.state === 'playing') || (v.route.kind === 'collections' && collections.playing && !collections.paused)}<span class="playing" title="Playing"><i></i><i></i><i></i></span>{/if}
       </button>
     {/snippet}
     {#each MAIN as v}{@render view(v)}{/each}

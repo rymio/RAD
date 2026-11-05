@@ -1,4 +1,4 @@
-RAD by Robert Rymarczyk — your private, encrypted second brain
+RAD by Robert Rymarczyk — your private, encrypted second brain and friend
 
 Licence MIT
 
@@ -218,6 +218,17 @@ How it works (`app/src-tauri/src/photocraft.rs`, `app/ui/src/lib/photocraft.svel
 
 How it works: `crates/rad-ingest/src/book.rs` opens the formats (EPUB's package and table of contents; Mobipocket/KF8 with PalmDOC and HUFF/CDIC decompression; FictionBook). `app/src-tauri/src/books.rs` keeps the library, and `app/ui/src/lib/books.svelte.ts` reads aloud and gives Gilgamesh the page. Test with real books: `RAD_BOOKS=/folder/of/books cargo test -p rad-ingest real_books -- --ignored --nocapture`.
 
+## Collections (one place for folders of PDFs, music and videos)
+
+**Collections** (sidebar, under Files) is one folder on this computer for everything you drop on RAD: whole folders or single files, PDF, MP3, FLAC, M4A and MP4.
+
+- **Drop and go.** Drop folders or files on the Collections view (or use **Add folder** / **Add files**). They're copied to RAD's own folder (`collections/` in the app data folder) and keep their subfolders. Other file types in a dropped folder are left out. Drop onto a folder's row to put things inside it. **New folder**, **Rename** and **Delete** work as you'd expect.
+- **Open, watch, listen.** PDFs open in the reader, videos play in the view, and music plays in the bar at the bottom: the rest of the folder queues after it (**Listen to all** on a folder plays everything in it). Music keeps playing while you use other parts of RAD, and the Music player pauses so only one thing plays at a time. If a file won't play in the window, **Play in the Music/Video player** hands it to libVLC.
+- **Move to Media.** Moves a file, a folder, or a selection on to Media: PDFs to **Books**, music to the **Music** playlist, videos to the **Video** playlist. Music and videos move into `media/music` and `media/video` in the app data folder and keep the folder they were in.
+- **Add to RAG.** Puts a PDF into the vault's **Collections** project, so Gilgamesh and every chat can search it. Gilgamesh also sees which folder you have open and what's playing.
+
+How it works: `app/src-tauri/src/collections.rs` keeps the folder tree and serves files at `rad://localhost/collections/<path>`, with byte ranges so you can seek in players. `app/ui/src/lib/collections.svelte.ts` holds the view's state and the audio player. Tests: `cargo test -p rad-app --lib collections`.
+
 ## Chess (play Gilgamesh)
 
 **Chess** (sidebar → Development, under Games) is a game of chess with Gilgamesh, with him to talk to while you play.
@@ -228,6 +239,16 @@ How it works: `crates/rad-ingest/src/book.rs` opens the formats (EPUB's package 
 - **Talking.** The chat beside the board is one of Gilgamesh's conversations, about this game (kept and recapped like the rest, and in his own view too). Speak or type. **Why that move?**, **How am I doing?** and **Hint** (the hint is shown as a green arrow) are one click. He says a word at the key moments: an opening, a capture, a mistake, the end. Choose **Chatty** or **Only when asked** instead. He can also act on the board: "new game, I'll be black", "take that back", "show me the knight move", "play harder next time" (`[chess: …]`).
 
 How it works: the rules, SAN and PGN are [chess.js](https://github.com/jhlywa/chess.js). His moves come from [RustChess](https://github.com/codyjk/RustChess)'s alpha-beta search and opening book, in a small engine process (`chess/rad-chess`). It scores every legal move with the same search and returns the move with the scores, the opening and the expected line as JSON. RustChess's scores favour whichever side moves last in the search, so RAD only uses even depths. That way every score in a game leans the same way, and comparing them is fair. `app/src-tauri/src/chess.rs` runs the engine, and `app/ui/src/lib/chess.svelte.ts` keeps the games and tells Gilgamesh about them. Build the engine with `./scripts/build-chess.sh` (`./scripts/build-app.sh` bundles it). RustChess is fetched from GitHub at a pinned commit, not copied into RAD.
+
+## Oort (the space-fleet programming game, with Gilgamesh)
+
+**Oort** (sidebar → Development) is [oort.rs](https://oort.rs), a game where you write Rust to fly a fleet of spaceships, with Gilgamesh beside it as your tutor.
+
+- **The game** runs in RAD's Chromium engine, in a process and profile of its own, so your Oort sign-in is separate from the Chromium view. Oort compiles your code on its own server, so playing needs the internet.
+- **The docs.** **Download** (at the top of the chat) fetches the Oort docs onto this computer (`oort/docs/` in the app data folder): the `oort_api` crate's source from crates.io, at the version the game runs (its doc comments are the API reference on docs.rs), the tutorials and scenarios from the game's repository, and the wiki. They're turned into Markdown and added to the vault's **Oort** project for RAG, so every chat can use them. Gilgamesh also searches them on this computer for each question, so they work offline too. The tutorials' sample solutions stay out of the vault. Gilgamesh only uses them when you ask for a hint or the solution. ↻ downloads them again when the game updates.
+- **Gilgamesh.** He sees the scenario, the code in the game's editor and the compiler's errors. Each Rust block in his answers has **Put in editor** and **▶ Run**. You can also say "put that in and run it" (`[oort: apply]`), "run it" or "open the radar tutorial". Quick questions: **Why doesn't it compile?**, **What's the goal?**, **A hint**, **Explain my code**. There's one conversation per scenario.
+
+How it works: `app/src-tauri/src/oort.rs` downloads and searches the docs, and `browser.rs` runs the `oort` engine. `app/ui/src/lib/oort.svelte.ts` reads and writes Oort's Monaco editor with a small script in the page, and builds what Gilgamesh sees. Oort is GPL-3.0 (© Rich Lane): none of it ships with RAD, and it's fetched on your computer when you ask. Tests: `cargo test -p rad-app --lib oort`. To test against the real sites, run `cargo test -p rad-app --lib oort::tests::real -- --ignored --nocapture`.
 
 ## Z80 Lab (build a Z80 computer)
 
@@ -242,20 +263,6 @@ How it works: the rules, SAN and PGN are [chess.js](https://github.com/jhlywa/ch
 - **Gilgamesh.** The chat under the board is one of his conversations, about this circuit. He sees the parts, every net, the GAL equations, the problems, the registers and the current line, the last bus cycle, the terminal and the program. Ask why it doesn't work, what a pin is for, or what the CPU is doing now. He can also build and run it: "add a 74HC138", "wire U1 CLK to QG1 OUT", "connect U1 and U5", "slow the clock to 5 Hz and run" (`[circuit: …]`).
 
 How it works: `app/ui/src/lib/z80lab/sim.ts` joins wired pins into nets. Each chip drives its outputs from its inputs and looks again only when a net it's on changes. The CPU core is [z80-emulator](https://www.npmjs.com/package/z80-emulator), and each memory and I/O access it makes becomes a bus cycle on your wires. For speed, the wiring is also compiled into a map of which chip answers each address, through which data wires. That map is used only where it gives exactly what the wires would, and a test checks it on a deliberately miswired board. `app/src-tauri/src/z80lab.rs` assembles the program, the parts and pinouts are in `app/ui/src/lib/z80lab/parts.ts`, and circuits are kept in the encrypted Games database. The assembler is the Spectrum projects' sjasmplus (`./scripts/build-zx-tools.sh`).
-
-## Rust Colab and Python Colab (notebooks for maths, ML and LLMs)
-
-**Rust Colab** and **Python Colab** (sidebar → Development) are notebooks like Google Colab or Jupyter: code cells that share their variables, with their output, pictures and errors under each one. They run on this computer, with Gilgamesh beside them as a tutor. They're made for experimenting with and learning maths, machine learning and LLMs.
-
-- **Cells.** Code cells and text cells (Markdown with maths: `$…$` and `$$…$$` are typeset by KaTeX). <kbd>⇧↩</kbd> runs a cell and moves on, <kbd>⌘↩</kbd> runs it in place. A cell's last value is shown. Python shows matplotlib figures, pandas tables and anything with a rich display (`display(x)`); Rust shows `Debug` values and charts drawn with plotters. **Run all**, **Stop** (interrupts the running cell) and **Restart** work as in Jupyter. An error stops the cells queued after it, and the line it points at is marked. The left panel lists the notebooks and the variables in memory.
-- **Python.** Colab makes its own Python environment from the Python 3 on this computer. `%pip install name` adds a package, `!command` runs a shell command, and a cell ending in `;` shows no value. The working folder (**Data folder**) is where notebooks read and save data.
-- **Rust.** Cells are compiled and run one at a time by [evcxr](https://github.com/evcxr/evcxr), so variables, functions and types carry on from cell to cell. `:dep ndarray = "0.17"` adds a crate. The first cell takes a few seconds to build, and so does the first use of a crate (candle about half a minute); after that, cells run quickly. Compile errors point at the line in the cell. **Stop** ends the cell; the variables are lost, but functions, types and crates stay. Rust Colab needs Rust (rustup) on the computer.
-- **Offline (in transit).** Notebooks, kernels, packages and crates are all on this computer. **Packages & offline** downloads packs while you're online. For Python they are *Maths & data* (NumPy, SciPy, SymPy, pandas, matplotlib), *Machine learning* (scikit-learn, PyTorch) and *LLMs* (transformers, tokenizers, safetensors, huggingface_hub, tiktoken). For Rust they are *Maths* (ndarray, nalgebra, num, rand, statrs), *Machine learning* (candle, linfa, smartcore), *LLMs* (candle-transformers, tokenizers, safetensors, hf-hub) and *Everyday crates* (serde, itertools, rayon, csv, plotters). You can add others by name. Python packages are kept as local wheels as well as installed, so `%pip install` works offline for anything downloaded before. Rust crates go into Colab's own crate store, which offline builds use. Colab notices when it's offline (or set it by hand), and Gilgamesh knows not to suggest anything that needs the internet.
-- **Gilgamesh.** The chat beside the notebook is one of his conversations, about this notebook. He sees every cell, what it printed, its errors and the variables. Ask him to explain a cell or the maths behind it, why a cell fails (**Ask Gilgamesh why** on an error), or for an exercise. The code in his answers goes into the notebook with **＋ Cell** or **▶ Add & run**. He can also run cells, stop and restart (`[colab: …]`).
-- **Your books and papers (RAG).** Gilgamesh searches your vault here as in any chat, so the PDFs, books and docs you learn from become part of what he knows, offline too. **Add to RAG** (or dropping a PDF on Colab) puts them in the vault's *Colab Library* project. The passages he used are listed under his answer.
-- **Notebooks.** Start from a short lesson (linear algebra, gradient descent, a neural network in PyTorch, attention step by step, ndarray, plotters, candle) or a blank notebook. They're saved as Jupyter `.ipynb` files, so notebooks from Google Colab or Jupyter open here (**Open**, or drop them on Colab) and these open there.
-
-How it works: `app/src-tauri/src/colab.rs` keeps the notebooks, runs one kernel process per notebook and streams its output to `app/ui/src/lib/colab.svelte.ts`, which also tells Gilgamesh about the notebook. The Python kernel is `app/src-tauri/src/colab_kernel.py`, which runs in Colab's venv. The Rust kernel is `colab/rad-rust-kernel`, evcxr behind JSON lines, with its own Cargo workspace; build it with `./scripts/build-colab.sh` (`./scripts/build-app.sh` bundles it). Everything is in `colab/` in the app data folder: `notebooks/`, `files/`, `python/venv` and `python/wheels`, and `rust/cargo` (the crate store) and `rust/build` (each notebook's compiled crates). `cargo test -p rad-app colab` runs both kernels through the backend.
 
 ## AI API server (share your models)
 
@@ -411,7 +418,6 @@ app/ui              Svelte 5 interface
 browser/rad-browser web browser engine: Servo rendering offscreen, driven by the app (its own Cargo workspace)
 browser/rad-tor-browser the Tor browser engine: the same Servo engine with an embedded Arti (Tor) HTTP CONNECT proxy (its own Cargo workspace)
 chess/rad-chess     the chess engine Gilgamesh plays with: RustChess behind a JSON request (its own Cargo workspace; scripts/build-chess.sh)
-colab/rad-rust-kernel the Rust Colab kernel: evcxr behind JSON lines (its own Cargo workspace; scripts/build-colab.sh)
 rymnet/             Rymnet: peer network, rymwin desktop (embedded via --embed), rymsh, rym CLI, rymnetd daemon (its own Cargo workspace); docs/ has the guides
 tts/                text-to-speech engine build (mio-tts-cpp, fetched and built by scripts/build-tts.sh)
 sandbox/launcher    Linux sandbox launcher (libkrun); scripts/build-sandbox.sh builds it with libkrun and gvproxy
