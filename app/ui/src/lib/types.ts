@@ -176,6 +176,8 @@ export type Route =
   | { kind: 'books' }
   | { kind: 'chess' }
   | { kind: 'scraper' }
+  | { kind: 'radio' }
+  | { kind: 'coach' }
   | { kind: 'colab'; lang: 'python' | 'rust' }
   | { kind: 'z80lab' }
   | { kind: 'oort' }

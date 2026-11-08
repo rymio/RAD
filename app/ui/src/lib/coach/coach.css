@@ -1,0 +1,182 @@
+/* Coach (Aussie Accent Coach) — its own look inside RAD, scoped to .coach-app.
+   Two voices carry the colour story: harbour blue is the Australian reference,
+   wattle gold is you. Everything else stays quiet sage and ink.
+   Light or dark follows RAD's theme (data-theme on <html>). Sizes are the standalone app's
+   (it set the root to 15px; RAD's is 16px, so they're in px here). */
+
+.coach-app {
+  --paper: #eef1ec;
+  --paper-raised: #f7f9f5;
+  --rail: #e3e8e1;
+  --ink: #1d2a2b;
+  --ink-soft: #55635f;
+  --rule: #cdd6cf;
+  --reference: #3b7896;
+  --reference-wash: rgba(59, 120, 150, 0.22);
+  --you: #c98b10;
+  --you-bright: #e2a82a;
+  --close: #3c8a66;
+  --off: #b4553d;
+  --focus: #3b7896;
+
+  --serif: "Literata Variable", "Iowan Old Style", Georgia, serif;
+  --sans: "Hanken Grotesk Variable", -apple-system, "Helvetica Neue", sans-serif;
+
+  /* Type scale (ratio 1.25 from 15px) */
+  --t-small: 12px;
+  --t-body: 14.06px;
+  --t-lead: 17.55px;
+  --t-h: 21.9px;
+  --t-sentence: clamp(28.5px, 3.1vw, 39.75px);
+
+  --radius-control: 999px;
+  --radius-panel: 14px;
+
+  color-scheme: light;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: normal;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+:root[data-theme="dark"] .coach-app,
+:root[data-theme="oled"] .coach-app {
+  --paper: #182221;
+  --paper-raised: #1e2a29;
+  --rail: #142019;
+  --ink: #e7ece6;
+  --ink-soft: #9fb0aa;
+  --rule: #2f3e3b;
+  --reference: #7bb4d1;
+  --reference-wash: rgba(123, 180, 209, 0.3);
+  --you: #e6b13c;
+  --you-bright: #f2c55b;
+  --close: #6fbf96;
+  --off: #e08a72;
+  --focus: #7bb4d1;
+  color-scheme: dark;
+}
+
+:root[data-theme="oled"] .coach-app {
+  --paper: #050807;
+  --paper-raised: #0f1615;
+  --rail: #000000;
+}
+
+.coach-app *,
+.coach-app *::before,
+.coach-app *::after {
+  box-sizing: border-box;
+}
+
+.coach-app button,
+.coach-app input,
+.coach-app select,
+.coach-app textarea {
+  font: inherit;
+  color: inherit;
+}
+
+.coach-app button {
+  cursor: pointer;
+}
+
+.coach-app :focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.coach-app .cbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7.5px;
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+  border-radius: var(--radius-control);
+  padding: 7.5px 15.75px;
+  font-weight: 560;
+  transition: background 120ms, border-color 120ms;
+}
+
+.coach-app .cbtn:hover:not(:disabled) {
+  border-color: var(--ink-soft);
+}
+
+.coach-app .cbtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.coach-app .cbtn.quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-soft);
+  padding-inline: 9px;
+}
+
+.coach-app .cbtn.quiet:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: transparent;
+}
+
+.coach-app kbd {
+  font-family: var(--sans);
+  font-size: 10.8px;
+  color: var(--ink-soft);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: 0 4.8px;
+  line-height: 1.4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coach-app *,
+  .coach-app *::before,
+  .coach-app *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* Record button, shared by sentence and whole-page reading. */
+.coach-app .record {
+  display: inline-flex;
+  align-items: center;
+  gap: 9.75px;
+  border: 0;
+  border-radius: var(--radius-control);
+  padding: 12.75px 22.5px;
+  font-size: var(--t-lead);
+  font-weight: 650;
+  background: var(--you);
+  color: #1d1a10;
+  margin-right: 7.5px;
+}
+.coach-app .record kbd {
+  color: #1d1a10;
+  border-color: rgba(29, 26, 16, 0.3);
+}
+.coach-app .record:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.coach-app .record .cdot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #1d1a10;
+}
+.coach-app .record.on .cdot {
+  animation: coach-pulse 1s ease-in-out infinite;
+}
+@keyframes coach-pulse {
+  50% {
+    transform: scale(0.55);
+    opacity: 0.6;
+  }
+}

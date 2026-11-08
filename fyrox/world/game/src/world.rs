@@ -160,8 +160,8 @@ pub fn fresh() -> Scene {
     let ground_root = PivotBuilder::new(BaseBuilder::new().with_name("Ground")).build(g);
     let layers = [
         ground(g, "Grass", "ground", &art::grass(), 0.0, 0.0, W, H, 12.0),
-        ground(g, "Sand (west bank)", "ground", &art::sand(), RIVER.0 - 1.0, 0.0, RIVER.0, H, 11.95),
-        ground(g, "Sand (east bank)", "ground", &art::sand(), RIVER.1, 0.0, RIVER.1 + 1.0, H, 11.95),
+        ground(g, "Sand (east bank)", "ground", &art::sand(), RIVER.0 - 1.0, 0.0, RIVER.0, H, 11.95),
+        ground(g, "Sand (west bank)", "ground", &art::sand(), RIVER.1, 0.0, RIVER.1 + 1.0, H, 11.95),
         ground(g, "River", "water", &art::water(), RIVER.0, 0.0, RIVER.1, H, 11.9),
         ground(g, "Bridge", "bridge", &art::bridge(), RIVER.0 - 0.5, BRIDGE.0, RIVER.1 + 0.5, BRIDGE.1, 11.85),
         ground(g, "Path to the bridge", "path", &art::path(), 9.0, 14.6, RIVER.0 - 0.5, 15.9, 11.88),
@@ -204,5 +204,23 @@ mod tests {
         assert_eq!(tagged("thing:"), START.len());
         assert_eq!(tagged("water"), 1);
         assert_eq!(tagged("character:"), 2);
+    }
+
+    /// Fyrox's 2D camera looks along +z, so +x is on the LEFT of the screen (and Rectangle maps
+    /// the left of a texture to +x). The arrow keys and what Gilgamesh is told depend on it.
+    #[test]
+    fn x_grows_to_the_left_of_the_screen() {
+        use fyrox::scene::camera::Camera;
+        let mut s = fresh();
+        s.graph.update_hierarchical_data();
+        let (h, _) = s.graph.pair_iter().find(|(_, n)| n.cast::<Camera>().is_some()).unwrap();
+        s.graph[h].cast_mut::<Camera>().unwrap().calculate_matrices(fyrox::core::algebra::Vector2::new(800.0, 600.0));
+        let p = s.graph[h].global_position();
+        let cam = s.graph[h].cast::<Camera>().unwrap();
+        let x_on_screen = |x: f32| {
+            let v = cam.view_projection_matrix() * fyrox::core::algebra::Vector4::new(x, p.y, 10.0, 1.0);
+            v.x / v.w
+        };
+        assert!(x_on_screen(p.x + 1.0) < x_on_screen(p.x));
     }
 }

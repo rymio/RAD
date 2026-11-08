@@ -27,3 +27,4 @@ node_modules
 /fyrox/world/target
 /fyrox/world/*.log
 /fyrox/world/data/
+/coach/target

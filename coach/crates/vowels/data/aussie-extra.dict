@@ -1,0 +1,20 @@
+;; Australian words missing from CMUdict, in CMUdict notation. The R in words like
+;; "arvo" and "barbie" marks where a rhotic speaker would say one; Australians do not.
+g'day G AH0 D EY1
+gday G AH0 D EY1
+arvo AA1 R V OW0
+avo AE1 V OW0
+barbie B AA1 R B IY0
+bogan B OW1 G AH0 N
+brekkie B R EH1 K IY0
+brekky B R EH1 K IY0
+esky EH1 S K IY0
+footy F UH1 T IY0
+maccas M AE1 K AH0 Z
+mozzie M AA1 Z IY0
+reckon R EH1 K AH0 N
+servo S ER1 V OW0
+smoko S M OW1 K OW0
+sunnies S AH1 N IY0 Z
+thongs TH AA1 NG Z
+ute Y UW1 T

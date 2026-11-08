@@ -1,0 +1,18 @@
+[package]
+name = "phonetics"
+description = "Phoneme posteriors (wav2vec2 via ONNX Runtime), CTC alignment, goodness-of-pronunciation and word scores"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+# wav2vec2 inference through ONNX Runtime, loaded at runtime (libonnxruntime.dylib).
+onnx = ["dep:ort"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+ort = { version = "=2.0.0-rc.15", optional = true, default-features = false, features = ["std", "load-dynamic", "api-22"] }

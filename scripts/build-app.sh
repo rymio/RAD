@@ -9,6 +9,7 @@
 #   - ZX Spectrum dev tools (sjasmplus)     → scripts/build-zx-tools.sh
 #   - Commodore 64 dev tools (64tass)       → scripts/build-c64-tools.sh
 #   - the chess engine (RustChess)          → scripts/build-chess.sh   (Games → Chess)
+#   - Coach's Whisper helper (whisper.cpp) → scripts/build-coach.sh   (Media → Coach)
 #   - the Rust Colab kernel (evcxr)         → scripts/build-colab.sh   (Development → Rust Colab)
 #   - Gilgamesh's world (Fyrox) + editor    → scripts/build-fyrox.sh   (Development → Fyrox)
 #   - the DOS engine (DOSBox Pure)          → scripts/build-dos.sh     (skip: RAD_NO_DOS=1)
@@ -33,6 +34,7 @@ triple="$(rustc -vV | sed -n 's/^host: //p')"
 ./scripts/build-zx-tools.sh || echo "warning: building without the ZX Spectrum assembler" >&2
 ./scripts/build-c64-tools.sh || echo "warning: building without the C64 assembler" >&2
 ./scripts/build-chess.sh "$triple" || echo "warning: building without the chess engine" >&2
+./scripts/build-coach.sh "$triple" || echo "warning: building Coach without Whisper (word timings, vowel feedback)" >&2
 ./scripts/build-colab.sh "$triple" || echo "warning: building without the Rust Colab kernel" >&2
 ./scripts/build-fyrox.sh "$triple" || echo "warning: building without Gilgamesh's world (Fyrox)" >&2
 [[ "${RAD_NO_DOS:-}" == 1 ]] || ./scripts/build-dos.sh || echo "warning: building without the DOS engine" >&2
@@ -40,7 +42,7 @@ triple="$(rustc -vV | sed -n 's/^host: //p')"
 
 # Bundle whichever engines were built: executables as sidecars, libraries into Frameworks.
 bins=(); libs=()
-for b in rad-browser rad-tor-browser mio-tts-server rad-sandbox gvproxy rad-chess rad-rust-kernel rad-world rad-world-editor; do
+for b in rad-browser rad-tor-browser mio-tts-server rad-sandbox gvproxy rad-chess rad-coach-asr rad-rust-kernel rad-world rad-world-editor; do
   [[ -f "app/src-tauri/binaries/$b-$triple" || -f "app/src-tauri/binaries/$b-$triple.exe" ]] && bins+=("\"binaries/$b\"")
 done
 for l in libkrun.1.dylib libkrunfw.5.dylib; do

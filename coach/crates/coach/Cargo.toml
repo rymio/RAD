@@ -1,0 +1,20 @@
+[package]
+name = "coach"
+description = "Turns analysis measurements into grounded, human-sounding coaching (local LLM + rule-based fallback)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+# Local LLM via llama.cpp. On macOS add `metal` for GPU acceleration.
+llama = ["dep:llama-cpp-2"]
+metal = ["llama", "llama-cpp-2/metal"]
+
+[dependencies]
+analysis.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+llama-cpp-2 = { version = "0.1.159", optional = true, default-features = false, features = ["common"] }

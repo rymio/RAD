@@ -41,6 +41,8 @@ import { chess } from '../chess.svelte';
 import { lab } from '../z80lab.svelte';
 import { scraper } from '../scraper.svelte';
 import { colab } from '../colab.svelte';
+import { radio } from '../radio.svelte';
+import { coach } from '../coach.svelte';
 import { oort, scenarioTitle } from '../oort.svelte';
 import { world } from '../world.svelte';
 import { fyrox } from '../fyrox.svelte';
@@ -72,6 +74,10 @@ export interface Conversation {
   oort?: string;
   /** Talking in his world (Development → Fyrox). */
   world?: boolean;
+  /** About the radio (Media → Radio). */
+  radio?: boolean;
+  /** About accent practice (Media → Coach). */
+  coach?: boolean;
 }
 
 /** One of Gilgamesh's faces: a prepared photo, kept under its own key in the vault. */
@@ -146,7 +152,9 @@ You can act for the owner by writing an action tag in your reply. It is carried 
 - [chess: new | white] starts a new game of chess with the owner, who plays white (or black, or random). [chess: undo] takes back the owner's last move and your answer to it. [chess: show | move] points at a move on the board with an arrow (Nf3, or e2 e4). [chess: hint] shows the owner the move your engine would play for them. [chess: level | beginner, easy, medium or hard] sets how well you play, from the next game.
 - [circuit: add | part] puts a part on the owner's Z80 Lab board (z80, rom, ram, sio, ctc, gal, 74hc138, 74hc273, oscillator, resistor, capacitor, led, button, terminal, power supply). [circuit: wire | U1.6 - QG1.5] wires two pins (by reference and pin number or name, e.g. U1 CLK). [circuit: connect | U1 - U5] wires all the pins of two parts that carry the same signal. [circuit: delete | U3] removes a part. [circuit: program | hello, blinky or timer] loads an example program. [circuit: clock | 5 Hz] slows the clock (or full speed). [circuit: run], [circuit: stop], [circuit: step] (one instruction) and [circuit: reset]. [circuit: power | on or off]. [circuit: new | easy or blank] starts a new board.
 - [scrape: https://site] saves a whole website on this computer for offline reading (Browsers → Scraper); [scrape: https://site | rag] also adds it to the owner's vault when it's done, so it becomes part of what you know (one project per site). Use the address the owner names, or the page they have open for "this site". [scrape: stop] stops it; [scrape: open | site] shows a saved site. Saving takes a while; say you've started it.
-- [colab: run] runs the selected cell of the owner's Rust or Python Colab notebook (Development → Rust Colab, Python Colab), [colab: run all] runs them all, [colab: stop] stops the running cell, [colab: restart] restarts the notebook's kernel. [colab: new | python or rust] starts a new notebook; [colab: open | title] opens one of their notebooks. Code you write for a notebook goes in a fenced block; the owner adds it as a cell with a click.
+- [colab: run] runs the selected cell of the owner's Rust or Python Colab notebook (Development → Rust Colab, Python Colab), [colab: run all] runs them all, [colab: stop] stops the running cell, [colab: restart] restarts the notebook's kernel. [colab: new | python or rust] starts a new notebook; [colab: open | title] opens one of their notebooks. Code you write for a notebook goes in a fenced block; [colab: add] puts it in a new cell, [colab: add and run] also runs it, [colab: fix] replaces the selected cell with it and runs it ([colab: fix | 3] for cell 3). You can use the notebook yourself: what you run is reported back to you. When the owner asks you to build or try something in Colab ("let's build a simple neural network"), do it there with them, as a tutor: work in small steps, one idea per cell (the data, the model, training, the results with a plot), each a fenced python block followed by its own [colab: add and run]; Python is the default (numpy, pandas, matplotlib, scikit-learn and PyTorch are installed), Rust when they say so. With no notebook open, the first [colab: add and run] starts a new one. Before each cell say in a sentence or two what it does and why; once you're told what came out, explain what happened in the code and what the numbers or the plot mean.
+- [radio: listen | 98.0] plays a frequency (MHz) on the owner's RTL-SDR radio (Media → Radio): FM broadcast, airband and the rest, FM or AM by band (add "| am", "| fm" or "| nfm" to choose); [radio: tune | 121.5] shows it on the waterfall without sound; [radio: mute]; [radio: scan | fm] sweeps a band (fm, airband, marine, 2m, 70cm, vhf, or "118-137") and lists what's transmitting; [radio: aircraft] starts the aircraft radar (ADS-B); [radio: watch | 433.92] watches a frequency for short transmissions and identifies them (remotes and sensors, LoRa / Meshtastic, drone RC and telemetry links; "| meshtastic", "| 868", "| 915", "| fpv" work too); [radio: packets] opens the packet analyser; [radio: off]. What it shows is under THE OWNER'S RADIO, below.
+- [coach: listen] plays the Australian reference reading of the sentence in Coach (Media → Coach, where the owner practises a General Australian accent by reading aloud); [coach: next], [coach: previous], [coach: sentence | 3]; [coach: hear] plays back their last reading; [coach: vowels] or [coach: melody] switches the graph; [coach: open | title] opens one of their texts. For new practice material, write the sentences in a fenced text block, one per line, then [coach: practise | short title]: it becomes a text in Coach (and opens Coach). What Coach measured is under THE OWNER'S ACCENT PRACTICE, below.
 - [oort: run] runs the code in the owner's Oort editor (Development → Oort, the space-fleet programming game); [oort: apply] puts the Rust code block of your answer into the editor and runs it; [oort: open | scenario] opens one of the game's scenarios (Tutorial 1: Guns … Fleet, Belt, Orbit). Code you write for Oort goes in a fenced rust block; the owner puts it in the editor with a click.
 - [build: what | near what | name] builds something in your world (Development → Fyrox): you walk there and build it. [world: go | place] walks you somewhere there, [world: remove | name] takes a thing away, [world: tablet | task; task] writes the owner's tasks on your clay tablet. Use them only while your world is open (YOUR WORLD, below).
 - [read: start] reads the book the owner has open aloud in your voice, from where they are; it carries on page after page and turns the pages itself. [read: stop] stops reading, [read: page] reads the page in front of them from its top, [read: next] or [read: previous] turns the page, [read: open | title] opens one of their books (THE OWNER'S BOOKS, below). The reading starts once you've finished speaking.
@@ -240,6 +248,10 @@ class Gilgamesh {
   oortGame = $state<{ id: string; title: string } | null>(null);
   /** The conversation going on is the one in his world. */
   worldTalk = $state(false);
+  /** The conversation going on is the one beside the radio. */
+  radioTalk = $state(false);
+  /** The conversation going on is the one beside Coach. */
+  coachTalk = $state(false);
 
   /** Every picture of him on screen. */
   head = new Heads();
@@ -298,6 +310,8 @@ class Gilgamesh {
     this.notebook = this.notebookOf(id);
     this.oortGame = this.oortOf(id);
     this.worldTalk = !!this.conversation(id)?.world;
+    this.radioTalk = !!this.conversation(id)?.radio;
+    this.coachTalk = !!this.conversation(id)?.coach;
     if (id) await this.loadTurns(id);
   }
 
@@ -312,6 +326,8 @@ class Gilgamesh {
     this.notebook = null;
     this.oortGame = null;
     this.worldTalk = false;
+    this.radioTalk = false;
+    this.coachTalk = false;
     this.loaded = false;
     this.avatar = null;
     this.turns = [];
@@ -440,6 +456,24 @@ class Gilgamesh {
     this.worldTalk = true;
   }
 
+  /** Goes back to the conversation beside the radio, or starts one. */
+  async discussRadio() {
+    if (this.radioTalk && this.settings.chatId) return;
+    const earlier = this.conversations.find((c) => c.radio);
+    if (earlier) return this.resume(earlier.id);
+    await this.newConversation();
+    this.radioTalk = true;
+  }
+
+  /** Goes back to the conversation beside Coach, or starts one. */
+  async discussCoach() {
+    if (this.coachTalk && this.settings.chatId) return;
+    const earlier = this.conversations.find((c) => c.coach);
+    if (earlier) return this.resume(earlier.id);
+    await this.newConversation();
+    this.coachTalk = true;
+  }
+
   /** Goes back to the conversation about an Oort scenario, or starts one. */
   async discussOort(scenario: string) {
     if (this.oortGame?.id === scenario && this.settings.chatId) return;
@@ -522,6 +556,8 @@ class Gilgamesh {
     this.notebook = null;
     this.oortGame = null;
     this.worldTalk = false;
+    this.radioTalk = false;
+    this.coachTalk = false;
     await this.saveSettings({ chatId: null });
     if (prev) void this.recap(prev);
     const next = this.settings.rotate && this.settings.faces.length > 1 ? this.nextFace() : null;
@@ -542,6 +578,8 @@ class Gilgamesh {
     this.notebook = this.notebookOf(id);
     this.oortGame = this.oortOf(id);
     this.worldTalk = !!this.conversation(id)?.world;
+    this.radioTalk = !!this.conversation(id)?.radio;
+    this.coachTalk = !!this.conversation(id)?.coach;
     // He wears the face he had in that conversation, if it's still there.
     const face = this.conversation(id)?.face;
     if (face && face !== this.settings.face && this.settings.faces.some((f) => f.id === face)) await this.useFace(face).catch(() => {});
@@ -561,6 +599,8 @@ class Gilgamesh {
       this.notebook = null;
       this.oortGame = null;
       this.worldTalk = false;
+      this.radioTalk = false;
+      this.coachTalk = false;
     }
     await api.del(`/v1/chats/${id}`).catch(() => {});
     await this.saveSettings({ chatId: this.settings.chatId === id ? null : this.settings.chatId, conversations: this.settings.conversations.filter((c) => c.id !== id) });
@@ -570,12 +610,12 @@ class Gilgamesh {
   private async chatId(firstWords: string): Promise<number> {
     const id = this.settings.chatId;
     if (id && this.conversation(id)) return id;
-    const topic = this.about?.title ?? this.book?.title ?? this.game?.title ?? this.circuit?.title ?? this.notebook?.title ?? this.oortGame?.title ?? (this.worldTalk ? 'his world' : undefined);
+    const topic = this.about?.title ?? this.book?.title ?? this.game?.title ?? this.circuit?.title ?? this.notebook?.title ?? this.oortGame?.title ?? (this.worldTalk ? 'his world' : undefined) ?? (this.radioTalk ? 'the radio' : undefined) ?? (this.coachTalk ? 'accent practice' : undefined);
     const title = topic ? `Gilgamesh: about ${topic.slice(0, 44)}` : `Gilgamesh: ${firstWords.replace(/\s+/g, ' ').slice(0, 50)}`;
     const c = await api.post<Chat>('/v1/chats', { title });
     store.reloadChats();
     const now = Date.now();
-    const list = [{ id: c.id, title, started: now, updated: now, summary: '', summarized: 0, face: this.settings.face ?? undefined, transcript: this.about?.id, book: this.book?.id, chess: this.game?.id, circuit: this.circuit?.id, notebook: this.notebook?.id, oort: this.oortGame?.id, world: this.worldTalk || undefined }, ...this.settings.conversations].slice(0, KEEP_CONVERSATIONS);
+    const list = [{ id: c.id, title, started: now, updated: now, summary: '', summarized: 0, face: this.settings.face ?? undefined, transcript: this.about?.id, book: this.book?.id, chess: this.game?.id, circuit: this.circuit?.id, notebook: this.notebook?.id, oort: this.oortGame?.id, world: this.worldTalk || undefined, radio: this.radioTalk || undefined, coach: this.coachTalk || undefined }, ...this.settings.conversations].slice(0, KEEP_CONVERSATIONS);
     await this.saveSettings({ chatId: c.id, conversations: list });
     return c.id;
   }
@@ -829,7 +869,7 @@ class Gilgamesh {
     // The transcript under discussion goes last, so a long one is what gets cut at the limit.
     // The page being read goes at the very end, after any transcript.
     // So does the chess game being played, with what his engine saw.
-    const reading = [books.describe(), chess.describe(), lab.describe(), scraper.describe(), colab.describe(), game, world.context(), docs].filter(Boolean).join('\n\n');
+    const reading = [books.describe(), chess.describe(), lab.describe(), scraper.describe(), colab.describe(), radio.describe(), coach.describe(), game, world.context(), docs].filter(Boolean).join('\n\n');
     context = `${PERSONA.replace('{FRIDAY}', nextFriday())}\n\n${context}\n${activity.describe()}\n\n${this.recaps()}${made ? `\n\n${made}` : ''}${topic ? `\n\n${topic}` : ''}${reading ? `\n\n${reading}` : ''}`;
     this.streaming = true;
     try {

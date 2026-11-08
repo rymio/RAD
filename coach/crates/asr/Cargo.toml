@@ -1,0 +1,19 @@
+[package]
+name = "asr"
+description = "Speech recognition: Whisper word timings, Silero VAD, and transcript-to-sentence word alignment"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+# whisper.cpp through whisper-rs (builds whisper.cpp from source with CMake).
+whisper = ["dep:whisper-rs"]
+metal = ["whisper", "whisper-rs/metal"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+whisper-rs = { version = "0.16", optional = true }

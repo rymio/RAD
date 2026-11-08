@@ -22,6 +22,8 @@
   import ChessView from './ChessView.svelte';
   import ScraperView from './ScraperView.svelte';
   import ColabView from './ColabView.svelte';
+  import RadioView from './RadioView.svelte';
+  import CoachView from './CoachView.svelte';
   import { colab } from '../lib/colab.svelte';
   import Z80LabView from './Z80LabView.svelte';
   import { books, BOOK_EXTENSIONS } from '../lib/books.svelte';
@@ -112,7 +114,7 @@
     getCurrentWebview()
       .onDragDropEvent((ev) => {
         const p = ev.payload;
-        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots', 'photocraft', 'mood', 'books', 'chess', 'z80lab', 'scraper', 'colab', 'collections', 'oort', 'fyrox'].includes(store.route.kind) || (store.route.kind === 'books' && !books.openId);
+        if (p.type === 'enter' || p.type === 'over') dragging = !['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots', 'photocraft', 'mood', 'books', 'chess', 'z80lab', 'scraper', 'colab', 'radio', 'coach', 'collections', 'oort', 'fyrox'].includes(store.route.kind) || (store.route.kind === 'books' && !books.openId);
         else if (p.type === 'leave') dragging = false;
         else if (p.type === 'drop') {
           dragging = false;
@@ -131,7 +133,7 @@
             if (docs.length) void colab.addToRag(docs);
             return;
           }
-          if (['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots', 'photocraft', 'mood', 'chess', 'z80lab', 'scraper', 'colab', 'collections', 'oort', 'fyrox'].includes(store.route.kind)) return;
+          if (['browser', 'chromium', 'tor', 'terminal', 'files', 'calendar', 'email', 'music', 'video', 'rymnet', 'rymwin', 'container', 'sidex', 'database', 'games', 'zx', 'zxlab', 'c64', 'c64lab', 'dos', 'gilgamesh', 'monitor', 'bots', 'photocraft', 'mood', 'chess', 'z80lab', 'scraper', 'colab', 'radio', 'coach', 'collections', 'oort', 'fyrox'].includes(store.route.kind)) return;
           uploadTo(p.paths);
         }
       })
@@ -243,6 +245,10 @@
       <ScraperView />
     {:else if store.route.kind === 'colab'}
       <ColabView lang={store.route.lang} />
+    {:else if store.route.kind === 'radio'}
+      <RadioView />
+    {:else if store.route.kind === 'coach'}
+      <CoachView />
     {:else if store.route.kind === 'z80lab'}
       <Z80LabView />
     {:else if store.route.kind === 'database'}

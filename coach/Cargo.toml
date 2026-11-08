@@ -1,0 +1,65 @@
+# Coach (Media → Coach): the Aussie accent engine, its own workspace (like chess/ and colab/).
+#
+# The engine crates have no Tauri dependency and test headless here (`cargo test` in this folder).
+# RAD links them into app/src-tauri by path; app/src-tauri/src/coach/ is the glue.
+#
+# Whisper (whisper.cpp, through whisper-rs) is NOT linked into RAD: it brings its own ggml, which
+# can't share a process with the llama.cpp RAD already links. It runs in `rad-coach-asr`, a small
+# helper process built from this workspace by scripts/build-coach.sh.
+[workspace]
+resolver = "2"
+members = [
+    "crates/analysis",
+    "crates/audio-io",
+    "crates/coach",
+    "crates/reference",
+    "crates/store",
+    "crates/models",
+    "crates/phonetics",
+    "crates/asr",
+    "crates/vowels",
+    "rad-coach-asr",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "UNLICENSED"
+authors = ["Rob, RYM Tech Systems"]
+rust-version = "1.80"
+
+[workspace.dependencies]
+analysis = { path = "crates/analysis" }
+audio-io = { path = "crates/audio-io" }
+coach = { path = "crates/coach" }
+reference = { path = "crates/reference" }
+store = { path = "crates/store" }
+models = { path = "crates/models" }
+phonetics = { path = "crates/phonetics" }
+asr = { path = "crates/asr" }
+vowels = { path = "crates/vowels" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+crossbeam-channel = "0.5"
+parking_lot = "0.12"
+
+[profile.dev.package."*"]
+# DSP is unusably slow unoptimised; keep dependencies fast in debug builds.
+opt-level = 2
+
+[profile.dev.package.analysis]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[profile.release.build-override]
+# Xcode 27's strip corrupts proc-macro dylibs when MACOSX_DEPLOYMENT_TARGET is set
+# (Tauri sets it), and dyld then rejects them: "mis-aligned LINKEDIT string pool".
+strip = "none"

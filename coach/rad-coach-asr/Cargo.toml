@@ -1,0 +1,20 @@
+[package]
+name = "rad-coach-asr"
+description = "Coach's speech recognition helper: Whisper word timings and Silero VAD (whisper.cpp) in their own process"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "rad-coach-asr"
+path = "src/main.rs"
+
+[features]
+default = []
+# Apple Silicon GPU for Whisper (scripts/build-coach.sh turns it on on macOS).
+metal = ["asr/metal"]
+
+[dependencies]
+asr = { workspace = true, features = ["whisper"] }
+serde_json.workspace = true

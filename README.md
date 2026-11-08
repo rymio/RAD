@@ -229,6 +229,81 @@ How it works: `crates/rad-ingest/src/book.rs` opens the formats (EPUB's package 
 
 How it works: `app/src-tauri/src/collections.rs` keeps the folder tree and serves files at `rad://localhost/collections/<path>`, with byte ranges so you can seek in players. `app/ui/src/lib/collections.svelte.ts` holds the view's state and the audio player. Tests: `cargo test -p rad-app --lib collections`.
 
+## Radio (RTL-SDR: waterfall, scanner, sub-GHz, aircraft radar)
+
+**Radio** (sidebar → Media) uses an RTL-SDR dongle (24–1766 MHz, ~2 MHz at a time). It needs the rtl-sdr tools (`brew install librtlsdr`, or radioconda). RAD drives the dongle through `rtl_tcp`, finding it on the PATH, in `~/radioconda/bin`, `/opt/homebrew/bin` or `/usr/local/bin`. The dongle does one thing at a time, so each tab puts it to its own use:
+
+- **Waterfall.** The spectrum and a scrolling waterfall around one frequency. Click a signal to tune, scroll to fine-tune, and **Listen**: WFM (FM broadcast), AM (airband, shortwave) or NFM (two-way radio), with volume, squelch, a signal meter and bookmarks.
+- **Scanner.** Sweeps a band (FM broadcast, airband, marine, 2 m, 70 cm, all VHF, everything) over and over and lists what transmits. Each frequency shows its band, width, strength over the noise and how often it was heard. FM stations and airband have a **Listen** button.
+- **Sub-GHz.** Watches ~2 MHz around 433.92, 315, 868, 915 or 923 MHz, a Meshtastic channel, or 1.2/1.3 GHz. Every short transmission is identified by its modulation:
+  - OOK (remotes, sensors, weather stations), with pulse timings and bits
+  - FSK, with baud rate and deviation
+  - LoRa chirps, with spreading factor and bandwidth, matched to the Meshtastic presets, LoRaWAN or ExpressLRS
+- **Drones & RC.** Flags what the dongle *can* hear of drones:
+  - frequency-hopping RC and telemetry links (ExpressLRS, Crossfire, SiK)
+  - ExpressLRS-style 500 kHz LoRa
+  - steady wideband 1.2/1.3 GHz signals (analog FPV video)
+
+  DJI and most consumer drones, and Remote ID, are on 2.4/5.8 GHz, beyond the dongle's range. LoRa is identified, not decoded.
+- **Aircraft.** A local radar from ADS-B on 1090 MHz. Each aircraft shows its callsign, country (from its address), altitude, speed, track, climb, squawk and trail; set the antenna's place for distances. Emergency squawks (7500/7600/7700) are flagged, and Gilgamesh says so.
+- **Packets.** Every Mode S frame, Wireshark-style: a colour-coded list with display filters (`df==17 && kind==position`, `icao==4840D6`, `signal>-20`), each field with its bits, and a hex and bit dump. Save as AVR (`*HEX;`, what dump1090 tools read) or JSON.
+- **Gilgamesh** is beside it and sees all of this: what's playing, what the scanner found, the transmissions, the aircraft, and the packet you selected. He can also work the radio: "play 98.0 FM", "scan the airband", "watch for Meshtastic", "show me the aircraft" (`[radio: …]`).
+
+How it works: `crates/rad-sdr` does the signal processing in pure Rust (rustfft):
+- `dsp.rs`: filters, the waterfall FFT, and FM/AM demodulation
+- `scan.rs`: the sweep
+- `burst.rs`: detecting and classifying sub-GHz bursts
+- `adsb.rs`: Mode S demodulation, parity with one-bit correction, and CPR positions
+
+`app/src-tauri/src/radio.rs` runs `rtl_tcp`, owns the dongle in one thread, plays the sound through cpal and streams to `app/ui/src/lib/radio.svelte.ts`.
+
+Tests:
+- `cargo test -p rad-sdr`
+- with a recording: `RAD_MODES_FILE=modes1.bin cargo test -p rad-sdr recording -- --ignored --nocapture`
+- with the dongle plugged in: `cargo test -p rad-app --lib radio -- --ignored --nocapture`
+
+## Coach (practise an Aussie accent)
+
+**Coach** (sidebar → Media) is the Aussie Accent Coach app, built into RAD. Read a sentence aloud and Coach compares your reading with an Australian reference reading. It then gives short feedback that comes only from what it measured. Everything from the standalone app is here:
+
+- **Live melody.** Your pitch is drawn over the reference's melody as you read, with a live pace bar.
+- **Feedback on each reading:**
+  - tune match and pitch range
+  - pace, including where you dragged or rushed
+  - pauses
+  - a rising or falling ending
+  - skipped words (Whisper)
+  - per-word grades from wav2vec2 phonemes; click a word to hear reference, you, reference
+- **Australian vowels.** After a one-time voice calibration (eight short sentences), Coach gives named feedback on the vowels in day, my, no, now and who, and on the non-rhotic R. It also has a vowel chart.
+- **Whole page.** Read a pasted page in one go, then play it back with each word lit as you said it. PDFs can be imported page by page.
+- **References:**
+  - your own narration
+  - an Australian macOS voice (the picker remembers your choice)
+  - a Chatterbox neural voice cloned from a short clip, with a consent record
+- **Models.** Resumable, checksum-verified downloads. The local LLM coach is optional; feedback is measured by rules otherwise.
+- **Gilgamesh** is beside Coach and sees what it measured on your last reading. He can explain the feedback and tell you exactly how to shape a vowel, using what's in your vault too. He can also work Coach for you (`[coach: …]`):
+  - play the reference
+  - move between sentences
+  - turn sentences he writes into a new practice text: try "give me five sentences with the 'now' vowel"
+
+Coach's data stays where the standalone app keeps it, `~/Library/Application Support/AussieAccentCoach/` (texts, attempts, calibration and models), so the history carries over. Recording turns Gilgamesh's microphone off, so he doesn't take your reading as talk.
+
+Setup:
+- `./scripts/build-coach.sh` builds `rad-coach-asr`, which runs Whisper and Silero. Without it, Coach gives prosody-only feedback and its Models screen says so.
+- Download Whisper small.en and Silero VAD from Coach's Models screen.
+- Optional: run `python3 coach/scripts/setup_phoneme_model.py` for pronunciation scoring, and `coach/scripts/setup_voice_model.py` for the neural voice.
+
+How it works:
+- `coach/` is the accent engine, in its own workspace: analysis, audio-io, coach, reference, store, models, asr, phonetics, vowels. See `coach/README.md`.
+- `app/src-tauri/src/accent_coach/` is the original app's Tauri glue. Its commands are prefixed `coach_` and its events `coach-`, and it starts the first time Coach is opened.
+- whisper.cpp brings its own ggml, which can't share RAD's process with RAD's llama.cpp. So Whisper runs in the `coach/rad-coach-asr` helper (protocol in `asr::remote`).
+- The LLM coach shares rad-local's llama.cpp backend.
+- The UI is `app/ui/src/components/coach/` (the original Svelte app, scoped under `.coach-app`) plus `CoachView.svelte`, `CoachChat.svelte` and `lib/coach.svelte.ts`.
+
+Tests:
+- `cd coach && cargo test`
+- on your real data and models: `cargo test -p rad-app --lib accent_coach -- --ignored --nocapture` (needs the helper built; your database is copied, never touched)
+
 ## Chess (play Gilgamesh)
 
 **Chess** (sidebar → Development, under Games) is a game of chess with Gilgamesh, with him to talk to while you play.
@@ -425,6 +500,8 @@ crates/rad-vault    encrypted single-file vault: KDF, recovery kit, blobs, schem
 crates/rad-ingest   extractors (PDF, Office, email, zip…) and the chunker — all in memory
 crates/rad-llm      Ollama / OpenAI-compatible / Anthropic adapters: chat, embeddings, vision, transcription
 crates/rad-tunnel   RAD's VPN: WireGuard in user space (boringtun + smoltcp) behind a local SOCKS5 proxy
+crates/rad-sdr      the radio: RTL-SDR signal processing, scanner, sub-GHz identification, ADS-B / Mode S decoder
+coach/              Coach's Aussie accent engine (own workspace) and rad-coach-asr, its Whisper helper
 crates/rad-server   axum server: auth, unlock, uploads, jobs, RAG, live sync (SSE), backups
 app/src-tauri       desktop shell: tray, hotkeys, screenshots, rad:// file protocol, keychain
 app/ui              Svelte 5 interface

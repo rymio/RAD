@@ -336,6 +336,44 @@ class Colab {
     return c;
   }
 
+  /** Puts new code in a cell (Gilgamesh fixing it); its old outputs go. */
+  replaceCode(id: string, code: string) {
+    const c = this.cell(id);
+    if (!c || this.queue.includes(id)) return null;
+    c.type = 'code';
+    c.source = code.replace(/\n+$/, '');
+    c.outputs = [];
+    c.state = 'idle';
+    c.count = null;
+    c.ms = undefined;
+    this.selected = id;
+    this.touch();
+    return c;
+  }
+
+  /** Resolves once none of these cells is queued or running any more (or after `max` ms). */
+  async settled(ids: string[], max = 10 * 60_000) {
+    const until = Date.now() + max;
+    while (Date.now() < until && this.queue.some((q) => ids.includes(q))) await new Promise((r) => setTimeout(r, 300));
+  }
+
+  /** What these cells did when run, for Gilgamesh to see the result of what he ran. */
+  report(ids: string[]): string {
+    const nb = this.nb;
+    if (!nb) return '';
+    return ids
+      .map((id) => {
+        const i = this.index(id);
+        const c = nb.cells[i];
+        if (!c || c.type !== 'code') return '';
+        const outs = c.outputs.map((o) => outputText(o)).filter(Boolean).join('\n');
+        const state = c.state === 'error' ? 'FAILED' : c.state === 'ok' ? 'ran fine' : c.state === 'queued' ? 'did not run (an earlier cell failed)' : c.state;
+        return `Cell ${i + 1} ${state}${c.ms != null ? ` in ${c.ms} ms` : ''}.${outs ? `\nOutput:\n${outs.length > 2000 ? outs.slice(0, 2000) + '\n…' : outs}` : ' No output.'}`;
+      })
+      .filter(Boolean)
+      .join('\n\n');
+  }
+
   // ---------------------------------------------------------------- running
 
   /** Puts a cell in the queue (a markdown cell just shows rendered). */
@@ -564,8 +602,15 @@ class Colab {
     const packs = s ? (nb.lang === 'python' ? s.python.packs : s.rust.packs).filter((p) => p.downloaded).map((p) => p.about) : [];
     return `THE OWNER'S ${lang.toUpperCase()} COLAB NOTEBOOK “${nb.title}” (open now; kernel ${this.kernel}). ${nb.cells.length} cells${shown.length < cells.length ? `, ${shown.length} shown` : ''}:
 ${shown.join('\n\n')}${vars}${offline}${packs.length ? `\nDownloaded for offline use: ${packs.join('; ')}.` : ''}
-You are the owner's tutor here, for maths, machine learning, LLMs and ${lang}. Explain the idea and the maths (LaTeX in $…$ or $$…$$ is shown typeset), then the code. When you give code, put it in a fenced \`\`\`${nb.lang} block, short and complete enough to run as one cell in this notebook (it can use what earlier cells defined); the owner adds it with one click.${nb.lang === 'rust' ? ' Crates come in with `:dep name = "version"` at the top of a cell.' : ' Packages come in with `%pip install name`.'} When a cell failed, explain the error plainly and give the fixed cell. You can also act on the notebook: [colab: run] runs the selected cell, [colab: run all], [colab: stop], [colab: restart].`;
+You are the owner's tutor here, for maths, machine learning, LLMs and ${lang}. Explain the idea and the maths (LaTeX in $…$ or $$…$$ is shown typeset), then the code. When you give code, put it in a fenced \`\`\`${nb.lang} block, short and complete enough to run as one cell in this notebook (it can use what earlier cells defined); the owner adds it with one click.${nb.lang === 'rust' ? ' Crates come in with `:dep name = "version"` at the top of a cell.' : ' Packages come in with `%pip install name`.'} When a cell failed, explain the error plainly and give the fixed cell. You can work in the notebook yourself: [colab: add] puts the code block of your answer in a new cell, [colab: add and run] also runs it, [colab: fix] puts it in the selected cell instead of what's there and runs it ([colab: fix | 3] for cell 3), [colab: run] runs the selected cell, [colab: run all], [colab: stop], [colab: restart]. When you run something you're told its output afterwards, so you can say what came out or fix it.`;
   }
+}
+
+/** The last fenced code block of an answer (for the notebook's language, or untagged). */
+export function lastCodeBlock(md: string, lang: Lang): string | null {
+  const tags = lang === 'rust' ? '(?:rust|rs)' : '(?:python|py|python3)';
+  const blocks = [...md.matchAll(new RegExp('```' + tags + '?[ \\t]*\\n([\\s\\S]*?)```', 'g'))].map((m) => m[1]);
+  return blocks.at(-1) ?? null;
 }
 
 function score(c: Cell, sel: string | null) {

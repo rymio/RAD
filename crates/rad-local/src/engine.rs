@@ -60,7 +60,8 @@ enum Job {
 
 type Slot = Option<(PathBuf, LlamaModel)>;
 
-fn backend() -> std::result::Result<&'static LlamaBackend, String> {
+/// The process's llama.cpp backend (it can be started only once). Coach's LLM coach shares it.
+pub fn backend() -> std::result::Result<&'static LlamaBackend, String> {
     static BACKEND: OnceLock<std::result::Result<LlamaBackend, String>> = OnceLock::new();
     BACKEND
         .get_or_init(|| {

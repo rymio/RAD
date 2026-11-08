@@ -18,8 +18,23 @@ rad-api.workspace = true
 rad-ingest.workspace = true
 rad-zx.workspace = true
 rad-c64.workspace = true
-# Direct only so `cuda` below can reach it (rad-server pulls it in anyway).
+# Radio (radio.rs): waterfall, scanner, FM/AM and ADS-B for an RTL-SDR dongle.
+rad-sdr.workspace = true
+# Direct so `cuda` below can reach it (rad-server pulls it in anyway), and Coach's LLM coach shares its llama.cpp.
 rad-local.workspace = true
+# Coach (accent_coach/): the Aussie accent engine in coach/ (its own workspace). Whisper isn't linked
+# here: it runs in coach's rad-coach-asr helper (scripts/build-coach.sh).
+analysis = { path = "../../coach/crates/analysis" }
+audio-io = { path = "../../coach/crates/audio-io" }
+coach = { path = "../../coach/crates/coach", features = ["llama"] }
+reference = { path = "../../coach/crates/reference" }
+store = { path = "../../coach/crates/store" }
+models = { path = "../../coach/crates/models" }
+asr = { path = "../../coach/crates/asr" }
+phonetics = { path = "../../coach/crates/phonetics", features = ["onnx"] }
+vowels = { path = "../../coach/crates/vowels" }
+parking_lot = "0.12"
+crossbeam-channel = "0.5"
 rad-server = { path = "../../crates/rad-server" }
 serde.workspace = true
 serde_json.workspace = true
@@ -72,6 +87,12 @@ zip = { version = "9", default-features = false, features = ["deflate"] }
 # Oort (oort.rs): the oort_api crate (a .crate is a gzipped tar) for its docs.
 flate2 = "1"
 tar = "0.4"
+
+# Coach's PDF import reads the text layer with macOS PDFKit (accent_coach/pdf.rs).
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSURL"] }
+objc2-pdf-kit = { version = "0.3", features = ["PDFDocument", "PDFPage"] }
 
 [features]
 # The built-in llama.cpp engine on an NVIDIA GPU: scripts/build-linux.sh turns it on when it finds nvcc.

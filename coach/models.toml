@@ -1,0 +1,84 @@
+# Pinned model manifest for Aussie Accent Coach.
+#
+# sha256 = "" means trust-on-first-use: the first complete download's hash is
+# recorded beside the file and enforced afterwards. Before a release, download each
+# model once, run `shasum -a 256 <file>`, and paste the hash here.
+#
+# URLs were written without network access to Hugging Face; confirm each resolves
+# (`curl -sIL <url> | head -1`) the first time you run the downloader.
+
+version = 1
+
+[[model]]
+id = "coach-qwen2.5-7b"
+name = "Qwen2.5 7B Instruct (Q4_K_M)"
+role = "coach"
+url = "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+file = "Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+sha256 = ""
+size_mb = 4680
+milestone = "M4"
+default = true
+
+[[model]]
+id = "coach-llama3.1-8b"
+name = "Llama 3.1 8B Instruct (Q4_K_M)"
+role = "coach"
+url = "https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"
+file = "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"
+sha256 = ""
+size_mb = 4920
+milestone = "M4"
+
+[[model]]
+id = "whisper-small-en"
+name = "Whisper small.en"
+role = "asr"
+url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin"
+file = "ggml-small.en.bin"
+sha256 = ""
+size_mb = 488
+milestone = "M2"
+default = true
+
+[[model]]
+id = "whisper-large-v3-turbo-q5"
+name = "Whisper large-v3-turbo (Q5_0)"
+role = "asr"
+url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin"
+file = "ggml-large-v3-turbo-q5_0.bin"
+sha256 = ""
+size_mb = 574
+milestone = "M2"
+
+[[model]]
+id = "silero-vad"
+name = "Silero VAD v5 (ggml)"
+role = "vad"
+url = "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin"
+file = "ggml-silero-v5.1.2.bin"
+sha256 = ""
+size_mb = 1
+milestone = "M2"
+default = true
+
+[[model]]
+id = "phonemes-wav2vec2"
+name = "wav2vec2 phoneme model (espeak IPA)"
+role = "phonemes"
+url = ""
+file = "wav2vec2-phonemes.onnx"
+size_mb = 330
+milestone = "M2"
+default = true
+note = "Set this one up with `python3 coach/scripts/setup_phoneme_model.py` in the RAD folder (it exports facebook/wav2vec2-lv-60-espeak-cv-ft to ONNX and installs ONNX Runtime), then choose Reload speech models."
+
+[[model]]
+id = "tts-chatterbox"
+name = "Chatterbox neural voice"
+role = "tts"
+url = ""
+file = "chatterbox.json"
+size_mb = 2100
+milestone = "M5"
+note = "Natural voice that copies the accent of a short Australian clip you add. Set up with `python3 coach/scripts/setup_voice_model.py` (needs `pip install chatterbox-tts \"setuptools<81\"` in a Python 3.11 venv; see the script), then choose Reload speech models."

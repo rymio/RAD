@@ -714,11 +714,12 @@ impl Live {
         let mut d = Vector2::new(0.0f32, 0.0);
         if !self.chat_open && !self.menu_open {
             let k = |c: &[KeyCode]| c.iter().any(|c| self.keys.contains(c));
+            // In Fyrox 2D the camera looks along +z, so +x is to the LEFT on screen.
             if k(&[KeyCode::ArrowLeft, KeyCode::KeyA]) {
-                d.x -= 1.0;
+                d.x += 1.0;
             }
             if k(&[KeyCode::ArrowRight, KeyCode::KeyD]) {
-                d.x += 1.0;
+                d.x -= 1.0;
             }
             if k(&[KeyCode::ArrowUp, KeyCode::KeyW]) {
                 d.y += 1.0;

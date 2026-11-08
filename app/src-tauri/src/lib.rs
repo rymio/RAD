@@ -1,10 +1,12 @@
 //! RAD desktop client: a thin, secure shell around the RAD server API.
 
+mod accent_coach;
 mod books;
 mod browser;
 mod chess;
 mod collections;
 mod colab;
+mod radio;
 mod scraper;
 mod capture;
 mod client;
@@ -365,6 +367,7 @@ pub fn run() {
             app.manage(oort::Oort::default());
             app.manage(fyrox::Fyrox::default());
             app.manage(colab::Colab::default());
+            app.manage(radio::Radio::default());
             app.manage(rymnet::Rymnet::default());
             app.manage(vpn::Vpn::default());
             vpn::restore(app.handle());
@@ -495,6 +498,49 @@ pub fn run() {
             scraper::scraper_rag_files,
             scraper::scraper_set_rag,
             scraper::scraper_folder,
+            radio::radio_status,
+            radio::radio_start,
+            radio::radio_stop,
+            radio::radio_command,
+            radio::radio_settings_get,
+            radio::radio_settings_set,
+            radio::radio_export,
+            accent_coach::coach_open,
+            accent_coach::commands::coach_bootstrap,
+            accent_coach::commands::coach_create_text,
+            accent_coach::commands::coach_open_text,
+            accent_coach::commands::coach_delete_text,
+            accent_coach::commands::coach_import_pdf,
+            accent_coach::commands::coach_open_document,
+            accent_coach::commands::coach_delete_document,
+            accent_coach::commands::coach_attach_narration,
+            accent_coach::commands::coach_use_system_voice,
+            accent_coach::commands::coach_list_voices,
+            accent_coach::commands::coach_open_voice_settings,
+            accent_coach::commands::coach_preview_voice,
+            accent_coach::commands::coach_add_neural_voice,
+            accent_coach::commands::coach_delete_neural_voice,
+            accent_coach::commands::coach_use_neural_voice,
+            accent_coach::commands::coach_preview_neural_voice,
+            accent_coach::commands::coach_load_sentence,
+            accent_coach::commands::coach_play,
+            accent_coach::commands::coach_stop_playback,
+            accent_coach::commands::coach_play_page_reference,
+            accent_coach::commands::coach_start_recording,
+            accent_coach::commands::coach_stop_recording,
+            accent_coach::commands::coach_stop_page_recording,
+            accent_coach::commands::coach_speak,
+            accent_coach::commands::coach_models_status,
+            accent_coach::commands::coach_download_model,
+            accent_coach::commands::coach_load_coach,
+            accent_coach::commands::coach_reload_speech,
+            accent_coach::commands::coach_play_word,
+            accent_coach::vowel_cmds::coach_vowel_chart,
+            accent_coach::vowel_cmds::coach_prepare_reference,
+            accent_coach::vowel_cmds::coach_calibration_info,
+            accent_coach::vowel_cmds::coach_calibration_take,
+            accent_coach::vowel_cmds::coach_calibration_save,
+            accent_coach::vowel_cmds::coach_calibration_clear,
             colab::colab_status,
             colab::colab_set_network,
             colab::colab_download,
@@ -676,6 +722,8 @@ pub fn run() {
                 app.state::<containers::Containers>().stop_all();
                 app.state::<games::Games>().stop_all();
                 app.state::<colab::Colab>().stop_all();
+                app.state::<radio::Radio>().stop();
+                accent_coach::stop(app);
                 app.state::<zx::Zx>().stop();
                 app.state::<c64::C64State>().stop();
                 app.state::<dos::Dos>().stop();

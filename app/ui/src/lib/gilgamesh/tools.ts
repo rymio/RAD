@@ -19,11 +19,63 @@ import { photocraft } from '../photocraft.svelte';
 import { books } from '../books.svelte';
 import { chess, LEVELS, type Level } from '../chess.svelte';
 import { scraper } from '../scraper.svelte';
-import { colab, TEMPLATES } from '../colab.svelte';
+import { colab, TEMPLATES, lastCodeBlock } from '../colab.svelte';
+import { radio, PRESETS, WATCH, bandOf, demodFor, mhz, type Demod } from '../radio.svelte';
+import { coach, practiceText, type CoachControls } from '../coach.svelte';
 import { oort, lastRustBlock, scenarioTitle } from '../oort.svelte';
 import { world } from '../world.svelte';
 import { lab, CLOCKS } from '../z80lab.svelte';
 import { PROGRAMS } from '../z80lab/templates';
+
+/** How many times in a row Gilgamesh has run notebook code on his own (after seeing a result). */
+let colabRounds = 0;
+/** His notebook actions, one after another (a new notebook is made before its cells go in). */
+let colabChain: Promise<void> = Promise.resolve();
+/** Cells he ran that haven't been reported back to him yet. */
+let colabWatched: string[] = [];
+
+/** Once the cells he ran are done, tells him what came out, all in one go. */
+function watchColab(ids: string[]) {
+  const first = !colabWatched.length;
+  colabWatched.push(...ids);
+  if (!first) return;
+  const nb = colab.nb;
+  void (async () => {
+    // The other runs of the same answer join in.
+    await colabChain;
+    await new Promise((r) => setTimeout(r, 100));
+    let ids: string[] = [];
+    while (ids.length !== colabWatched.length) {
+      ids = [...colabWatched];
+      await colab.settled(ids);
+    }
+    colabWatched = [];
+    if (colab.nb !== nb || colabRounds >= 3) return;
+    const r = colab.report(ids);
+    if (!r) return;
+    const failed = /FAILED/.test(r);
+    // Not over the owner, nor over himself.
+    for (let i = 0; i < 120 && ['hearing', 'thinking', 'speaking'].includes(gilgamesh.phase); i++) await new Promise((r) => setTimeout(r, 500));
+    void gilgamesh.ask(
+      `(The notebook, not the owner speaking: what you ran came back.\n${r}\nTell the owner what came out and what it means, the way a tutor would.${failed ? ' Something failed: explain why plainly and fix it with [colab: fix | cell number] after a corrected code block.' : ''})`,
+      { quiet: true },
+    );
+  })();
+}
+
+/** The nth code block of an answer (counting from 1), else its last one for the language. */
+function codeBlock(md: string, lang: 'python' | 'rust', nth: number): string | null {
+  const all = [...md.matchAll(/```([^\n]*)\n([\s\S]*?)```/g)];
+  const hit = nth > 0 ? all[nth - 1] : null;
+  if (hit && (!hit[1].trim() || /^(python|py|python3|rust|rs)$/i.test(hit[1].trim()))) return hit[2];
+  return lastCodeBlock(md, lang);
+}
+
+/** A title for a notebook he starts, from the first heading or line of his answer. */
+function notebookTitle(md: string): string | undefined {
+  const h = md.match(/^#+\s+(.+)$/m)?.[1] ?? md.replace(/```[\s\S]*?```/g, '').split(/[.!?\n]/).map((x) => x.replace(/\[[^\]]*\]/g, '').trim()).find((x) => x.length > 3);
+  return h ? h.replace(/[*_`#]/g, '').slice(0, 60) : undefined;
+}
 
 export interface Outcome {
   /** Shown in the transcript, e.g. "Remembered: …". */
@@ -38,7 +90,7 @@ const VIEWS: Record<string, T.Route> = {
   terminal: { kind: 'terminal' }, files: { kind: 'files' }, calendar: { kind: 'calendar' }, email: { kind: 'email' },
   mail: { kind: 'email' }, music: { kind: 'music' }, video: { kind: 'video' }, settings: { kind: 'settings' },
   memories: { kind: 'settings', tab: 'memories' }, chat: { kind: 'chat', id: null }, database: { kind: 'database' },
-  games: { kind: 'games' }, chess: { kind: 'chess' }, scraper: { kind: 'scraper' }, scrapper: { kind: 'scraper' }, colab: { kind: 'colab', lang: 'python' }, notebook: { kind: 'colab', lang: 'python' }, notebooks: { kind: 'colab', lang: 'python' }, jupyter: { kind: 'colab', lang: 'python' }, oort: { kind: 'oort' }, fyrox: { kind: 'fyrox' }, world: { kind: 'fyrox' }, z80lab: { kind: 'z80lab' }, z80: { kind: 'z80lab' }, lab: { kind: 'z80lab' }, bots: { kind: 'bots' }, bot: { kind: 'bots' }, books: { kind: 'books' }, book: { kind: 'books' }, library: { kind: 'books' }, photocraft: { kind: 'photocraft' }, pictures: { kind: 'photocraft' }, monitoring: { kind: 'monitor' }, monitor: { kind: 'monitor' }, websites: { kind: 'monitor' }, rymnet: { kind: 'rymnet' }, rymwin: { kind: 'rymwin' }, zx: { kind: 'zx' }, spectrum: { kind: 'zx' },
+  games: { kind: 'games' }, chess: { kind: 'chess' }, scraper: { kind: 'scraper' }, scrapper: { kind: 'scraper' }, colab: { kind: 'colab', lang: 'python' }, notebook: { kind: 'colab', lang: 'python' }, notebooks: { kind: 'colab', lang: 'python' }, jupyter: { kind: 'colab', lang: 'python' }, coach: { kind: 'coach' }, accent: { kind: 'coach' }, pronunciation: { kind: 'coach' }, radio: { kind: 'radio' }, sdr: { kind: 'radio' }, scanner: { kind: 'radio' }, radar: { kind: 'radio' }, adsb: { kind: 'radio' }, planes: { kind: 'radio' }, aircraft: { kind: 'radio' }, oort: { kind: 'oort' }, fyrox: { kind: 'fyrox' }, world: { kind: 'fyrox' }, z80lab: { kind: 'z80lab' }, z80: { kind: 'z80lab' }, lab: { kind: 'z80lab' }, bots: { kind: 'bots' }, bot: { kind: 'bots' }, books: { kind: 'books' }, book: { kind: 'books' }, library: { kind: 'books' }, photocraft: { kind: 'photocraft' }, pictures: { kind: 'photocraft' }, monitoring: { kind: 'monitor' }, monitor: { kind: 'monitor' }, websites: { kind: 'monitor' }, rymnet: { kind: 'rymnet' }, rymwin: { kind: 'rymwin' }, zx: { kind: 'zx' }, spectrum: { kind: 'zx' },
   c64: { kind: 'c64' }, commodore: { kind: 'c64' }, dos: { kind: 'dos' }, sidex: { kind: 'sidex' }, editor: { kind: 'sidex' },
 };
 
@@ -275,6 +327,114 @@ export async function runAction(name: ActionName, arg: string): Promise<Outcome>
         }
         return { label: `Don’t know the Oort action “${what}”`, ok: false };
       }
+      case 'radio': {
+        // "listen | 98.0 [| fm]", "tune | 121.5", "mute", "scan | fm", "aircraft", "packets", "off".
+        const [what, ...rest] = arg.split('|').map((x) => x.trim());
+        const cmd = what.toLowerCase();
+        const opt = rest.join(' ').trim();
+        const go = () => {
+          if (store.route.kind !== 'radio') store.navigate({ kind: 'radio' });
+        };
+        if (cmd === 'listen' || cmd === 'tune' || cmd === 'play') {
+          // "98.0", "98.0 MHz", "121.5 am", "1090"; a number under 2000 is MHz.
+          const m = opt.match(/(\d+(?:\.\d+)?)\s*(mhz|khz|hz)?/i);
+          if (!m) return { label: `No frequency in “${opt}”`, ok: false };
+          let f = parseFloat(m[1]);
+          const unit = (m[2] ?? '').toLowerCase();
+          f = unit === 'khz' ? f * 1e3 : unit === 'hz' ? f : f < 2000 ? f * 1e6 : f;
+          if (f < 0.5e6 || f > 1766e6) return { label: `${mhz(f)} is outside what the dongle hears (0.5–1766 MHz)`, ok: false };
+          const d = /\bwfm\b|\bfm\b|broadcast/i.test(opt) ? (/\bnfm\b/i.test(opt) ? 'nfm' : 'wfm') : /\bnfm\b|narrow/i.test(opt) ? 'nfm' : /\bam\b/i.test(opt) ? 'am' : demodFor(f);
+          const listen = cmd !== 'tune';
+          const band = bandOf(f);
+          return { label: `${listen ? 'Listening to' : 'Tuning to'} ${mhz(f)}${band ? ` (${band.name})` : ''}`, ok: true, later: () => { go(); void radio.tune(f, d as Demod, listen); } };
+        }
+        if (cmd === 'mute' || cmd === 'stop listening' || cmd === 'quiet') return { label: 'Radio muted', ok: true, later: () => void radio.listen(false) };
+        if (cmd === 'scan') {
+          const o = opt.toLowerCase();
+          const range = o.match(/(\d+(?:\.\d+)?)\s*[-–to]+\s*(\d+(?:\.\d+)?)/);
+          const key = /air/.test(o) ? 'air' : /marine|ship|boat/.test(o) ? 'marine' : /70\s*cm|uhf ham/.test(o) ? '70cm' : /2\s*m|ham|amateur/.test(o) ? '2m' : /pmr|433|ism/.test(o) ? 'pmr' : /everything|all|whole/.test(o) ? 'all' : /vhf/.test(o) ? 'vhf' : 'fm';
+          const p = PRESETS.find((x) => x.id === key)!;
+          const [from, to] = range ? [parseFloat(range[1]) * 1e6, parseFloat(range[2]) * 1e6] : [p.from, p.to];
+          return { label: `Scanning ${mhz(from)}–${mhz(to)}`, ok: true, later: () => { go(); void radio.scan(from, to); } };
+        }
+        if (cmd === 'watch' || cmd === 'subghz' || cmd === 'drones' || cmd === 'lora' || cmd === 'meshtastic' || cmd === 'identify') {
+          // "watch | 433.92", "watch | meshtastic", "watch | 868", "watch | fpv", or just "drones".
+          const o = `${cmd} ${opt}`.toLowerCase();
+          const num = opt.match(/(\d+(?:\.\d+)?)/);
+          const named = /mesh/.test(o) ? (/us|america/.test(o) ? 'mesh-us' : /anz|austral|zealand/.test(o) ? 'mesh-anz' : /asia|923|as923|ph|sg/.test(o) ? 'as923' : 'mesh-eu') : /fpv|video|1\.2|1\.3/.test(o) ? 'fpv' : /315/.test(o) ? '315' : /868|869|eu/.test(o) ? '868' : /91[0-9]|902|928|us/.test(o) ? '915' : /92[0-5]/.test(o) ? 'as923' : null;
+          let f = named ? WATCH.find((w) => w.id === named)!.freq : num ? parseFloat(num[1]) : radio.settings.watch;
+          if (f < 2000) f *= 1e6;
+          if (f < 24e6 || f > 1766e6) return { label: `${mhz(f)} is outside what the dongle hears`, ok: false };
+          return { label: `Watching ${mhz(f)} for transmissions`, ok: true, later: () => { go(); void radio.watch(f); } };
+        }
+        if (cmd === 'aircraft' || cmd === 'adsb' || cmd === 'radar' || cmd === 'planes') return { label: 'Aircraft radar on (1090 MHz)', ok: true, later: () => { go(); void radio.radar(); } };
+        if (cmd === 'packets') return { label: 'Packet analyser', ok: true, later: () => { go(); radio.tab = 'packets'; if (radio.mode !== 'adsb' || !radio.on) void radio.radar().then(() => (radio.tab = 'packets')); } };
+        if (cmd === 'off' || cmd === 'stop') return { label: radio.on ? 'Radio off' : 'The radio is already off', ok: radio.on, later: () => void radio.stop() };
+        if (cmd === 'on' || cmd === 'open') return { label: 'Radio on', ok: true, later: () => { go(); void radio.start(); } };
+        return { label: `Don’t know the radio action “${what}”`, ok: false };
+      }
+      case 'coach': {
+        // "listen", "next", "previous", "sentence | 3", "hear", "vowels", "melody", "open | title",
+        // "practise | title" (the sentences are the fenced block of his answer).
+        const [what, ...rest] = arg.split('|').map((x) => x.trim());
+        const cmd = what.toLowerCase();
+        const opt = rest.join(' | ').trim();
+        // Opens Coach if need be and waits for it to be ready.
+        const ready = async () => {
+          if (store.route.kind !== 'coach') store.navigate({ kind: 'coach' });
+          for (let i = 0; i < 100 && !(coach.controls && coach.ready); i++) await new Promise((r) => setTimeout(r, 100));
+          return coach.controls;
+        };
+        if (cmd === 'practise' || cmd === 'practice' || cmd === 'add' || cmd === 'new') {
+          const title = opt || 'Practice from Gilgamesh';
+          return {
+            label: `New practice text: ${title}`,
+            ok: true,
+            // Once his answer is all in: its fenced block (or list) is the text.
+            later: async () => {
+              const said = [...gilgamesh.turns].reverse().find((t) => t.who === 'gilgamesh')?.text ?? '';
+              const body = practiceText(said);
+              if (!body) {
+                store.toast('error', 'No sentences to practise', 'Gilgamesh’s answer had no fenced block or list of sentences.');
+                return;
+              }
+              const c = await ready();
+              if (c) await c.addText(title.slice(0, 80), body);
+            },
+          };
+        }
+        if (cmd === 'open') {
+          if (!opt) return { label: 'Which text?', ok: false };
+          return {
+            label: `Opening “${opt}” in Coach`,
+            ok: true,
+            later: async () => {
+              const c = await ready();
+              if (c && !(await c.openByTitle(opt))) store.toast('error', 'No such text in Coach', `Nothing called “${opt}”.`);
+            },
+          };
+        }
+        const simple: Record<string, [string, (c: CoachControls) => unknown]> = {
+          listen: ['Playing the reference reading', (c) => c.listen()],
+          play: ['Playing the reference reading', (c) => c.listen()],
+          next: ['Next sentence', (c) => c.goTo(coach.index + 1)],
+          previous: ['Previous sentence', (c) => c.goTo(coach.index - 1)],
+          back: ['Previous sentence', (c) => c.goTo(coach.index - 1)],
+          hear: ['Playing back their reading', (c) => c.hearMe()],
+          vowels: ['Showing the vowel chart', (c) => c.setView('vowels')],
+          melody: ['Showing the melody', (c) => c.setView('melody')],
+          page: ['Whole page', (c) => c.setMode('page')],
+          sentences: ['Sentence by sentence', (c) => c.setMode('sentence')],
+        };
+        if (cmd === 'sentence' || cmd === 'go') {
+          const n = parseInt(opt, 10);
+          if (!Number.isFinite(n) || n < 1) return { label: `No sentence number in “${opt}”`, ok: false };
+          return { label: `Sentence ${n}`, ok: true, later: async () => { const c = await ready(); await c?.setMode('sentence'); await c?.goTo(n - 1); } };
+        }
+        const hit = simple[cmd];
+        if (hit) return { label: hit[0], ok: true, later: async () => { const c = await ready(); if (c) await hit[1](c); } };
+        return { label: `Don’t know the Coach action “${what}”`, ok: false };
+      }
       case 'colab': {
         // "run", "run all", "stop", "restart", "new | python" or "open | title".
         const [what, ...rest] = arg.split('|').map((x) => x.trim());
@@ -292,13 +452,60 @@ export async function runAction(name: ActionName, arg: string): Promise<Outcome>
           if (!n) return { label: `No notebook “${opt}”`, ok: false };
           return { label: `Opening ${n.title}`, ok: true, later: () => void colab.open(n.id) };
         }
+        // Runs he starts are reported back to him, so he sees what came out (and can fix it).
+        // Fixing on his own stops after a few rounds; then it's the owner's turn.
+        const lastYou = [...gilgamesh.turns].reverse().find((t) => t.who === 'you');
+        colabRounds = lastYou?.quiet ? colabRounds + 1 : 0;
+        if (cmd === 'add' || cmd === 'add and run' || cmd === 'insert' || cmd === 'fix' || cmd === 'replace') {
+          const fix = cmd === 'fix' || cmd === 'replace';
+          const run = fix || cmd === 'add and run' || /\brun\b/i.test(opt);
+          // The code block written just before this tag (several cells can come in one answer).
+          const sofar = [...gilgamesh.turns].reverse().find((t) => t.who === 'gilgamesh')?.text ?? '';
+          const nth = [...sofar.matchAll(/```[^\n]*\n[\s\S]*?```/g)].length;
+          let nb = colab.nb && store.route.kind === 'colab' ? colab.nb : null;
+          if (fix && !nb) return { label: 'No notebook is open in Colab', ok: false };
+          const n = parseInt(opt, 10);
+          const target = fix ? (Number.isFinite(n) ? nb!.cells[n - 1] : colab.cell(colab.selected)) : null;
+          if (fix && !target) return { label: Number.isFinite(n) ? `No cell ${n}` : 'No cell is selected', ok: false };
+          // With no notebook open, the code starts a new one (Python unless he says Rust).
+          const lang: 'python' | 'rust' = nb?.lang ?? (/rust/i.test(opt) ? 'rust' : 'python');
+          return {
+            label: fix ? `Fixing cell ${colab.index(target!.id) + 1}` : `${nb ? '' : `New ${lang === 'rust' ? 'Rust' : 'Python'} notebook: `}${run ? 'adding a cell and running it' : 'adding a cell'}`,
+            ok: true,
+            // Done once he has finished: by then his whole answer (with its code blocks) is in.
+            later: () => {
+              colabChain = colabChain.then(async () => {
+                const said = [...gilgamesh.turns].reverse().find((t) => t.who === 'gilgamesh')?.text ?? '';
+                const code = codeBlock(said, lang, nth);
+                if (!code) {
+                  store.toast('error', 'No code to put in the notebook', `Gilgamesh’s answer had no ${lang === 'rust' ? 'Rust' : 'Python'} code block.`);
+                  return;
+                }
+                let c;
+                if (!colab.nb || store.route.kind !== 'colab' || colab.nb.lang !== lang) {
+                  const t = TEMPLATES.find((t) => t.lang === lang && t.id.endsWith('blank'));
+                  await colab.create(lang, t, notebookTitle(said));
+                  // The blank notebook's empty cell takes the code.
+                  const empty = colab.nb?.cells.find((x) => x.type === 'code' && !x.source.trim());
+                  c = empty ? colab.replaceCode(empty.id, code) : colab.insertCode(code);
+                } else c = fix ? colab.replaceCode(target!.id, code) : colab.insertCode(code);
+                if (c && run) {
+                  colab.run(c.id);
+                  watchColab([c.id]);
+                }
+              }).catch((e) => store.error(e, 'Couldn’t put the code in the notebook'));
+            },
+          };
+        }
         const nb = colab.nb;
         if (!nb || store.route.kind !== 'colab') return { label: 'No notebook is open in Colab', ok: false };
-        if (cmd === 'run all') return { label: 'Running all the cells', ok: true, later: () => colab.runAll() };
+        if (cmd === 'run all') {
+          return { label: 'Running all the cells', ok: true, later: () => { colab.runAll(); watchColab(nb.cells.filter((c) => c.type === 'code').map((c) => c.id)); } };
+        }
         if (cmd === 'run') {
           const c = colab.cell(colab.selected);
           if (!c) return { label: 'No cell is selected', ok: false };
-          return { label: `Running cell ${colab.index(c.id) + 1}`, ok: true, later: () => colab.run(c.id) };
+          return { label: `Running cell ${colab.index(c.id) + 1}`, ok: true, later: () => { colab.run(c.id); watchColab([c.id]); } };
         }
         if (cmd === 'stop') return { label: colab.queue.length ? 'Stopping the cell' : 'Nothing is running', ok: !!colab.queue.length, later: () => colab.interrupt() };
         if (cmd === 'restart') return { label: 'Restarting the kernel', ok: true, later: () => void colab.restart() };
