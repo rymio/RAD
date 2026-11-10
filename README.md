@@ -188,10 +188,25 @@ Checks run when RAD starts, every three hours, and from **Check now**. Sites, SS
 - **Memory.** A bot keeps what it learns for later tasks (where things are, your preferences); see and edit it in the bot's settings.
 - **Skills.** A skill is a set of instructions a bot can follow. **Save as a skill** after a task turns what worked into one; **Record a skill** turns what you do on a bot's screen into one (passwords aren't recorded); or write one. Run a skill on any bot.
 - **Routines.** Run a skill on a bot every hour, every day, on weekdays or once a week, while RAD is open. Gilgamesh can tell you the result.
+- **Uploads.** A bot puts files from `/root/shared` straight into a page's file upload (screenshots into a store listing, say), without the native file dialog.
 - **Bots together.** A bot can hand part of a task to another bot and use its answer.
 - **Gilgamesh.** Ask him: "get Ada to find the cheapest flight to Perth on Friday". He passes it on, tells you when it's done or when the bot needs your OK, and can pass on your yes, no or answer. He knows what each bot is doing.
 
 The bots and their loop are in `app/ui/src/lib/bots.svelte.ts`; the browser helper that runs in each bot's VM is `sandbox/desktop/rad-browse.py` (the DevTools protocol, and xdotool for the whole screen); the Desktop container is in `app/src-tauri/src/containers.rs`.
+
+## Products (from description to App Store, Google Play and the web)
+
+**Products** in the sidebar is where you manage what you ship, usually a SaaS platform with an iOS and an Android app. Write what the product is in your own words; RAD and Gilgamesh do the form filling.
+
+- **The product.** A detailed description, features, audience, pricing, the user data it collects (which feeds Apple's App Privacy, Play's Data safety and the privacy policy), company and contact details, and its addresses.
+- **Store listings.** **Draft from the description** writes the App Store listing (name, subtitle, promotional text, description, keywords, what's new, categories, age rating and App Privacy answers, review notes) and the Google Play one (name, short and full description, release notes, category, tags, content rating, target audience, Data safety). Every field shows its count against the store's limit (keywords in bytes, as Apple counts them), and anything the model writes too long goes back to be shortened.
+- **Pictures.** Icons, iPhone/iPad and phone/tablet screenshots and the feature graphic are copied into the product and checked against the stores' rules: sizes, counts, aspect ratio and transparency.
+- **Website on gnu.au.** With a gnu.au API token (a write token from Account → API tokens), **Build the website** creates the site and writes home, features, pricing, support, privacy policy and terms pages from gnu.au's own block catalogue, with your pictures. The site's support and privacy pages become the product's URLs for the stores. Preview the draft, then **Publish**. The token stays in the keychain, and RAD calls the API itself.
+- **Launch.** A readiness list per platform covers what the store requires, what's worth fixing, and what's done by hand. **Fill in App Store Connect / Google Play Console** gives a bot the job: the listing and the pictures go onto its computer, it logs in with your saved login (domain `apple.com` or `google.com`, under Bots → Logins; you're asked for 2FA codes), fills in every section and uploads the pictures. It never submits for review, picks a build, sends for review or rolls out: that stays with you, as does uploading the build itself.
+- **Store guides.** **gnu.au & guides → Fetch the guides** saves Apple's and Google's official pages (review guidelines, field limits, screenshot specifications, preview assets, App Privacy, Data safety, …) on this computer, so drafting works offline and uses the current rules. **Add to RAG** puts them in a "Store Guides" vault project.
+- **Gilgamesh.** He's beside it and knows every product. **Add to RAG** puts the product's brief in the "Products" vault project and a one-line fact in his memories, so he knows it in any conversation. Ask him "what's left before TradieBook can launch?", "suggest App Store keywords", "build the website", or "have Ada fill in Google Play".
+
+Everything is kept on this computer in the app's data folder (`products/`). The code is in `app/src-tauri/src/products.rs` (storage, pictures, guides, gnu.au calls) and `app/ui/src/lib/products.svelte.ts` (drafting, checks, the site build, bot tasks).
 
 ## PhotoCraft (draw and edit pictures)
 

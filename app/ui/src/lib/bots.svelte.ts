@@ -224,6 +224,7 @@ ACTIONS
 {"do":"screenshot"}  a picture of the page${bot.vision ? '' : ' (only if your model can see images)'}
 {"do":"tabs"}  {"do":"tab","index":1}  {"do":"close_tab"}
 Pop-ups (alert, confirm) are answered for you: alerts OK'd, confirms cancelled. To say OK to one, repeat the click or key with "dialog":"accept", e.g. {"do":"click","id":12,"dialog":"accept"}.
+{"do":"upload","id":12,"files":["/root/shared/…/a.png"]}  put files into a file upload (element 12 is the upload button or area; leave id out for the page's first file input). Never click an upload button to open the file chooser: use this instead.
 {"do":"login","id":12,"secret":"NAME","field":"username"}  type a saved login's username or password into a field. You never see it.
 {"do":"shell","command":"…"}  run a shell command on your computer (root; non-interactive; files for the owner go in /root/shared, which is on their Mac)
 {"do":"desktop","action":"screenshot"}  the whole screen, for windows outside the page; then {"do":"desktop","action":"click","x":100,"y":200}, {"do":"desktop","action":"type","text":"…"}, {"do":"desktop","action":"key","key":"Return"}
@@ -265,7 +266,7 @@ function pageText(p: any): string {
 ${p.text || '(empty)'}${p.more_text ? '\n… (more text further down)' : ''}
 </page_text>
 ELEMENTS:
-${els || '(none)'}${p.more_elements ? '\n… (more elements: scroll)' : ''}`;
+${els || '(none)'}${p.more_elements ? '\n… (more elements: scroll)' : ''}${p.file_inputs ? `\n(This page has ${p.file_inputs} file upload${p.file_inputs === 1 ? '' : 's'}: use "upload".)` : ''}`;
 }
 
 /** The first JSON action in a reply, and the words around it. */
@@ -310,6 +311,7 @@ function actionLabel(a: Record<string, any>, labels: Map<number, string>): strin
     case 'tabs': return 'List the tabs';
     case 'tab': return `Switch to tab ${a.index}`;
     case 'close_tab': return 'Close the tab';
+    case 'upload': return `Upload ${(Array.isArray(a.files) ? a.files : [a.files]).map((f: any) => String(f).split('/').pop()).join(', ')}${a.id !== undefined ? ` into ${el(a.id)}` : ''}`;
     case 'login': return `Fill in the ${a.field === 'password' ? 'password' : 'username'} of the “${a.secret}” login`;
     case 'shell': return `$ ${clip(String(a.command ?? ''), 200)}`;
     case 'desktop': return `Screen: ${a.action}${a.x !== undefined ? ` at ${a.x}, ${a.y}` : ''}${a.text ? ` “${clip(String(a.text), 40)}”` : ''}${a.key ? ` ${a.key}` : ''}`;
@@ -781,6 +783,13 @@ class Bots {
         return browse({ op: 'close_tab' });
       case 'login':
         return this.login(run, container, a);
+      case 'upload': {
+        const files = (Array.isArray(a.files) ? a.files : [a.files]).map((f: any) => String(f ?? '')).filter(Boolean);
+        if (!files.length || files.some((f: string) => !f.startsWith('/root/shared/') || f.includes('..'))) return { text: 'Failed: give the files as paths in /root/shared.', ok: false, page: false };
+        const r = await this.browse(container, { op: 'upload', id: a.id === undefined ? null : Number(a.id), files, index: Number(a.index ?? 0) });
+        if (!r.ok) return { text: `Failed: ${r.error}`, ok: false, page: false };
+        return { text: `Put ${r.uploaded} file${r.uploaded === 1 ? '' : 's'} in the upload${r.uploaded < files.length ? ' (it takes one file at a time: upload the others one by one)' : ''}. Check the page shows ${r.uploaded === 1 ? 'it' : 'them'}.`, ok: true, page: true };
+      }
       case 'shell': {
         const command = String(a.command ?? '').trim();
         if (!command) return { text: 'Failed: no command.', ok: false, page: false };

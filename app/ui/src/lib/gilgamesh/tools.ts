@@ -14,6 +14,7 @@ import type { ActionName } from './text';
 import { monitor, siteName } from '../monitor.svelte';
 import { gilgamesh } from './gilgamesh.svelte';
 import { bots } from '../bots.svelte';
+import { products } from '../products.svelte';
 import { sight } from './sight.svelte';
 import { photocraft } from '../photocraft.svelte';
 import { books } from '../books.svelte';
@@ -90,7 +91,7 @@ const VIEWS: Record<string, T.Route> = {
   terminal: { kind: 'terminal' }, files: { kind: 'files' }, calendar: { kind: 'calendar' }, email: { kind: 'email' },
   mail: { kind: 'email' }, music: { kind: 'music' }, video: { kind: 'video' }, settings: { kind: 'settings' },
   memories: { kind: 'settings', tab: 'memories' }, chat: { kind: 'chat', id: null }, database: { kind: 'database' },
-  games: { kind: 'games' }, chess: { kind: 'chess' }, scraper: { kind: 'scraper' }, scrapper: { kind: 'scraper' }, colab: { kind: 'colab', lang: 'python' }, notebook: { kind: 'colab', lang: 'python' }, notebooks: { kind: 'colab', lang: 'python' }, jupyter: { kind: 'colab', lang: 'python' }, coach: { kind: 'coach' }, accent: { kind: 'coach' }, pronunciation: { kind: 'coach' }, radio: { kind: 'radio' }, sdr: { kind: 'radio' }, scanner: { kind: 'radio' }, radar: { kind: 'radio' }, adsb: { kind: 'radio' }, planes: { kind: 'radio' }, aircraft: { kind: 'radio' }, oort: { kind: 'oort' }, fyrox: { kind: 'fyrox' }, world: { kind: 'fyrox' }, z80lab: { kind: 'z80lab' }, z80: { kind: 'z80lab' }, lab: { kind: 'z80lab' }, bots: { kind: 'bots' }, bot: { kind: 'bots' }, books: { kind: 'books' }, book: { kind: 'books' }, library: { kind: 'books' }, photocraft: { kind: 'photocraft' }, pictures: { kind: 'photocraft' }, monitoring: { kind: 'monitor' }, monitor: { kind: 'monitor' }, websites: { kind: 'monitor' }, rymnet: { kind: 'rymnet' }, rymwin: { kind: 'rymwin' }, zx: { kind: 'zx' }, spectrum: { kind: 'zx' },
+  games: { kind: 'games' }, chess: { kind: 'chess' }, scraper: { kind: 'scraper' }, scrapper: { kind: 'scraper' }, colab: { kind: 'colab', lang: 'python' }, notebook: { kind: 'colab', lang: 'python' }, notebooks: { kind: 'colab', lang: 'python' }, jupyter: { kind: 'colab', lang: 'python' }, coach: { kind: 'coach' }, accent: { kind: 'coach' }, pronunciation: { kind: 'coach' }, radio: { kind: 'radio' }, sdr: { kind: 'radio' }, scanner: { kind: 'radio' }, radar: { kind: 'radio' }, adsb: { kind: 'radio' }, planes: { kind: 'radio' }, aircraft: { kind: 'radio' }, oort: { kind: 'oort' }, fyrox: { kind: 'fyrox' }, world: { kind: 'fyrox' }, z80lab: { kind: 'z80lab' }, z80: { kind: 'z80lab' }, lab: { kind: 'z80lab' }, bots: { kind: 'bots' }, bot: { kind: 'bots' }, products: { kind: 'products' }, product: { kind: 'products' }, books: { kind: 'books' }, book: { kind: 'books' }, library: { kind: 'books' }, photocraft: { kind: 'photocraft' }, pictures: { kind: 'photocraft' }, monitoring: { kind: 'monitor' }, monitor: { kind: 'monitor' }, websites: { kind: 'monitor' }, rymnet: { kind: 'rymnet' }, rymwin: { kind: 'rymwin' }, zx: { kind: 'zx' }, spectrum: { kind: 'zx' },
   c64: { kind: 'c64' }, commodore: { kind: 'c64' }, dos: { kind: 'dos' }, sidex: { kind: 'sidex' }, editor: { kind: 'sidex' },
 };
 
@@ -550,6 +551,8 @@ export async function runAction(name: ActionName, arg: string): Promise<Outcome>
       }
       case 'bot':
         return await bots.fromGilgamesh(arg);
+      case 'product':
+        return await products.fromGilgamesh(arg);
       case 'edit': {
         // "file | request" or just the request (on whatever is open in PhotoCraft).
         await photocraft.refresh();

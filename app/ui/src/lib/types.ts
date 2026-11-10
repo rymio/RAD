@@ -178,6 +178,7 @@ export type Route =
   | { kind: 'scraper' }
   | { kind: 'radio' }
   | { kind: 'coach' }
+  | { kind: 'products' }
   | { kind: 'colab'; lang: 'python' | 'rust' }
   | { kind: 'z80lab' }
   | { kind: 'oort' }

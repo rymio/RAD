@@ -21,6 +21,7 @@ const NAMES: Record<Route['kind'], string> = {
   chess: 'Chess (a game of chess with you)',
   scraper: 'the Scraper (websites saved for offline reading)',
   colab: 'Colab (their Rust or Python notebooks for maths, machine learning and LLMs)',
+  products: 'Products (their products: SaaS platforms and iOS/Android apps, store listings, websites on gnu.au, getting them to production)',
   coach: 'Coach (their Aussie accent practice: they read sentences aloud and get feedback on melody, pace, word sounds and Australian vowels)',
   radio: 'the Radio (their RTL-SDR dongle: waterfall, scanner, FM and airband, aircraft radar, packets)',
   z80lab: 'Z80 Lab (a Z80 computer they are wiring up on a canvas)',

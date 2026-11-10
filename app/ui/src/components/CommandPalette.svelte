@@ -4,7 +4,7 @@
   import { anchorLabel, debounce, docKind } from '../lib/util';
   import type { Citation } from '../lib/types';
   import DocIcon from './DocIcon.svelte';
-  import { Search, MessageSquare, SquarePen, Settings, Lock, StickyNote, Camera, Loader, CornerDownLeft, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, ScanFace, Activity, Bot, Palette, BookOpen, Crown, CircuitBoard, CloudDownload, NotebookPen, Sigma, LibraryBig, Rocket, Castle , RadioTower, MicVocal } from '@lucide/svelte';
+  import { Search, MessageSquare, SquarePen, Settings, Lock, StickyNote, Camera, Loader, CornerDownLeft, Globe, SquareTerminal, FolderOpen, CalendarDays, Mail, Compass, Music, Clapperboard, CircleHelp, Network, Monitor, Shield, ScanFace, Activity, Bot, Palette, BookOpen, Crown, CircuitBoard, CloudDownload, NotebookPen, Sigma, LibraryBig, Rocket, Castle , RadioTower, MicVocal, Package } from '@lucide/svelte';
   import { rad } from '../lib/api';
 
   type Item = { id: string; group: string; label: string; sub?: string; icon?: any; color?: string; doc?: Citation; run: () => void };
@@ -60,6 +60,7 @@
       { id: 'a-z80lab', group: 'Actions', label: 'Z80 Lab (build a Z80 computer)', icon: CircuitBoard, run: () => store.navigate({ kind: 'z80lab' }) },
       { id: 'a-pycolab', group: 'Actions', label: 'Python Colab (notebooks: maths, ML, LLMs)', icon: NotebookPen, run: () => store.navigate({ kind: 'colab', lang: 'python' }) },
       { id: 'a-rscolab', group: 'Actions', label: 'Rust Colab (notebooks: maths, ML, LLMs)', icon: Sigma, run: () => store.navigate({ kind: 'colab', lang: 'rust' }) },
+      { id: 'a-products', group: 'Actions', label: 'Products (store listings, gnu.au websites, bots fill in App Store / Google Play)', icon: Package, run: () => store.navigate({ kind: 'products' }) },
       { id: 'a-coach', group: 'Actions', label: 'Coach (practise an Aussie accent: read aloud, get feedback)', icon: MicVocal, run: () => store.navigate({ kind: 'coach' }) },
       { id: 'a-radio', group: 'Actions', label: 'Radio (RTL-SDR: waterfall, scanner, FM/airband, aircraft radar)', icon: RadioTower, run: () => store.navigate({ kind: 'radio' }) },
       { id: 'a-scraper', group: 'Actions', label: 'Scraper (save a website offline)', icon: CloudDownload, run: () => store.navigate({ kind: 'scraper' }) },

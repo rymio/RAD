@@ -5,6 +5,7 @@ mod books;
 mod browser;
 mod chess;
 mod collections;
+mod products;
 mod colab;
 mod radio;
 mod scraper;
@@ -364,6 +365,7 @@ pub fn run() {
             app.manage(chess::Chess::default());
             app.manage(scraper::Scraper::default());
             app.manage(collections::Collections::default());
+            app.manage(products::Products::default());
             app.manage(oort::Oort::default());
             app.manage(fyrox::Fyrox::default());
             app.manage(colab::Colab::default());
@@ -472,6 +474,22 @@ pub fn run() {
             collections::collections_delete,
             collections::collections_to_media,
             collections::collections_path,
+            products::products_list,
+            products::products_save,
+            products::products_delete,
+            products::products_folder,
+            products::products_add_assets,
+            products::products_asset,
+            products::products_remove_asset,
+            products::products_write_text,
+            products::products_to_container,
+            products::products_guides,
+            products::products_fetch_guides,
+            products::products_guide_text,
+            products::gnu_status,
+            products::gnu_configure,
+            products::gnu_request,
+            products::gnu_upload,
             oort::oort_docs_status,
             oort::oort_docs_download,
             oort::oort_docs_search,

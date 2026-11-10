@@ -22,6 +22,9 @@ can point at them; nothing is kept between calls except which tab is current.
   {"op":"fill_secret","id":12,"file":"/dev/shm/…","domain":"github.com"}
         types a secret that RAD wrote to a file in memory (the file is deleted at once), only
         if the page is on that domain. The secret is never printed.
+  {"op":"upload","id":12,"files":["/root/shared/a.png"]}   puts files in a file input (the one
+        that is element 12, inside it or next to it; else the page's first, or "index"), without
+        the native file dialog. Files must be in /root/shared.
 
 Pop-ups (alert, confirm, prompt) are answered as soon as they open, in the same call: Chrome
 closes them when the connection that saw them goes. An alert is accepted, a confirm or prompt
@@ -202,6 +205,7 @@ SNAPSHOT_JS = r"""
     scroll: { y: Math.round(scrollY), height: Math.round(document.documentElement.scrollHeight), view: H },
     text: text.slice(0, MAXTEXT), more_text: text.length > MAXTEXT,
     elements: items, more_elements: all.length > MAX,
+    file_inputs: document.querySelectorAll('input[type=file]').length,
   };
 })()
 """ % (MAX_ELEMENTS, MAX_TEXT)
@@ -320,6 +324,44 @@ def page_op(tab, req):
         click_at(tab, b["x"], b["y"])
         tab.settle(500)
         return {"ok": True, "clicked": b["label"]}
+    if op == "upload":
+        files = req.get("files") or []
+        if isinstance(files, str):
+            files = [files]
+        files = [str(f) for f in files]
+        if not files:
+            raise Fail("no files")
+        for f in files:
+            real = os.path.realpath(f)
+            if not real.startswith("/root/shared/") or not os.path.isfile(real):
+                raise Fail("%s isn't a file in /root/shared" % f)
+        eid = req.get("id")
+        found = tab.js("""(() => {
+          document.querySelectorAll('[data-rad-upload]').forEach((e) => e.removeAttribute('data-rad-upload'));
+          const isFile = (e) => e && e.tagName === 'INPUT' && e.type === 'file';
+          let pick = null;
+          const el = %s === null ? null : document.querySelector('[data-rad-id="' + %s + '"]');
+          if (el) {
+            if (isFile(el)) pick = el;
+            if (!pick && el.tagName === 'LABEL' && isFile(el.control)) pick = el.control;
+            for (let a = el, i = 0; !pick && a && i < 5; a = a.parentElement, i++) pick = a.querySelector('input[type=file]');
+          }
+          if (!pick) pick = document.querySelectorAll('input[type=file]')[%d] || null;
+          if (!pick) return null;
+          pick.setAttribute('data-rad-upload', '1');
+          return {multiple: pick.multiple, accept: pick.accept || ''};
+        })()""" % (json.dumps(eid), json.dumps(eid), int(req.get("index", 0))))
+        if not found:
+            raise Fail("there's no file input on this page (click the upload button's area first, or look for another way)")
+        if len(files) > 1 and not found["multiple"]:
+            files = files[:1]
+        doc = tab.call("DOM.getDocument", depth=0)
+        node = tab.call("DOM.querySelector", nodeId=doc["root"]["nodeId"], selector="[data-rad-upload]")
+        if not node.get("nodeId"):
+            raise Fail("lost the file input")
+        tab.call("DOM.setFileInputFiles", files=files, nodeId=node["nodeId"])
+        tab.settle(1500)
+        return {"ok": True, "uploaded": len(files), "accept": found["accept"]}
     if op == "type":
         replace_text(tab, req.get("id"), str(req.get("text", "")))
         if req.get("enter"):

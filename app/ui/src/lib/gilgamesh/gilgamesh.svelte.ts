@@ -34,6 +34,7 @@ import { thumbnail, type Avatar } from './face';
 import { transcripts } from './transcripts.svelte';
 import { monitor } from '../monitor.svelte';
 import { bots } from '../bots.svelte';
+import { products } from '../products.svelte';
 import { sight } from './sight.svelte';
 import { photocraft } from '../photocraft.svelte';
 import { books } from '../books.svelte';
@@ -78,6 +79,8 @@ export interface Conversation {
   radio?: boolean;
   /** About accent practice (Media → Coach). */
   coach?: boolean;
+  /** About the owner's products (Products). */
+  products?: boolean;
 }
 
 /** One of Gilgamesh's faces: a prepared photo, kept under its own key in the vault. */
@@ -158,6 +161,7 @@ You can act for the owner by writing an action tag in your reply. It is carried 
 - [oort: run] runs the code in the owner's Oort editor (Development → Oort, the space-fleet programming game); [oort: apply] puts the Rust code block of your answer into the editor and runs it; [oort: open | scenario] opens one of the game's scenarios (Tutorial 1: Guns … Fleet, Belt, Orbit). Code you write for Oort goes in a fenced rust block; the owner puts it in the editor with a click.
 - [build: what | near what | name] builds something in your world (Development → Fyrox): you walk there and build it. [world: go | place] walks you somewhere there, [world: remove | name] takes a thing away, [world: tablet | task; task] writes the owner's tasks on your clay tablet. Use them only while your world is open (YOUR WORLD, below).
 - [read: start] reads the book the owner has open aloud in your voice, from where they are; it carries on page after page and turns the pages itself. [read: stop] stops reading, [read: page] reads the page in front of them from its top, [read: next] or [read: previous] turns the page, [read: open | title] opens one of their books (THE OWNER'S BOOKS, below). The reading starts once you've finished speaking.
+- [product: open | name], [product: draft | name | ios, android or both], [product: site | name], [product: publish | name], [product: launch | name | ios or android | bot name] and [product: rag | name] work the owner's products (THE OWNER'S PRODUCTS, below): store listings, the product website on gnu.au, and bots that fill in App Store Connect and Google Play Console. Publishing and launching only when the owner asks.
 - [bot: approve] or [bot: deny] answers a bot that waits for the owner's OK, only when the owner has said yes or no to it. [bot: answer | text] passes on the owner's answer to a bot's question. [bot: stop | Name] stops a bot.
 Only act when the owner asks or clearly wants it, and always say a few words about what you're doing. You go with the owner everywhere in RAD (your face is in the sidebar), so opening something or searching doesn't end the conversation; it happens once you've finished speaking.
 
@@ -252,6 +256,8 @@ class Gilgamesh {
   radioTalk = $state(false);
   /** The conversation going on is the one beside Coach. */
   coachTalk = $state(false);
+  /** The conversation going on is the one beside Products. */
+  productTalk = $state(false);
 
   /** Every picture of him on screen. */
   head = new Heads();
@@ -312,6 +318,7 @@ class Gilgamesh {
     this.worldTalk = !!this.conversation(id)?.world;
     this.radioTalk = !!this.conversation(id)?.radio;
     this.coachTalk = !!this.conversation(id)?.coach;
+    this.productTalk = !!this.conversation(id)?.products;
     if (id) await this.loadTurns(id);
   }
 
@@ -328,6 +335,7 @@ class Gilgamesh {
     this.worldTalk = false;
     this.radioTalk = false;
     this.coachTalk = false;
+    this.productTalk = false;
     this.loaded = false;
     this.avatar = null;
     this.turns = [];
@@ -465,6 +473,15 @@ class Gilgamesh {
     this.radioTalk = true;
   }
 
+  /** Goes back to the conversation beside Products, or starts one. */
+  async discussProducts() {
+    if (this.productTalk && this.settings.chatId) return;
+    const earlier = this.conversations.find((c) => c.products);
+    if (earlier) return this.resume(earlier.id);
+    await this.newConversation();
+    this.productTalk = true;
+  }
+
   /** Goes back to the conversation beside Coach, or starts one. */
   async discussCoach() {
     if (this.coachTalk && this.settings.chatId) return;
@@ -558,6 +575,7 @@ class Gilgamesh {
     this.worldTalk = false;
     this.radioTalk = false;
     this.coachTalk = false;
+    this.productTalk = false;
     await this.saveSettings({ chatId: null });
     if (prev) void this.recap(prev);
     const next = this.settings.rotate && this.settings.faces.length > 1 ? this.nextFace() : null;
@@ -580,6 +598,7 @@ class Gilgamesh {
     this.worldTalk = !!this.conversation(id)?.world;
     this.radioTalk = !!this.conversation(id)?.radio;
     this.coachTalk = !!this.conversation(id)?.coach;
+    this.productTalk = !!this.conversation(id)?.products;
     // He wears the face he had in that conversation, if it's still there.
     const face = this.conversation(id)?.face;
     if (face && face !== this.settings.face && this.settings.faces.some((f) => f.id === face)) await this.useFace(face).catch(() => {});
@@ -601,6 +620,7 @@ class Gilgamesh {
       this.worldTalk = false;
       this.radioTalk = false;
       this.coachTalk = false;
+    this.productTalk = false;
     }
     await api.del(`/v1/chats/${id}`).catch(() => {});
     await this.saveSettings({ chatId: this.settings.chatId === id ? null : this.settings.chatId, conversations: this.settings.conversations.filter((c) => c.id !== id) });
@@ -610,12 +630,12 @@ class Gilgamesh {
   private async chatId(firstWords: string): Promise<number> {
     const id = this.settings.chatId;
     if (id && this.conversation(id)) return id;
-    const topic = this.about?.title ?? this.book?.title ?? this.game?.title ?? this.circuit?.title ?? this.notebook?.title ?? this.oortGame?.title ?? (this.worldTalk ? 'his world' : undefined) ?? (this.radioTalk ? 'the radio' : undefined) ?? (this.coachTalk ? 'accent practice' : undefined);
+    const topic = this.about?.title ?? this.book?.title ?? this.game?.title ?? this.circuit?.title ?? this.notebook?.title ?? this.oortGame?.title ?? (this.worldTalk ? 'his world' : undefined) ?? (this.radioTalk ? 'the radio' : undefined) ?? (this.coachTalk ? 'accent practice' : undefined) ?? (this.productTalk ? 'products' : undefined);
     const title = topic ? `Gilgamesh: about ${topic.slice(0, 44)}` : `Gilgamesh: ${firstWords.replace(/\s+/g, ' ').slice(0, 50)}`;
     const c = await api.post<Chat>('/v1/chats', { title });
     store.reloadChats();
     const now = Date.now();
-    const list = [{ id: c.id, title, started: now, updated: now, summary: '', summarized: 0, face: this.settings.face ?? undefined, transcript: this.about?.id, book: this.book?.id, chess: this.game?.id, circuit: this.circuit?.id, notebook: this.notebook?.id, oort: this.oortGame?.id, world: this.worldTalk || undefined, radio: this.radioTalk || undefined, coach: this.coachTalk || undefined }, ...this.settings.conversations].slice(0, KEEP_CONVERSATIONS);
+    const list = [{ id: c.id, title, started: now, updated: now, summary: '', summarized: 0, face: this.settings.face ?? undefined, transcript: this.about?.id, book: this.book?.id, chess: this.game?.id, circuit: this.circuit?.id, notebook: this.notebook?.id, oort: this.oortGame?.id, world: this.worldTalk || undefined, radio: this.radioTalk || undefined, coach: this.coachTalk || undefined, products: this.productTalk || undefined }, ...this.settings.conversations].slice(0, KEEP_CONVERSATIONS);
     await this.saveSettings({ chatId: c.id, conversations: list });
     return c.id;
   }
@@ -865,7 +885,7 @@ class Gilgamesh {
       this.fail(run, e);
       return;
     }
-    const made = [sight.describe(), transcripts.describe(), monitor.describe(), bots.describe(), photocraft.describe()].filter(Boolean).join('\n\n');
+    const made = [sight.describe(), transcripts.describe(), monitor.describe(), bots.describe(), photocraft.describe(), products.describe(this.productTalk)].filter(Boolean).join('\n\n');
     // The transcript under discussion goes last, so a long one is what gets cut at the limit.
     // The page being read goes at the very end, after any transcript.
     // So does the chess game being played, with what his engine saw.

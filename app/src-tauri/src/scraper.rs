@@ -490,6 +490,13 @@ fn parse_page(html: &str, page_url: &Url) -> Parsed {
     Parsed { title, links, assets, nofollow: robots.contains("nofollow"), markdown, words }
 }
 
+/// A fetched page's title and its own content as Markdown (Products uses it for the store
+/// guides). `bytes` is the body as it came, `content_type` the response's header.
+pub(crate) fn page_markdown(bytes: &[u8], content_type: &str, page_url: &Url) -> (String, String, u32) {
+    let p = parse_page(&decode(bytes, content_type), page_url);
+    (p.title, p.markdown, p.words)
+}
+
 /// The page's own content as Markdown: the main/article part when there is one, without the
 /// menus, sidebars, forms and scripts around it.
 fn main_text(doc: &Html) -> (String, u32) {
